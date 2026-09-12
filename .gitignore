@@ -6,6 +6,10 @@
 *.a
 *.o
 
+# Test coverage artifacts
+*.out
+/coverage/
+
 # Environment and secrets
 .env
 .env.*
