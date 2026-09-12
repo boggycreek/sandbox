@@ -1,0 +1,27 @@
+# Agent Sandbox — Unprivileged SSH Daemon Configuration
+# Listens on port 2222 as unprivileged user 'agent' (UID 1000)
+
+Port 2222
+ListenAddress 0.0.0.0
+
+# Host Keys generated at container start in /home/agent/.ssh
+HostKey /home/agent/.ssh/ssh_host_ed25519_key
+HostKey /home/agent/.ssh/ssh_host_rsa_key
+
+# Authentication
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile /home/agent/.ssh/authorized_keys
+
+# Security & Isolation
+PermitRootLogin no
+StrictModes no
+UsePAM no
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
+Subsystem sftp internal-sftp
+
+# Process configuration
+PidFile /home/agent/.ssh/sshd.pid

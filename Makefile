@@ -132,5 +132,17 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 		echo "libbp shared library built in $(DIST_DIR)/"; \
 	fi
 
+# --- OCI Image Build Targets (Podman) ---
+
+build-images: build-image-base build-image-opencode ## Build all OCI images (base + derivatives)
+
+build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
+	@echo "==> Building agent-sandbox-base OCI image..."
+	podman build -t agent-sandbox-base:latest -f images/base/Dockerfile .
+
+build-image-opencode: build-image-base ## Build OpenCode derivative agent OCI image with Podman
+	@echo "==> Building agent-sandbox-opencode OCI image..."
+	podman build -t agent-sandbox-opencode:latest -f images/agents/opencode/Dockerfile .
+
 clean: ## Clean build and test coverage artifacts
 	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)
