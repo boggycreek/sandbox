@@ -1,0 +1,26 @@
+# Binaries and build artifacts
+/bin/
+/dist/
+*.dylib
+*.so
+*.a
+*.o
+
+# Environment and secrets
+.env
+.env.*
+!.env.template
+!.env.example
+secrets/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary / Scratch
+/tmp/
+/scratch/
