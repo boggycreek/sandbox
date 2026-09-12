@@ -134,7 +134,7 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 # --- OCI Image Build Targets (Podman) ---
 
-build-images: build-image-base build-image-opencode ## Build all OCI images (base + derivatives)
+build-images: build-image-base build-image-opencode build-image-claude build-image-agy ## Build all OCI images (base + derivatives)
 
 build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
 	@echo "==> Building agent-sandbox-base OCI image..."
@@ -143,6 +143,14 @@ build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
 build-image-opencode: build-image-base ## Build OpenCode derivative agent OCI image with Podman
 	@echo "==> Building agent-sandbox-opencode OCI image..."
 	podman build -t agent-sandbox-opencode:latest -f images/agents/opencode/Dockerfile .
+
+build-image-claude: build-image-base ## Build Claude Code derivative agent OCI image with Podman
+	@echo "==> Building agent-sandbox-claude OCI image..."
+	podman build -t agent-sandbox-claude:latest -f images/agents/claude/Dockerfile .
+
+build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OCI image with Podman
+	@echo "==> Building agent-sandbox-agy OCI image..."
+	podman build -t agent-sandbox-agy:latest -f images/agents/agy/Dockerfile .
 
 clean: ## Clean build and test coverage artifacts
 	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)
