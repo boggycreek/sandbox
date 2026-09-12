@@ -116,7 +116,7 @@ echo
 echo "[2/6] Checking host prerequisites..."
 MISSING_TOOLS=()
 
-for tool in git curl ssh-keygen; do
+for tool in git curl ssh-keygen podman; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     MISSING_TOOLS+=("${tool}")
   fi
@@ -125,31 +125,20 @@ done
 if [ ${#MISSING_TOOLS[@]} -ne 0 ]; then
   echo "Error: The following required utilities are missing: ${MISSING_TOOLS[*]}" >&2
   if [ "${OS}" = "darwin" ]; then
-    echo "On macOS, install Xcode Command Line Tools: xcode-select --install" >&2
+    echo "On macOS:" >&2
+    echo "  - Install Xcode Command Line Tools: xcode-select --install" >&2
+    echo "  - Install Podman: brew install podman (or Podman Desktop)" >&2
   elif [ "${OS}" = "linux" ]; then
-    echo "On Linux, install via your package manager (e.g., sudo apt install git curl openssh-client)." >&2
+    echo "On Linux, install via your package manager:" >&2
+    echo "  - Ubuntu/Debian: sudo apt update && sudo apt install -y git curl openssh-client podman" >&2
+    echo "  - Fedora/RHEL:   sudo dnf install -y git curl openssh podman" >&2
+    echo "  - Arch Linux:    sudo pacman -S --needed git curl openssh podman" >&2
   fi
   exit 1
 fi
 
-# Detect Container Runtime
-CONTAINER_ENGINE=""
-if command -v podman >/dev/null 2>&1; then
-  CONTAINER_ENGINE="podman"
-elif command -v docker >/dev/null 2>&1; then
-  CONTAINER_ENGINE="docker"
-fi
-
-if [ -z "${CONTAINER_ENGINE}" ]; then
-  echo "  Warning: No container engine found (podman or docker)." >&2
-  if [ "${OS}" = "darwin" ]; then
-    echo "    Recommendation for macOS: brew install podman (or install Podman Desktop / Docker Desktop)" >&2
-  elif [ "${OS}" = "linux" ]; then
-    echo "    Recommendation for Linux: Install Podman (sudo apt install podman / sudo dnf install podman)" >&2
-  fi
-else
-  echo "  Container engine detected: ${CONTAINER_ENGINE} ($(${CONTAINER_ENGINE} --version | head -n1))"
-fi
+CONTAINER_ENGINE="podman"
+echo "  Container engine: podman ($(${CONTAINER_ENGINE} --version | head -n1))"
 
 # Detect Go Toolchain
 if command -v go >/dev/null 2>&1; then

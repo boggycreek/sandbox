@@ -80,15 +80,7 @@ echo "--- [1/4] Core Tooling ---"
 check_cmd "git" "Git" "core"
 check_cmd "curl" "cURL" "core"
 check_cmd "make" "GNU Make" "core"
-
-# Container engine
-if command -v podman >/dev/null 2>&1; then
-  check_cmd "podman" "Podman (Engine)" "core"
-elif command -v docker >/dev/null 2>&1; then
-  check_cmd "docker" "Docker (Engine)" "core"
-else
-  check_cmd "podman" "Container Engine" "core"
-fi
+check_cmd "podman" "Podman (Engine)" "core"
 
 # 3. Inspecting Go & Native Toolchains
 echo

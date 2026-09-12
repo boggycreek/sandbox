@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/boggycreek/agent-sandbox/main/insta
 
 The installer will:
 1. Detect your OS (macOS or Linux) and CPU architecture (`amd64` / `arm64`).
-2. Verify host prerequisites (`git`, `curl`, `podman` or `docker`).
+2. Verify host prerequisites (`git`, `curl`, `podman`, `ssh-keygen`).
 3. Clone and sync the sandbox into `${XDG_DATA_HOME:-~/.local/share}/agent-sandbox/repo`.
 4. Generate a dedicated IDE SSH keypair (`~/.ssh/agent-sandbox.pub`) for unprivileged container access.
 5. Create an initial environment configuration file at `~/.local/share/agent-sandbox/.env`.
@@ -107,6 +107,6 @@ To check prerequisite tools without modifying configuration:
 ## Requirements
 
 - **Operating System**: macOS 12+ (Apple Silicon or Intel) or Linux (Ubuntu, Debian, Fedora, Arch, Pop!_OS, etc.).
-- **Container Engine**: Podman (recommended) or Docker.
+- **Container Engine**: Podman (required for rootless container execution).
 - **Go Toolchain**: Go 1.23+ (for building native static binaries from source).
 - **Core Utilities**: `git`, `curl`, `ssh-keygen`, `make`.
