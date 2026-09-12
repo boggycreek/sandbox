@@ -518,3 +518,21 @@ sequenceDiagram
 | **Backplane Message Forgery** | Messages are cryptographically signed with sender Ed25519 private keys; peer attestations published in `identity:<id>` keys are verified before acting on instructions. |
 | **Backplane Stream Abuse / Denial of Service** | Valkey ACLs isolate writes to owner namespaces and restrict peer writes to `(+xadd ~*:inbox)`. `pkg/libbp` client guards prevent destructive `MAXLEN`/`MINID` injection. Scheduled retention sweeps prune old stream messages. |
 | **Network Snooping & Spoofing** | All intra-fleet communication occurs on an isolated Docker/Podman bridge network (`agent-sandbox-infra`) bound to host localhost loopback interfaces. |
+
+---
+
+## 11. Software Quality Engineering, Testing & Security Analysis
+
+To guarantee reliability, isolation security, and regression protection, the codebase adheres to strict automated quality gates:
+
+1. **Test Coverage Threshold (>90%)**:
+   - Every package in `pkg/` (`pkg/libbp`, `pkg/crypto`, `pkg/runtime`, `pkg/gitea`, `pkg/config`) and `cmd/` must maintain unit test coverage exceeding **90.0%**.
+   - Enforced by `make test-coverage`, executing with race detection (`-race`) and atomic profiles (`-covermode=atomic`).
+2. **Static Code Analysis & Linting**:
+   - **Go**: Configured via `.golangci.yml` running `govet`, `staticcheck`, `errcheck`, `revive`, `gocritic`, `misspell`, `nilerr`, `bodyclose`, and `errorlint`.
+   - **Shell**: Validated via `shellcheck` across `install.sh`, `dev-setup.sh`, and container entrypoints.
+3. **Software Composition Analysis (SCA) & Security Scans**:
+   - **`govulncheck`**: Dependency analysis checking all imported packages and call stacks against the official Go Vulnerability Database.
+   - **`gosec`**: AST security scanner inspecting for insecure file permissions, injection vulnerabilities, and weak randomness.
+4. **Pre-Merge Gate**:
+   - `make check` acts as the unified gate executing `lint` + `test-coverage` + `sca`.

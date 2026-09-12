@@ -23,3 +23,4 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00015 — Agent Dotfiles and Memory Remote Backup to Git](00015-AgentDotfilesAndMemoryBackupToGit.md)
 - [00016 — Wayland-Native Linux GUI with GTK4 and Libadwaita](00016-WaylandNativeLinuxGuiWithGtk4.md)
 - [00017 — Native SVG Diagram and Markdown Rendering Without Browser Engine](00017-NativeSvgDiagramRenderingForMarkdown.md)
+- [00018 — Quality Engineering, >90% Test Coverage, Linters, and SCA](00018-QualityEngineeringTestingAndSCA.md)

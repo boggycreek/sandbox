@@ -1,0 +1,136 @@
+# Agent Sandbox — Root Makefile
+
+SHELL := /usr/bin/env bash
+.SHELLFLAGS := -euo pipefail -c
+
+# Go build settings
+GO ?= go
+GOFLAGS ?=
+COVERAGE_THRESHOLD := 90.0
+
+BIN_DIR := bin
+DIST_DIR := dist
+COVERAGE_DIR := coverage
+COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
+COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
+
+.PHONY: all help dev-setup check test test-coverage lint lint-go lint-shell sca vulncheck format clean build build-cli build-libbp
+
+all: check build
+
+help: ## Show Makefile targets
+	@echo "Agent Sandbox — Available Targets:"
+	@echo
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@echo
+
+dev-setup: ## Run developer environment configuration script
+	@./dev-setup.sh
+
+# --- Quality Gates: Linting ---
+
+lint: lint-go lint-shell ## Run all linters (Go + Shell)
+
+lint-go: ## Run golangci-lint on Go code
+	@echo "==> Running golangci-lint..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./...; \
+	else \
+		echo "Warning: golangci-lint not installed. Run ./dev-setup.sh to install."; \
+	fi
+
+lint-shell: ## Run shellcheck on bash scripts
+	@echo "==> Running shellcheck..."
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck install.sh dev-setup.sh; \
+	else \
+		echo "Warning: shellcheck not installed. Run ./dev-setup.sh to install."; \
+	fi
+
+format: ## Auto-format Go code and scripts
+	@echo "==> Formatting code..."
+	@if command -v gofmt >/dev/null 2>&1; then \
+		gofmt -s -w .; \
+	fi
+
+# --- Quality Gates: Testing & Coverage ---
+
+test: ## Run unit tests with race detection
+	@echo "==> Running Go unit tests..."
+	@if [ -f go.mod ]; then \
+		$(GO) test -race -v ./...; \
+	else \
+		echo "Notice: go.mod not yet initialized. Skipping test run."; \
+	fi
+
+test-coverage: ## Run tests and enforce >90% code coverage threshold
+	@echo "==> Running unit tests with coverage analysis..."
+	@mkdir -p $(COVERAGE_DIR)
+	@if [ -f go.mod ]; then \
+		$(GO) test -race -covermode=atomic -coverprofile=$(COVERAGE_PROFILE) ./pkg/... ./cmd/...; \
+		$(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML); \
+		TOTAL_COV=$$($(GO) tool cover -func=$(COVERAGE_PROFILE) | grep total: | awk '{print substr($$3, 1, length($$3)-1)}'); \
+		echo "==> Total Test Coverage: $${TOTAL_COV}% (Required: >= $(COVERAGE_THRESHOLD)%)"; \
+		COVERAGE_PASS=$$(echo "$${TOTAL_COV} >= $(COVERAGE_THRESHOLD)" | bc -l 2>/dev/null || awk -v t="$${TOTAL_COV}" -v req="$(COVERAGE_THRESHOLD)" 'BEGIN {print (t >= req) ? 1 : 0}'); \
+		if [ "$${COVERAGE_PASS}" -ne 1 ]; then \
+			echo "ERROR: Test coverage $${TOTAL_COV}% is below the required threshold of $(COVERAGE_THRESHOLD)%!" >&2; \
+			exit 1; \
+		fi; \
+		echo "==> Coverage check PASSED."; \
+	else \
+		echo "Notice: go.mod not yet initialized. Skipping coverage check."; \
+	fi
+
+# --- Security & Software Composition Analysis (SCA) ---
+
+sca: vulncheck gosec ## Run all SCA and security vulnerability scanners
+
+vulncheck: ## Run govulncheck on Go dependencies
+	@echo "==> Running govulncheck (Software Composition Analysis)..."
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		if [ -f go.mod ]; then \
+			govulncheck ./...; \
+		fi; \
+	else \
+		echo "Notice: govulncheck not installed. Install via: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+	fi
+
+gosec: ## Run gosec static security analysis
+	@echo "==> Running gosec security analyzer..."
+	@if command -v gosec >/dev/null 2>&1; then \
+		if [ -f go.mod ]; then \
+			gosec -quiet ./...; \
+		fi; \
+	else \
+		echo "Notice: gosec not installed. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
+	fi
+
+check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) + SCA security
+
+# --- Build Targets ---
+
+build: build-cli build-libbp ## Build all CLI binaries and libraries
+
+build-cli: ## Build native Go CLI binaries (sndbx, bp, retention-sweep)
+	@echo "==> Building CLI binaries..."
+	@mkdir -p $(BIN_DIR)
+	@if [ -f go.mod ]; then \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./cmd/sndbx; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
+		echo "Binaries built in $(BIN_DIR)/"; \
+	else \
+		echo "Notice: go.mod not yet initialized. Skipping build."; \
+	fi
+
+build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
+	@echo "==> Building C-shared libbp library..."
+	@mkdir -p $(DIST_DIR)/lib $(DIST_DIR)/include
+	@if [ -f go.mod ] && [ -d cmd/libbp-c ]; then \
+		$(GO) build -buildmode=c-shared -o $(DIST_DIR)/lib/libbp.so ./cmd/libbp-c; \
+		mv $(DIST_DIR)/lib/libbp.h $(DIST_DIR)/include/ 2>/dev/null || true; \
+		echo "libbp shared library built in $(DIST_DIR)/"; \
+	fi
+
+clean: ## Clean build and test coverage artifacts
+	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)

@@ -97,8 +97,11 @@ check_cmd "go" "Go Compiler" "core"
 check_cmd "gcc" "C Compiler (GCC/Clang)" "dev"
 check_cmd "pkg-config" "pkg-config" "dev"
 
-# Linters & Go Tools
+# Linters, SCA & Security Analysis Tools
 check_cmd "golangci-lint" "golangci-lint" "dev"
+check_cmd "shellcheck" "ShellCheck" "dev"
+check_cmd "govulncheck" "govulncheck (SCA)" "dev"
+check_cmd "gosec" "gosec (AST Security)" "dev"
 
 # GUI Development Toolchains
 echo
@@ -125,18 +128,23 @@ echo
 echo "--- [4/4] Setup Actions & Guidance ---"
 
 if [ ${#MISSING_CORE[@]} -ne 0 ] || [ ${#MISSING_DEV[@]} -ne 0 ]; then
-  echo "Missing required developer packages detected."
+  echo "Missing developer packages detected."
   echo "Run the following package manager command for your system:"
   echo
 
   if [ "${OS}" = "darwin" ]; then
     echo "  # macOS (Homebrew):"
-    echo "  brew install go podman podman-compose make pkg-config golangci-lint"
+    echo "  brew install go podman podman-compose make pkg-config golangci-lint shellcheck"
+    echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"
+    echo "  go install github.com/securego/gosec/v2/cmd/gosec@latest"
   elif [ "${OS}" = "linux" ]; then
     case "${DISTRO_ID:-}" in
       ubuntu|debian|pop)
         echo "  # Ubuntu / Debian / Pop!_OS:"
-        echo "  sudo apt update && sudo apt install -y golang-go podman build-essential pkg-config libgtk-4-dev libadwaita-1-dev librsvg2-dev"
+        echo "  sudo apt update && sudo apt install -y golang-go podman build-essential pkg-config shellcheck libgtk-4-dev libadwaita-1-dev librsvg2-dev"
+        echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"
+        echo "  go install github.com/securego/gosec/v2/cmd/gosec@latest"
+        echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin"
         ;;
       fedora|rhel)
         echo "  # Fedora / RHEL:"
