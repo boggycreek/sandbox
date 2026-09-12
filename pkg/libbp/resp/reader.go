@@ -1,0 +1,137 @@
+package resp
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+)
+
+// Reader parses RESP streams
+type Reader struct {
+	r *bufio.Reader
+}
+
+// NewReader creates a new RESP stream reader
+func NewReader(rd io.Reader) *Reader {
+	return &Reader{r: bufio.NewReader(rd)}
+}
+
+// ReadValue reads the next RESP Value from the stream
+func (r *Reader) ReadValue() (Value, error) {
+	line, err := r.readLine()
+	if err != nil {
+		return Value{}, err
+	}
+	if len(line) == 0 {
+		return Value{}, fmt.Errorf("%w: empty line in RESP stream", ErrProtocol)
+	}
+
+	typ := line[0]
+	payload := string(line[1:])
+
+	switch typ {
+	case TypeSimpleString:
+		return Value{Type: TypeSimpleString, Str: payload}, nil
+
+	case TypeError:
+		return Value{Type: TypeError, Str: payload}, nil
+
+	case TypeInteger:
+		num, err := strconv.ParseInt(payload, 10, 64)
+		if err != nil {
+			return Value{}, fmt.Errorf("%w: invalid integer %q", ErrProtocol, payload)
+		}
+		return Value{Type: TypeInteger, Num: num}, nil
+
+	case TypeBulkString:
+		length, err := strconv.Atoi(payload)
+		if err != nil {
+			return Value{}, fmt.Errorf("%w: invalid bulk string length %q", ErrProtocol, payload)
+		}
+		if length == -1 {
+			return Value{Type: TypeBulkString, IsNull: true}, nil
+		}
+		buf := make([]byte, length+2)
+		if _, err := io.ReadFull(r.r, buf); err != nil {
+			return Value{}, err
+		}
+		return Value{Type: TypeBulkString, Str: string(buf[:length])}, nil
+
+	case TypeArray, TypePush, TypeSet:
+		count, err := strconv.Atoi(payload)
+		if err != nil {
+			return Value{}, fmt.Errorf("%w: invalid array count %q", ErrProtocol, payload)
+		}
+		if count == -1 {
+			return Value{Type: typ, IsNull: true}, nil
+		}
+		arr := make([]Value, count)
+		for i := 0; i < count; i++ {
+			val, err := r.ReadValue()
+			if err != nil {
+				return Value{}, err
+			}
+			arr[i] = val
+		}
+		return Value{Type: typ, Array: arr}, nil
+
+	case TypeMap:
+		count, err := strconv.Atoi(payload)
+		if err != nil {
+			return Value{}, fmt.Errorf("%w: invalid map count %q", ErrProtocol, payload)
+		}
+		if count == -1 {
+			return Value{Type: TypeMap, IsNull: true}, nil
+		}
+		m := make(map[string]Value, count)
+		for i := 0; i < count; i++ {
+			k, err := r.ReadValue()
+			if err != nil {
+				return Value{}, err
+			}
+			v, err := r.ReadValue()
+			if err != nil {
+				return Value{}, err
+			}
+			m[k.String()] = v
+		}
+		return Value{Type: TypeMap, Map: m}, nil
+
+	case TypeNull:
+		return Value{Type: TypeNull, IsNull: true}, nil
+
+	case TypeBoolean:
+		if payload == "t" {
+			return Value{Type: TypeBoolean, Boolean: true}, nil
+		}
+		return Value{Type: TypeBoolean, Boolean: false}, nil
+
+	default:
+		return Value{}, fmt.Errorf("%w: unknown RESP type prefix %c", ErrProtocol, typ)
+	}
+}
+
+func (r *Reader) readLine() ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := r.r.ReadBytes('\n')
+		if err != nil {
+			return nil, err
+		}
+		line = append(line, chunk...)
+		if len(line) >= 2 && line[len(line)-2] == '\r' && line[len(line)-1] == '\n' {
+			return line[:len(line)-2], nil
+		}
+	}
+}
+
+// ReadError converts a TypeError Value to an error if present
+func ReadError(v Value) error {
+	if v.Type == TypeError {
+		return errors.New(strings.TrimPrefix(v.Str, "ERR "))
+	}
+	return nil
+}
