@@ -8,6 +8,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Paths holds XDG-compliant filesystem paths for the sandbox
@@ -56,3 +57,28 @@ func (p Paths) EnsureDirectories() error {
 	}
 	return nil
 }
+
+// LoadEnv loads environment variables from .env if present and not already set
+func (p Paths) LoadEnv() {
+	data, err := os.ReadFile(p.EnvFile)
+	if err != nil {
+		return
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			k := strings.TrimSpace(parts[0])
+			v := strings.TrimSpace(parts[1])
+			if os.Getenv(k) == "" && v != "" {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
+}
+

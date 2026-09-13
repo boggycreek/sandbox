@@ -37,6 +37,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
+	paths.LoadEnv()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -180,6 +181,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	fs.StringVar(&modelURL, "model-url", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible inference endpoint URL")
 	fs.StringVar(&modelName, "model-name", os.Getenv("OPENAI_MODEL"), "Target model name")
 	fs.StringVar(&modelKey, "model-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
+	fs.StringVar(&modelKey, "model-api-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
 
 	var flagArgs []string
 	if len(args) >= 3 && strings.ToLower(args[1]) == "as" {
@@ -493,8 +495,10 @@ Commands:
 
 	case "up":
 		fmt.Fprintln(stdout, "Starting shared infrastructure (Valkey & Gitea)...")
-		cmd := exec.CommandContext(ctx, "podman", "compose", "-f", "infra/docker-compose.yml", "up", "-d")
-		if err := cmd.Run(); err != nil {
+		adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+		humanPass := os.Getenv("HUMAN_BACKPLANE_PASSWORD")
+		humanName := os.Getenv("HUMAN_NAME")
+		if err := runtime.StartInfraStack(ctx, paths, adminPass, humanPass, humanName); err != nil {
 			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
 			return 1
 		}
@@ -503,17 +507,29 @@ Commands:
 
 	case "down":
 		fmt.Fprintln(stdout, "Stopping shared infrastructure...")
-		cmd := exec.CommandContext(ctx, "podman", "compose", "-f", "infra/docker-compose.yml", "down")
-		_ = cmd.Run()
+		if err := runtime.StopInfraStack(ctx); err != nil {
+			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
+			return 1
+		}
 		fmt.Fprintln(stdout, "Shared infrastructure stopped.")
 		return 0
 
 	case "list":
 		fmt.Fprintln(stdout, "Shared infrastructure status:")
-		cmd := exec.CommandContext(ctx, "podman", "compose", "-f", "infra/docker-compose.yml", "ps")
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		_ = cmd.Run()
+		list, err := runtime.InspectInfraStack(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
+			return 1
+		}
+		fmtFmt := "%-28s %s\n"
+		fmt.Fprintf(stdout, fmtFmt, "SERVICE", "STATUS")
+		for _, item := range list {
+			displayName := item.ID
+			if len(item.Names) > 0 && item.Names[0] != "" {
+				displayName = item.Names[0]
+			}
+			fmt.Fprintf(stdout, fmtFmt, displayName, item.State)
+		}
 		return 0
 
 	default:

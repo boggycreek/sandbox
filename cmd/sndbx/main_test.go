@@ -205,6 +205,17 @@ func TestSndbxWithLiveValkey(t *testing.T) {
 	if code != 1 || !strings.Contains(errOut, "unknown command") {
 		t.Errorf("infra unknown failed")
 	}
+
+	// Infra up / list / down execution test
+	code, out, _ = runSndbx([]string{"infra", "list"})
+	if code != 0 || !strings.Contains(out, "SERVICE") {
+		t.Errorf("infra list failed: %s", out)
+	}
+
+	code, out, _ = runSndbx([]string{"infra", "down"})
+	if code != 0 || !strings.Contains(out, "infrastructure stopped") {
+		t.Errorf("infra down failed: %s", out)
+	}
 }
 
 func TestSndbxRepoAndGUIDomains(t *testing.T) {

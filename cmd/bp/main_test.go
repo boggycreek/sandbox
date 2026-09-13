@@ -140,9 +140,26 @@ func TestBPFullCoverage(t *testing.T) {
 	}
 
 	// 6. Finger
+	_, _ = adminClient.Exec(context.Background(), "HSET", "agent-1:finger", "role", "coder", "model", "qwen")
 	code, out, _ = runCLI([]string{"finger", "agent-1"})
-	if code != 0 {
-		t.Errorf("finger failed: %s", out)
+	if code != 0 || !strings.Contains(out, "coder") {
+		t.Errorf("finger with profile failed: %s", out)
+	}
+
+	code, out, _ = runCLI([]string{"finger"})
+	if code != 0 || !strings.Contains(out, "coder") {
+		t.Errorf("finger default agent failed: %s", out)
+	}
+
+	code, out, _ = runCLI([]string{"peers", "--json"})
+	if code != 0 || !strings.Contains(out, "[") {
+		t.Errorf("peers json failed: %s", out)
+	}
+
+	// Status usage error
+	code, _, errOut = runCLI([]string{"status", "badsub"})
+	if code != 1 || !strings.Contains(errOut, "Usage: bp status") {
+		t.Errorf("expected status usage error")
 	}
 
 	// 7. Liaison

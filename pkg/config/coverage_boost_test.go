@@ -115,4 +115,18 @@ func TestConfigCoverageBoost(t *testing.T) {
 	// Default GetPaths without XDG_DATA_HOME
 	os.Unsetenv("XDG_DATA_HOME")
 	_ = GetPaths()
+
+	// 9. LoadEnv test
+	envFile := filepath.Join(tmpDir, "test.env")
+	envContent := "# Comment\nTEST_ENV_VAR_1=hello\nTEST_ENV_VAR_2=world\n\nINVALID_LINE"
+	_ = os.WriteFile(envFile, []byte(envContent), 0600)
+	envPaths := Paths{EnvFile: envFile}
+	envPaths.LoadEnv()
+	if os.Getenv("TEST_ENV_VAR_1") != "hello" || os.Getenv("TEST_ENV_VAR_2") != "world" {
+		t.Errorf("LoadEnv failed to parse environment variables")
+	}
+
+	// LoadEnv on missing file
+	missingEnvPaths := Paths{EnvFile: filepath.Join(tmpDir, "missing.env")}
+	missingEnvPaths.LoadEnv()
 }

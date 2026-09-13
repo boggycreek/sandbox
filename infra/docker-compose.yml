@@ -1,0 +1,54 @@
+# Copyright (c) 2026 Boggy Creek Software LLC
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file.
+
+version: '3.8'
+
+services:
+  valkey:
+    image: valkey/valkey:8.0-alpine
+    container_name: agent-sandbox-valkey
+    restart: unless-stopped
+    command: ["valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkey-data:/data
+      - valkey-config:/etc/valkey
+    networks:
+      - agent-sandbox-infra
+
+  gitea:
+    image: gitea/gitea:1.22-rootless
+    container_name: agent-sandbox-gitea
+    restart: unless-stopped
+    environment:
+      - GITEA__server__DOMAIN=gitea
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__ROOT_URL=http://gitea:3000/
+      - GITEA__server__SSH_PORT=2222
+      - GITEA__server__SSH_LISTEN_PORT=2222
+      - GITEA__database__DB_TYPE=sqlite3
+      - GITEA__database__PATH=/var/lib/gitea/data/gitea.db
+      - GITEA__service__DISABLE_REGISTRATION=false
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:2223:2222"
+    volumes:
+      - gitea-data:/var/lib/gitea
+    networks:
+      - agent-sandbox-infra
+
+networks:
+  agent-sandbox-infra:
+    name: agent-sandbox-infra
+
+volumes:
+  valkey-data:
+    name: agent-sandbox-valkey-data
+  valkey-config:
+    name: agent-sandbox-valkey-config
+  gitea-data:
+    name: agent-sandbox-gitea-data

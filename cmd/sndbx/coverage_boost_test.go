@@ -8,7 +8,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -21,10 +23,13 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	defer valkey.Teardown()
 
 	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
 	os.Setenv("XDG_DATA_HOME", tmpDir)
 	os.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
 	os.Setenv("BP_HOST", "127.0.0.1")
-	os.Setenv("BP_PORT", string(rune(valkey.Port))) // dummy
+	os.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
 
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
@@ -36,8 +41,14 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("agent create failed: %s", stderr.String())
 	}
 
-	// 1b. Create with --role and defaults
-	code = Run([]string{"agent", "create", "role-agent", "--role", "tester"}, &stdout, &stderr)
+	// 1b. Create with --role, --model-url, --model-name, --model-api-key
+	code = Run([]string{
+		"agent", "create", "role-agent",
+		"--role", "tester",
+		"--model-url", "http://localhost:11434/v1",
+		"--model-name", "qwen2.5-coder:32b",
+		"--model-api-key", "secret-key",
+	}, &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("agent create with role failed")
 	}
@@ -54,8 +65,28 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("agent create with invalid flag should fail")
 	}
 
-	// 2. Start agent
-	code = Run([]string{"agent", "start", "test-agent"}, &stdout, &stderr)
+	// 1e. Create agent help
+	code = Run([]string{"agent", "help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("agent help failed")
+	}
+	code = Run([]string{"agent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent empty should return 1")
+	}
+	code = Run([]string{"agent", "unknown"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent unknown should return 1")
+	}
+
+	// 2. Start subcommands
+	code = Run([]string{"agent", "start"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent start empty should return 1")
+	}
+	code = Run([]string{"agent", "start", "--all"}, &stdout, &stderr)
+	_ = code
+	code = Run([]string{"agent", "start", "role-agent"}, &stdout, &stderr)
 	_ = code
 
 	// 3. Stop --all & individual
@@ -85,6 +116,14 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	}
 
 	// 5. Infra subcommands
+	code = Run([]string{"infra", "help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("infra help should return 0")
+	}
+	code = Run([]string{"infra", "-h"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("infra -h should return 0")
+	}
 	code = Run([]string{"infra", "unknown"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("infra unknown should return 1")
@@ -93,20 +132,34 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	if code != 1 {
 		t.Errorf("infra empty should return 1")
 	}
+	code = Run([]string{"infra", "up"}, &stdout, &stderr)
+	_ = code
 	code = Run([]string{"infra", "down"}, &stdout, &stderr)
 	_ = code
 	code = Run([]string{"infra", "list"}, &stdout, &stderr)
 	_ = code
-	code = Run([]string{"infra", "up"}, &stdout, &stderr)
-	_ = code
 
 	// 6. Repo subcommands
+	code = Run([]string{"repo", "help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("repo help should return 0")
+	}
+	code = Run([]string{"repo", "-h"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("repo -h should return 0")
+	}
 	code = Run([]string{"repo", "unknown"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("repo unknown should return 1")
 	}
+	code = Run([]string{"repo"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("repo empty should return 1")
+	}
 	code = Run([]string{"repo", "path"}, &stdout, &stderr)
-	_ = code
+	if code != 0 {
+		t.Errorf("repo path should return 0")
+	}
 	code = Run([]string{"repo", "build"}, &stdout, &stderr)
 	_ = code
 	code = Run([]string{"repo", "build-images"}, &stdout, &stderr)
@@ -117,9 +170,17 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	if code != 1 {
 		t.Errorf("start nonexistent should fail")
 	}
+	code = Run([]string{"agent", "connect"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("connect empty should fail")
+	}
 	code = Run([]string{"agent", "connect", "nonexistent"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("connect nonexistent should fail")
+	}
+	code = Run([]string{"agent", "ssh"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("ssh empty should fail")
 	}
 	code = Run([]string{"agent", "ssh", "nonexistent"}, &stdout, &stderr)
 	if code != 1 {
@@ -154,4 +215,22 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	_ = handleAgentClean(context.Background(), paths, []string{"nonexistent-clean"}, &stdout, &stderr)
 	_ = handleAgentDestroy(context.Background(), paths, []string{"nonexistent-destroy"}, &stdout, &stderr)
 	_ = handleAgentStop(context.Background(), paths, []string{"nonexistent-stop"}, &stdout, &stderr)
+
+	// 14. Root CLI options
+	code = Run([]string{"help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("sndbx help failed")
+	}
+	code = Run([]string{"-h"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("sndbx -h failed")
+	}
+	code = Run([]string{"--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("sndbx --help failed")
+	}
+	code = Run([]string{"unknown-root-cmd"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("sndbx unknown-root-cmd failed")
+	}
 }

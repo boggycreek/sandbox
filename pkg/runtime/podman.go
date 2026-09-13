@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -193,7 +194,9 @@ func InspectAgentContainer(ctx context.Context, containerName string) (*Containe
 	}
 
 	var list []struct {
-		ID    string `json:"Id"`
+		ID    string   `json:"Id"`
+		Name  string   `json:"Name"`
+		Names []string `json:"Names"`
 		State struct {
 			Status  string `json:"Status"`
 			Running bool   `json:"Running"`
@@ -212,8 +215,149 @@ func InspectAgentContainer(ctx context.Context, containerName string) (*Containe
 		}
 	}
 
+	names := list[0].Names
+	if len(names) == 0 && list[0].Name != "" {
+		names = []string{strings.TrimPrefix(list[0].Name, "/")}
+	}
+
 	return &ContainerInfo{
 		ID:    list[0].ID,
+		Names: names,
 		State: state,
 	}, nil
 }
+
+// StartInfraStack launches the shared Valkey and Gitea containers using Podman directly
+func StartInfraStack(ctx context.Context, paths config.Paths, adminPass, humanPass, humanName string) error {
+	netName := "agent-sandbox-infra"
+	if err := EnsureNetwork(ctx, netName); err != nil {
+		return fmt.Errorf("failed ensuring network %s: %w", netName, err)
+	}
+
+	// Ensure volumes
+	_ = EnsureVolume(ctx, "agent-sandbox-valkey-data")
+	_ = EnsureVolume(ctx, "agent-sandbox-valkey-config")
+	_ = EnsureVolume(ctx, "agent-sandbox-gitea-data")
+
+	// Render Valkey ACL in config directory
+	valkeyConfigDir := filepath.Join(paths.DataHome, "valkey")
+	_ = os.MkdirAll(valkeyConfigDir, 0755)
+	aclFile := filepath.Join(valkeyConfigDir, "valkey-users.acl")
+
+	if adminPass == "" {
+		adminPass = "admin_backplane_pass"
+	}
+	if humanPass == "" {
+		humanPass = "human_backplane_pass"
+	}
+	if humanName == "" {
+		humanName = "operator"
+	}
+
+	aclContent := fmt.Sprintf(`user default off
+user admin on >%s ~* &* +@all
+user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (+xadd ~*:inbox)
+`, adminPass, humanName, humanPass, humanName)
+	_ = os.WriteFile(aclFile, []byte(aclContent), 0644)
+	_ = os.Chmod(aclFile, 0644)
+	_ = os.Chmod(valkeyConfigDir, 0755)
+
+	// 1. Start Valkey container if not already running
+	valkeyContainer := "agent-sandbox-valkey"
+	valkeyArgs := []string{
+		"run", "-d",
+		"--name", valkeyContainer,
+		"--hostname", "valkey",
+		"--network", netName,
+		"-p", "127.0.0.1:6379:6379",
+		"-v", fmt.Sprintf("%s:/etc/valkey:z", valkeyConfigDir),
+		"-v", "agent-sandbox-valkey-data:/data:z",
+		"docker.io/valkey/valkey:8.0-alpine",
+		"valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379",
+	}
+
+	checkValkey := exec.CommandContext(ctx, "podman", "container", "exists", valkeyContainer)
+	if err := checkValkey.Run(); err != nil {
+		cmd := exec.CommandContext(ctx, "podman", valkeyArgs...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed starting valkey container: %v (%s)", err, string(out))
+		}
+	} else {
+		startCmd := exec.CommandContext(ctx, "podman", "start", valkeyContainer)
+		if err := startCmd.Run(); err != nil {
+			_ = exec.CommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+			cmd := exec.CommandContext(ctx, "podman", valkeyArgs...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
+			}
+		}
+	}
+
+	// 2. Start Gitea container if not already running
+	giteaContainer := "agent-sandbox-gitea"
+	giteaArgs := []string{
+		"run", "-d",
+		"--name", giteaContainer,
+		"--hostname", "gitea",
+		"--network", netName,
+		"-p", "127.0.0.1:3000:3000",
+		"-p", "127.0.0.1:2223:2222",
+		"-e", "GITEA__server__DOMAIN=gitea",
+		"-e", "GITEA__server__HTTP_PORT=3000",
+		"-e", "GITEA__server__ROOT_URL=http://gitea:3000/",
+		"-e", "GITEA__server__SSH_PORT=2222",
+		"-e", "GITEA__server__SSH_LISTEN_PORT=2222",
+		"-e", "GITEA__database__DB_TYPE=sqlite3",
+		"-e", "GITEA__database__PATH=/var/lib/gitea/data/gitea.db",
+		"-e", "GITEA__service__DISABLE_REGISTRATION=false",
+		"-e", "GITEA__service__REQUIRE_SIGNIN_VIEW=false",
+		"-e", "GITEA__security__INSTALL_LOCK=true",
+		"-v", "agent-sandbox-gitea-data:/var/lib/gitea:z",
+		"docker.io/gitea/gitea:1.22-rootless",
+	}
+
+	checkGitea := exec.CommandContext(ctx, "podman", "container", "exists", giteaContainer)
+	if err := checkGitea.Run(); err != nil {
+		cmd := exec.CommandContext(ctx, "podman", giteaArgs...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed starting gitea container: %v (%s)", err, string(out))
+		}
+	} else {
+		startCmd := exec.CommandContext(ctx, "podman", "start", giteaContainer)
+		if err := startCmd.Run(); err != nil {
+			_ = exec.CommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
+			cmd := exec.CommandContext(ctx, "podman", giteaArgs...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed restarting gitea container: %v (%s)", err, string(out))
+			}
+		}
+	}
+
+	return nil
+}
+
+// StopInfraStack halts shared infrastructure containers
+func StopInfraStack(ctx context.Context) error {
+	_ = exec.CommandContext(ctx, "podman", "stop", "agent-sandbox-valkey").Run()
+	_ = exec.CommandContext(ctx, "podman", "stop", "agent-sandbox-gitea").Run()
+	return nil
+}
+
+// InspectInfraStack returns the runtime state of Valkey and Gitea containers
+func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
+	containers := []string{"agent-sandbox-valkey", "agent-sandbox-gitea"}
+	var results []ContainerInfo
+	for _, c := range containers {
+		info, err := InspectAgentContainer(ctx, c)
+		if err == nil && info != nil {
+			results = append(results, *info)
+		} else {
+			results = append(results, ContainerInfo{
+				ID:    c,
+				State: "stopped",
+			})
+		}
+	}
+	return results, nil
+}
+

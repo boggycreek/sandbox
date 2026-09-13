@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -47,6 +48,9 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 		// Verifies running fallback logic
 	}
 	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
 	sshDir := filepath.Join(tmpDir, "ssh")
 	_ = os.MkdirAll(sshDir, 0700)
 	keyFile := filepath.Join(sshDir, "key")
@@ -95,4 +99,20 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	// Clean up
 	_ = CleanAgentContainer(ctx, cfg.ContainerName)
 	_ = DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName)
+
+	// Test StartInfraStack with defaults and already-running paths
+	_ = StartInfraStack(ctx, paths, "", "", "")
+	_ = StartInfraStack(ctx, paths, "test_admin_pass", "test_human_pass", "test_human_name")
+	infraList, err := InspectInfraStack(ctx)
+	if err != nil || len(infraList) == 0 {
+		t.Errorf("InspectInfraStack failed: %v", err)
+	}
+	_ = StopInfraStack(ctx)
+
+	// Ensure network creation path
+	testNet := "agent-sandbox-unit-test-net"
+	_ = exec.Command("podman", "network", "rm", "-f", testNet).Run()
+	_ = EnsureNetwork(ctx, testNet)
+	_ = exec.Command("podman", "network", "rm", "-f", testNet).Run()
 }
+

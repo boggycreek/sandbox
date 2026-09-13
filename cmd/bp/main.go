@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/boggycreek/agent-sandbox/pkg/config"
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
 )
 
@@ -32,6 +33,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 	cmd := strings.ToLower(args[0])
 	cmdArgs := args[1:]
+
+	paths := config.GetPaths()
+	paths.LoadEnv()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
