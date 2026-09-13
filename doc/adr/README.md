@@ -34,4 +34,5 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00026 — Agent Diagnostic Doctor and Automated Self-Healing](00026-AgentDiagnosticDoctorAndAutoHealing.md)
 - [00027 — Shared Infrastructure Diagnostic Doctor and Automated Self-Healing](00027-InfrastructureDiagnosticDoctorAndAutoHealing.md)
 - [00028 — Ephemeral Integration Test Lifecycles and Podman Test Isolation](00028-EphemeralIntegrationTestLifecycleAndIsolation.md)
+- [00029 — Flexible Agent Image Resolution and Local Store Support](00029-FlexibleAgentImageResolutionAndLocalStoreSupport.md)
 

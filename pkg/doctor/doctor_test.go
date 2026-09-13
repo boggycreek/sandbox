@@ -185,9 +185,13 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	checkAndHealPodmanStorage(ctx, cfg, reportDirect)
 	// Second run when volume already exists (healed == false branch)
 	checkAndHealPodmanStorage(ctx, cfg, reportDirect)
+	checkAndHealImage(ctx, cfg, paths, reportDirect)
+	// Test image update heal when untagged
+	cfgUntagged := &config.AgentConfig{Name: "test-untagged", Image: "docker.io/library/alpine"}
+	checkAndHealImage(ctx, cfgUntagged, paths, reportDirect)
 	checkAndHealContainer(ctx, cfg, paths, reportDirect)
-	if len(reportDirect.Checks) < 3 {
-		t.Errorf("expected storage and container checks in report")
+	if len(reportDirect.Checks) < 4 {
+		t.Errorf("expected storage, image, and container checks in report")
 	}
 
 	// 11. Signing key check when key file is corrupt
