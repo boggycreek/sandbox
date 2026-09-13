@@ -801,7 +801,7 @@ Comprehensive update of the Agent Sandbox local environment:
 	sndbxBin := filepath.Join(binDir, "sndbx")
 	bpBin := filepath.Join(binDir, "bp")
 
-	buildSndbx := execCommandContext(ctx, "go", "build", "-o", sndbxBin, "./cmd/sndbx")
+	buildSndbx := execCommandContext(ctx, "go", "build", "-o", sndbxBin, "-ldflags=-s -w", "./cmd/sndbx")
 	buildSndbx.Dir = repoDir
 	buildSndbx.Stdout = stdout
 	buildSndbx.Stderr = stderr
@@ -809,8 +809,9 @@ Comprehensive update of the Agent Sandbox local environment:
 		fmt.Fprintf(stderr, "sndbx update: failed compiling sndbx: %v\n", err)
 		return 1
 	}
+	_ = os.Chmod(sndbxBin, 0755)
 
-	buildBP := execCommandContext(ctx, "go", "build", "-o", bpBin, "./cmd/bp")
+	buildBP := execCommandContext(ctx, "go", "build", "-o", bpBin, "-ldflags=-s -w", "./cmd/bp")
 	buildBP.Dir = repoDir
 	buildBP.Stdout = stdout
 	buildBP.Stderr = stderr
@@ -818,6 +819,7 @@ Comprehensive update of the Agent Sandbox local environment:
 		fmt.Fprintf(stderr, "sndbx update: failed compiling bp: %v\n", err)
 		return 1
 	}
+	_ = os.Chmod(bpBin, 0755)
 
 	fmt.Fprintln(stdout, "==> Building all native OCI container images...")
 	imgCmd := execCommandContext(ctx, "make", "build-images")
