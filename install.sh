@@ -241,14 +241,27 @@ else
   echo "  Existing configuration file found at ${ENV_FILE}"
 fi
 
-# Configure sndbx CLI wrapper/executable
+# Configure sndbx and bp CLI executables
 SNDBX_BIN="${BIN_DIR}/sndbx"
-if [ ! -f "${SNDBX_BIN}" ]; then
-  cat > "${SNDBX_BIN}" <<'EOF'
+BP_BIN="${BIN_DIR}/bp"
+
+if command -v go >/dev/null 2>&1 && [ -f "${SANDBOX_ROOT}/go.mod" ]; then
+  echo "  Compiling native Go CLI binaries (sndbx, bp)..."
+  (cd "${SANDBOX_ROOT}" && go build -o "${SNDBX_BIN}" ./cmd/sndbx && go build -o "${BP_BIN}" ./cmd/bp)
+  chmod +x "${SNDBX_BIN}" "${BP_BIN}" 2>/dev/null || true
+  echo "  Installed ${SNDBX_BIN} and ${BP_BIN}"
+elif [ ! -f "${SNDBX_BIN}" ]; then
+  cat > "${SNDBX_BIN}" <<EOF
 #!/usr/bin/env bash
 # Temporary bootstrap dispatcher until native Go binary is compiled
+if command -v go >/dev/null 2>&1 && [ -d "${SANDBOX_ROOT}" ]; then
+  echo "Compiling native sndbx binary..."
+  (cd "${SANDBOX_ROOT}" && go build -o "${SNDBX_BIN}" ./cmd/sndbx && go build -o "${BP_BIN}" ./cmd/bp)
+  exec "${SNDBX_BIN}" "\$@"
+fi
 echo "Agent Sandbox CLI (sndbx)"
-echo "Run 'sndbx help' for commands once built, or build via: cd ~/.local/share/agent-sandbox/repo && make build-cli"
+echo "Go compiler required to build native binaries. Please install Go and run: cd ${SANDBOX_ROOT} && make build-cli"
+exit 1
 EOF
   chmod +x "${SNDBX_BIN}"
 fi

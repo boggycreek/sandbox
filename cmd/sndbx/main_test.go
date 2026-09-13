@@ -57,6 +57,13 @@ func TestSndbxAgentDomain(t *testing.T) {
 		t.Errorf("agent empty failed")
 	}
 
+	for _, h := range []string{"help", "-h", "--help"} {
+		code, out, _ := runSndbx([]string{"agent", h})
+		if code != 0 || !strings.Contains(out, "Usage: sndbx agent") {
+			t.Errorf("agent %s failed", h)
+		}
+	}
+
 	// Unknown agent sub
 	code, _, errOut = runSndbx([]string{"agent", "unknownsub"})
 	if code != 1 || !strings.Contains(errOut, "unknown command") {
@@ -187,6 +194,13 @@ func TestSndbxWithLiveValkey(t *testing.T) {
 		t.Errorf("infra empty should fail")
 	}
 
+	for _, h := range []string{"help", "-h", "--help"} {
+		code, out, _ := runSndbx([]string{"infra", h})
+		if code != 0 || !strings.Contains(out, "Usage: sndbx infra") {
+			t.Errorf("infra %s failed", h)
+		}
+	}
+
 	code, _, errOut := runSndbx([]string{"infra", "unknown"})
 	if code != 1 || !strings.Contains(errOut, "unknown command") {
 		t.Errorf("infra unknown failed")
@@ -194,6 +208,14 @@ func TestSndbxWithLiveValkey(t *testing.T) {
 }
 
 func TestSndbxRepoAndGUIDomains(t *testing.T) {
+	// Repo help
+	for _, h := range []string{"help", "-h", "--help"} {
+		code, out, _ := runSndbx([]string{"repo", h})
+		if code != 0 || !strings.Contains(out, "Usage: sndbx repo") {
+			t.Errorf("repo %s failed", h)
+		}
+	}
+
 	// Repo path
 	code, out, _ := runSndbx([]string{"repo", "path"})
 	if code != 0 || len(strings.TrimSpace(out)) == 0 {

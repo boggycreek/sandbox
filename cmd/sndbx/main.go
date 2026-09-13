@@ -104,6 +104,34 @@ func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout,
 	subArgs := args[1:]
 
 	switch sub {
+	case "help", "-h", "--help":
+		fmt.Fprintln(stdout, `Usage: sndbx agent <command> [args...]
+
+Commands:
+  create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
+    Provision a new named agent with persistent configuration, keys, and volume.
+
+  start <name>
+    Start the agent's daemon container with Podman.
+
+  connect <name>
+    Attach interactively to the agent container's tmux supervisor.
+
+  ssh <name>
+    Connect directly via SSH to the agent's unprivileged environment.
+
+  stop [name] [--all]
+    Stop a running agent container (or all agents with --all).
+
+  list [--json]
+    List all configured agents, container states, images, and SSH endpoints.
+
+  clean <name>
+    Remove the agent container while preserving its home directory volume.
+
+  destroy <name> [--force]
+    Permanently purge the agent container, home volume, and secrets.`)
+		return 0
 	case "create":
 		return handleAgentCreate(ctx, paths, subArgs, stdout, stderr)
 	case "start":
@@ -454,6 +482,15 @@ func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout,
 
 	sub := strings.ToLower(args[0])
 	switch sub {
+	case "help", "-h", "--help":
+		fmt.Fprintln(stdout, `Usage: sndbx infra <command>
+
+Commands:
+  up      Start shared Valkey and Gitea services via Podman Compose
+  down    Stop shared infrastructure services
+  list    Show status of running infrastructure containers`)
+		return 0
+
 	case "up":
 		fmt.Fprintln(stdout, "Starting shared infrastructure (Valkey & Gitea)...")
 		cmd := exec.CommandContext(ctx, "podman", "compose", "-f", "infra/docker-compose.yml", "up", "-d")
@@ -492,6 +529,14 @@ func handleRepo(ctx context.Context, paths config.Paths, args []string, stdout, 
 	}
 	sub := strings.ToLower(args[0])
 	switch sub {
+	case "help", "-h", "--help":
+		fmt.Fprintln(stdout, `Usage: sndbx repo <command>
+
+Commands:
+  build         Compile native CLI binaries (sndbx, bp) into bin/
+  build-images  Build all OCI container images (base, opencode, claude, agy)
+  path          Print absolute path to the local repository checkout`)
+		return 0
 	case "path":
 		cwd, _ := os.Getwd()
 		fmt.Fprintln(stdout, cwd)
