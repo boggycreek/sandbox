@@ -14,7 +14,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage lint lint-go lint-shell sca vulncheck format clean build build-cli build-libbp
+.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck format clean build build-cli build-libbp
 
 all: check build
 
@@ -80,6 +80,10 @@ test-coverage: ## Run tests and enforce >90% code coverage threshold
 	else \
 		echo "Notice: go.mod not yet initialized. Skipping coverage check."; \
 	fi
+
+test-install: ## Run containerized installation and bootstrap smoke test in isolated Podman container
+	@echo "==> Running containerized installation smoke test..."
+	@./test/container-install/test-install.sh
 
 # --- Security & Software Composition Analysis (SCA) ---
 
