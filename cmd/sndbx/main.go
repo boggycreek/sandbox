@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
 	"github.com/boggycreek/agent-sandbox/pkg/runtime"
 )
@@ -211,6 +212,9 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	// Register ACL with live Valkey instance if running
 	registerValkeyACL(ctx, cfg, paths)
 
+	// Register User, Key, and Org Membership with live Gitea instance if running
+	registerGiteaUser(ctx, cfg, paths)
+
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
 	fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
 	fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
@@ -258,6 +262,34 @@ func registerValkeyACL(ctx context.Context, cfg *config.AgentConfig, paths confi
 		Kind:   "agent",
 		PubKey: cfg.PublicKeyB64,
 	})
+}
+
+func registerGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) {
+	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	if adminPass == "" {
+		adminPass = "admin_backplane_pass"
+	}
+
+	client := gitea.NewClient(gitea.ClientConfig{
+		BaseURL:   "http://127.0.0.1:3000",
+		AdminUser: "giteaadmin",
+		AdminPass: adminPass,
+		Timeout:   2 * time.Second,
+	})
+
+	// 1. Provision user account in Gitea
+	if err := client.EnsureUser(ctx, cfg.Name, cfg.Password, fmt.Sprintf("%s@local.sndbx", cfg.Name)); err != nil {
+		return
+	}
+
+	// 2. Add public SSH key if host IDE key exists
+	sshKeyPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
+	if keyData, err := os.ReadFile(sshKeyPub); err == nil && len(keyData) > 0 {
+		_ = client.AddUserSSHKey(ctx, cfg.Name, fmt.Sprintf("%s-ide-key", cfg.Name), string(keyData))
+	}
+
+	// 3. Add user to default fleet organization
+	_ = client.AddOrgMember(ctx, "fleet", cfg.Name)
 }
 
 func handleAgentStart(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {

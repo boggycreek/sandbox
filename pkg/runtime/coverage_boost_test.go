@@ -103,6 +103,8 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	// Test StartInfraStack with defaults and already-running paths
 	_ = StartInfraStack(ctx, paths, "", "", "")
 	_ = StartInfraStack(ctx, paths, "test_admin_pass", "test_human_pass", "test_human_name")
+	_ = BootstrapGitea(ctx, "")
+	_ = BootstrapGitea(ctx, "custom_pass")
 	infraList, err := InspectInfraStack(ctx)
 	if err != nil || len(infraList) == 0 {
 		t.Errorf("InspectInfraStack failed: %v", err)

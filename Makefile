@@ -117,7 +117,9 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, retention-sweep)
 	@if [ -f go.mod ]; then \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./cmd/sndbx; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
+		if [ -d ./cmd/retention-sweep ]; then \
+			$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
+		fi; \
 		echo "Binaries built in $(BIN_DIR)/"; \
 	else \
 		echo "Notice: go.mod not yet initialized. Skipping build."; \

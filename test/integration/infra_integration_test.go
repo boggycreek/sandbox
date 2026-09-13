@@ -7,12 +7,15 @@ package integration
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/boggycreek/agent-sandbox/pkg/libbp"
 )
 
 func TestInfraLifecycleIntegration(t *testing.T) {
@@ -75,6 +78,46 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 	if !strings.Contains(listOutput, "running") {
 		t.Errorf("expected 'running' status in list output: %s", listOutput)
 	}
+
+	// 2b. Create agent and verify provisioning in Valkey & Gitea
+	t.Log("Creating agent and testing Valkey & Gitea user provisioning...")
+	createCmd := exec.CommandContext(ctx, binPath, "agent", "create", "infra-test-agent", "as", "base", "--role", "tester")
+	createCmd.Env = os.Environ()
+	out, err = createCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("'sndbx agent create' failed: %v\nOutput: %s", err, string(out))
+	}
+
+	// Verify agent exists in Gitea
+	giteaUserURL := "http://127.0.0.1:3000/api/v1/users/infra-test-agent"
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaUserURL, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Errorf("expected Gitea user infra-test-agent to exist (status: %v, err: %v)", resp.StatusCode, err)
+	}
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+
+	// Verify agent identity in Valkey
+	vClient, err := libbp.Dial(ctx, libbp.ClientConfig{
+		Host:     "127.0.0.1",
+		Port:     6379,
+		Username: "admin",
+		Password: "admin_backplane_pass",
+	})
+	if err == nil {
+		idRecord, err := vClient.GetIdentity(ctx, "infra-test-agent")
+		if err != nil || idRecord.Name != "infra-test-agent" {
+			t.Errorf("expected Valkey identity for infra-test-agent, got %+v (err: %v)", idRecord, err)
+		}
+		_ = vClient.Close()
+	}
+
+	// Clean up created agent
+	destroyCmd := exec.CommandContext(ctx, binPath, "agent", "destroy", "infra-test-agent")
+	destroyCmd.Env = os.Environ()
+	_ = destroyCmd.Run()
 
 	// 3. sndbx infra down
 	t.Log("Stopping infrastructure via 'sndbx infra down'...")

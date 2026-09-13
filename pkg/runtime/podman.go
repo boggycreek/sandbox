@@ -10,13 +10,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 )
 
 // ContainerInfo describes a container's runtime state
@@ -332,6 +335,75 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (
 			}
 		}
 	}
+
+	// 3. Bootstrap Gitea admin user and default fleet organization
+	_ = BootstrapGitea(ctx, adminPass)
+
+	return nil
+}
+
+// BootstrapGitea initializes the admin user, default organization, and standard repositories in Gitea
+func BootstrapGitea(ctx context.Context, adminPass string) error {
+	if adminPass == "" {
+		adminPass = "admin_backplane_pass"
+	}
+
+	// Wait up to 10 seconds for Gitea HTTP service to become responsive
+	httpClient := &http.Client{Timeout: 1 * time.Second}
+	deadline := time.Now().Add(10 * time.Second)
+	ready := false
+	for time.Now().Before(deadline) {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:3000/api/v1/version", nil)
+		resp, err := httpClient.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			_ = resp.Body.Close()
+			ready = true
+			break
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	if !ready {
+		return fmt.Errorf("timed out waiting for gitea service")
+	}
+
+	// Ensure admin user via container CLI
+	createAdminCmd := exec.CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
+		"gitea", "admin", "user", "create",
+		"--admin",
+		"--username", "giteaadmin",
+		"--password", adminPass,
+		"--email", "giteaadmin@local.sndbx",
+		"--must-change-password=false",
+	)
+	_ = createAdminCmd.Run()
+
+	// Ensure password is sync'd in case user already existed with different password
+	changePassCmd := exec.CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
+		"gitea", "admin", "user", "change-password",
+		"--username", "giteaadmin",
+		"--password", adminPass,
+		"--must-change-password=false",
+	)
+	_ = changePassCmd.Run()
+
+	// Ensure fleet organization and repos via API
+	client := gitea.NewClient(gitea.ClientConfig{
+		BaseURL:   "http://127.0.0.1:3000",
+		AdminUser: "giteaadmin",
+		AdminPass: adminPass,
+		Timeout:   3 * time.Second,
+	})
+
+	_ = client.EnsureOrg(ctx, "fleet")
+	_ = client.EnsureRepo(ctx, "fleet", "tools", "Fleet shared utility repositories", true)
+	_ = client.EnsureRepo(ctx, "fleet", "tasks", "Fleet task tracking backlog", true)
 
 	return nil
 }

@@ -1,0 +1,228 @@
+// Copyright (c) 2026 Boggy Creek Software LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file.
+
+package gitea
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+func TestGiteaClientSuite(t *testing.T) {
+	// Mock Gitea API server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		switch {
+		case r.Method == http.MethodGet && path == "/api/v1/users/existing-user":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"username":"existing-user"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/users/new-user":
+			w.WriteHeader(http.StatusNotFound)
+
+		case r.Method == http.MethodGet && path == "/api/v1/users/conflict-user":
+			w.WriteHeader(http.StatusNotFound)
+
+		case r.Method == http.MethodPost && path == "/api/v1/admin/users":
+			var payload map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if payload["username"] == "fail-user" {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"message":"server error"}`))
+				return
+			}
+			if payload["username"] == "conflict-user" {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"message":"user already exists"}`))
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":10,"username":"new-user"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/admin/users/test-agent/keys":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":1,"title":"test-agent-key"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/admin/users/conflict-key-user/keys":
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"key already exists"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/admin/users/fail-key-user/keys":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"message":"invalid key"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/orgs/existing-org":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"username":"existing-org"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/orgs/new-org":
+			w.WriteHeader(http.StatusNotFound)
+
+		case r.Method == http.MethodGet && path == "/api/v1/orgs/conflict-org":
+			w.WriteHeader(http.StatusNotFound)
+
+		case r.Method == http.MethodPost && path == "/api/v1/orgs":
+			var payload map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if payload["username"] == "conflict-org" {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			if payload["username"] == "fail-org-create" {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":2,"username":"new-org"}`))
+
+		case r.Method == http.MethodPut && path == "/api/v1/orgs/fleet/members/test-agent":
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodPut && path == "/api/v1/orgs/fail-org/members/test-agent":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"org not found"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/existing-repo":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"name":"existing-repo"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/new-repo":
+			w.WriteHeader(http.StatusNotFound)
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/conflict-repo":
+			w.WriteHeader(http.StatusNotFound)
+
+		case r.Method == http.MethodPost && path == "/api/v1/orgs/fleet/repos":
+			var payload map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if payload["name"] == "conflict-repo" {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			if payload["name"] == "fail-repo" {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":100,"name":"new-repo"}`))
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Default constructor
+	defaultClient := NewClient(ClientConfig{})
+	if defaultClient.cfg.BaseURL != "http://127.0.0.1:3000" {
+		t.Errorf("expected default baseURL, got %s", defaultClient.cfg.BaseURL)
+	}
+
+	client := NewClient(ClientConfig{
+		BaseURL:   ts.URL,
+		AdminUser: "admin",
+		AdminPass: "secret",
+		Token:     "mock-token",
+	})
+
+	// Basic auth client (Token empty)
+	basicAuthClient := NewClient(ClientConfig{
+		BaseURL:   ts.URL,
+		AdminUser: "admin",
+		AdminPass: "secret",
+	})
+
+	// 1. EnsureUser
+	if err := client.EnsureUser(ctx, "existing-user", "pass", ""); err != nil {
+		t.Errorf("EnsureUser existing-user failed: %v", err)
+	}
+	if err := basicAuthClient.EnsureUser(ctx, "new-user", "pass", "custom@local.sndbx"); err != nil {
+		t.Errorf("EnsureUser new-user failed: %v", err)
+	}
+	if err := client.EnsureUser(ctx, "conflict-user", "pass", ""); err != nil {
+		t.Errorf("EnsureUser conflict-user should succeed: %v", err)
+	}
+	if err := client.EnsureUser(ctx, "fail-user", "pass", ""); err == nil {
+		t.Errorf("expected error on fail-user")
+	}
+	if err := client.EnsureUser(ctx, "", "pass", ""); err == nil {
+		t.Errorf("expected error on empty username")
+	}
+
+	// 2. AddUserSSHKey
+	if err := client.AddUserSSHKey(ctx, "test-agent", "", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA test"); err != nil {
+		t.Errorf("AddUserSSHKey failed: %v", err)
+	}
+	if err := client.AddUserSSHKey(ctx, "conflict-key-user", "title", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA test"); err != nil {
+		t.Errorf("AddUserSSHKey conflict should succeed: %v", err)
+	}
+	if err := client.AddUserSSHKey(ctx, "fail-key-user", "title", "ssh-bad"); err == nil {
+		t.Errorf("expected error on fail-key-user")
+	}
+	if err := client.AddUserSSHKey(ctx, "", "", ""); err == nil {
+		t.Errorf("expected error on empty key args")
+	}
+
+	// 3. EnsureOrg
+	if err := client.EnsureOrg(ctx, "existing-org"); err != nil {
+		t.Errorf("EnsureOrg existing-org failed: %v", err)
+	}
+	if err := client.EnsureOrg(ctx, "new-org"); err != nil {
+		t.Errorf("EnsureOrg new-org failed: %v", err)
+	}
+	if err := client.EnsureOrg(ctx, "conflict-org"); err != nil {
+		t.Errorf("EnsureOrg conflict-org should succeed: %v", err)
+	}
+	if err := client.EnsureOrg(ctx, "fail-org-create"); err == nil {
+		t.Errorf("expected error on fail-org-create")
+	}
+	if err := client.EnsureOrg(ctx, ""); err == nil {
+		t.Errorf("expected error on empty org name")
+	}
+
+	// 4. AddOrgMember
+	if err := client.AddOrgMember(ctx, "fleet", "test-agent"); err != nil {
+		t.Errorf("AddOrgMember failed: %v", err)
+	}
+	if err := client.AddOrgMember(ctx, "fail-org", "test-agent"); err == nil {
+		t.Errorf("expected error on fail-org member add")
+	}
+	if err := client.AddOrgMember(ctx, "", ""); err == nil {
+		t.Errorf("expected error on empty member add args")
+	}
+
+	// 5. EnsureRepo
+	if err := client.EnsureRepo(ctx, "fleet", "existing-repo", "", true); err != nil {
+		t.Errorf("EnsureRepo existing failed: %v", err)
+	}
+	if err := client.EnsureRepo(ctx, "fleet", "new-repo", "tools repo", true); err != nil {
+		t.Errorf("EnsureRepo new failed: %v", err)
+	}
+	if err := client.EnsureRepo(ctx, "fleet", "conflict-repo", "", true); err != nil {
+		t.Errorf("EnsureRepo conflict should succeed: %v", err)
+	}
+	if err := client.EnsureRepo(ctx, "fleet", "fail-repo", "", true); err == nil {
+		t.Errorf("expected error on fail-repo")
+	}
+	if err := client.EnsureRepo(ctx, "", "", "", true); err == nil {
+		t.Errorf("expected error on empty repo args")
+	}
+
+	// Network / URL error handling
+	badClient := NewClient(ClientConfig{BaseURL: "http://127.0.0.1:64999", Timeout: 10 * time.Millisecond})
+	_ = badClient.EnsureUser(ctx, "test", "pass", "")
+	_ = badClient.AddUserSSHKey(ctx, "test", "key", "ssh-ed25519 AAA")
+	_ = badClient.EnsureOrg(ctx, "org")
+	_ = badClient.AddOrgMember(ctx, "org", "user")
+	_ = badClient.EnsureRepo(ctx, "org", "repo", "", false)
+}

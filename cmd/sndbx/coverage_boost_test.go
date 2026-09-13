@@ -187,9 +187,14 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("ssh nonexistent should fail")
 	}
 
-	// 8. registerValkeyACL direct test
+	// 8. registerValkeyACL & registerGiteaUser direct test
 	cfg, _ := config.NewAgentConfig("acl-test-agent", "base", "tester")
 	registerValkeyACL(context.Background(), cfg, paths)
+	registerGiteaUser(context.Background(), cfg, paths)
+
+	// With pub key
+	_ = os.WriteFile(paths.IDEKeyFile+".pub", []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA test"), 0644)
+	registerGiteaUser(context.Background(), cfg, paths)
 
 	// 9. Corrupted JSON file in list & handleAgentList error branch
 	corruptFile := filepath.Join(paths.AgentsDir, "corrupted.json")
