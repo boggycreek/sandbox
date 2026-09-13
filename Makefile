@@ -14,7 +14,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck format clean build build-cli build-libbp
+.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck format clean clean-test-env clean-all build build-cli build-libbp
 
 all: check build
 
@@ -42,7 +42,7 @@ lint-go: ## Run golangci-lint on Go code
 lint-shell: ## Run shellcheck on bash scripts
 	@echo "==> Running shellcheck..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck install.sh dev-setup.sh; \
+		shellcheck install.sh dev-setup.sh scripts/clean-test-env.sh; \
 	else \
 		echo "Warning: shellcheck not installed. Run ./dev-setup.sh to install."; \
 	fi
@@ -160,3 +160,8 @@ build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OC
 
 clean: ## Clean build and test coverage artifacts
 	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)
+
+clean-test-env: ## Clean stale test containers, networks, and orphaned test processes
+	@./scripts/clean-test-env.sh
+
+clean-all: clean clean-test-env ## Clean all artifacts and stale test runtime state

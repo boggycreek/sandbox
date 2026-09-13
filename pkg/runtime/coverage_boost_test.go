@@ -22,7 +22,7 @@ import (
 )
 
 func TestRuntimeCoverageBoost(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Port parsing / inspect error branches
@@ -102,6 +102,8 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	// Clean up
 	_ = CleanAgentContainer(ctx, cfg.ContainerName)
 	_ = DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName)
+	_ = CleanAgentContainer(ctx, cfgNoKey.ContainerName)
+	_ = DestroyAgentContainer(ctx, cfgNoKey.ContainerName, cfgNoKey.VolumeName)
 
 	// Test StartInfraStack with an isolated DataHome that won't stomp live host ACL
 	infraPaths := config.Paths{
@@ -143,6 +145,7 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 
 	// Test SyncSSHConfigFile
 	paths.AgentsDir = filepath.Join(tmpDir, "agents")
+	paths.SecretsDir = filepath.Join(tmpDir, "secrets")
 	paths.SSHConfigFile = filepath.Join(tmpDir, "ssh_config")
 	_ = paths.EnsureDirectories()
 

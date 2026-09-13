@@ -34,6 +34,9 @@ COPY images/agents/agy/agy-config.json /etc/agy/agy-config.json
 COPY images/agents/agy/agy-entrypoint.sh /usr/local/bin/agy-entrypoint.sh
 RUN chmod +x /usr/local/bin/agy-entrypoint.sh
 
+# Ensure home directory ownership belongs to agent
+RUN chown -R agent:agent /home/agent
+
 USER agent
 WORKDIR /home/agent/workspace
 
