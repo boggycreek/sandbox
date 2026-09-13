@@ -4,41 +4,46 @@
 # Use of this source code is governed by an MIT-style
 # license that can be found in the LICENSE file.
 
-# Deterministic cleanup for test containers, orphaned conmon/slirp processes,
+# Deterministic cleanup for ephemeral test containers, orphaned conmon/slirp processes,
 # and stale rootless network namespaces.
+#
+# NOTE: This script targets ONLY ephemeral test instances (test-*, unit-test-*, mock-start-*).
+# Persistent shared infrastructure containers (agent-sandbox-valkey, agent-sandbox-gitea)
+# and their associated networks and volumes are explicitly protected and NEVER terminated.
 
 set -euo pipefail
 
 UID_NUM="$(id -u)"
 echo "==> Cleaning test environment for user ${UID_NUM}..."
 
-# 1. Terminate orphaned test containers if any exist
+# 1. Terminate orphaned ephemeral test containers if any exist
 if command -v podman >/dev/null 2>&1; then
-  # Remove test-valkey-* or test-podman-* or infra-test-* containers
-  TEST_CONTAINERS=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^(test-valkey-|test-podman-|infra-test-|test-gitea-)' || true)
+  # Match ephemeral test container prefixes while explicitly excluding persistent infra (agent-sandbox-*)
+  TEST_CONTAINERS=$(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^(test-|infra-test-|unit-test-|mock-start-)' | grep -v '^agent-sandbox-' || true)
   if [ -n "${TEST_CONTAINERS}" ]; then
-    echo "Stopping test containers: ${TEST_CONTAINERS}"
-    echo "${TEST_CONTAINERS}" | xargs -r podman stop -t 2 2>/dev/null || true
-    echo "${TEST_CONTAINERS}" | xargs -r podman rm -f 2>/dev/null || true
+    echo "Stopping and removing ephemeral test containers: ${TEST_CONTAINERS}"
+    echo "${TEST_CONTAINERS}" | xargs -r -n 1 podman rm -f 2>/dev/null || true
   fi
 
-  # Remove test networks and volumes
-  TEST_NETS=$(podman network ls --format '{{.Name}}' 2>/dev/null | grep -E '^(test-|infra-test-)' || true)
+  # Remove ephemeral test networks (safeguarding agent-sandbox-infra)
+  TEST_NETS=$(podman network ls --format '{{.Name}}' 2>/dev/null | grep -E '^(test-|infra-test-|unit-test-)' | grep -v '^agent-sandbox-' || true)
   if [ -n "${TEST_NETS}" ]; then
-    echo "Removing test networks: ${TEST_NETS}"
-    echo "${TEST_NETS}" | xargs -r podman network rm -f 2>/dev/null || true
+    echo "Removing ephemeral test networks: ${TEST_NETS}"
+    echo "${TEST_NETS}" | xargs -r -n 1 podman network rm -f 2>/dev/null || true
   fi
 
-  TEST_VOLS=$(podman volume ls --format '{{.Name}}' 2>/dev/null | grep -E '^(test-|infra-test-)' || true)
+  # Remove ephemeral test volumes (safeguarding agent-sandbox-valkey-data, agent-sandbox-gitea-data)
+  TEST_VOLS=$(podman volume ls --format '{{.Name}}' 2>/dev/null | grep -E '^(test-|infra-test-|unit-test-|mock-start-)' | grep -v '^agent-sandbox-' || true)
   if [ -n "${TEST_VOLS}" ]; then
-    echo "Removing test volumes: ${TEST_VOLS}"
-    echo "${TEST_VOLS}" | xargs -r podman volume rm -f 2>/dev/null || true
+    echo "Removing ephemeral test volumes: ${TEST_VOLS}"
+    echo "${TEST_VOLS}" | xargs -r -n 1 podman volume rm -f 2>/dev/null || true
   fi
 fi
 
-# 2. Terminate orphaned conmon, slirp4netns, and rootlessport test processes
-# Only target processes owned by this user
-pkill -9 -u "${UID_NUM}" -f "test-valkey|test-podman|infra-test" 2>/dev/null || true
+# 2. Terminate orphaned conmon, slirp4netns, and rootlessport test processes.
+# Explicitly target ephemeral test containers only; NEVER kill persistent infrastructure
+# services (agent-sandbox-valkey, agent-sandbox-gitea).
+pkill -9 -u "${UID_NUM}" -f "(conmon|slirp4netns|rootlessport).*(test-valkey|test-infra-|test-gitea|unit-test|test-podman|mock-start)" 2>/dev/null || true
 
 # 3. Clean up stale netns descriptors and rootless-netns lockfiles in /run/user/<uid>
 NETNS_DIR="/run/user/${UID_NUM}/netns"

@@ -148,8 +148,8 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent:z", cfg.VolumeName))
 
 	containerBPHost := bpHost
-	if containerBPHost == "localhost" || containerBPHost == "127.0.0.1" || containerBPHost == "" {
-		containerBPHost = "agent-sandbox-valkey"
+	if containerBPHost == "localhost" || containerBPHost == "127.0.0.1" || containerBPHost == "::1" || containerBPHost == "" {
+		containerBPHost = infraValkeyContainer
 	}
 
 	args := []string{
