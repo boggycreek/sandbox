@@ -26,3 +26,5 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00018 — Quality Engineering, >90% Test Coverage, Linters, and SCA](00018-QualityEngineeringTestingAndSCA.md)
 - [00019 — Podman as Required Dev and Runtime Dependency](00019-PodmanAsRequiredDependency.md)
 - [00020 — Agent Creation and Lifecycle Separation in sndbx CLI](00020-AgentCreationAndLifecycleSeparation.md)
+- [00021 — Local OpenAI-Compatible Inference Support and Host Gateway Routing](00021-LocalOpenAICompatibleInferenceSupport.md)
+

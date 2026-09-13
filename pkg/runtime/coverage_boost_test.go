@@ -62,6 +62,9 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 		ContainerName: "mock-start-container",
 		VolumeName:    "mock-start-vol",
 		Image:         "agent-sandbox-base:latest",
+		ModelURL:      "http://localhost:11434/v1",
+		ModelName:     "qwen2.5-coder:32b",
+		ModelAPIKey:   "ollama-secret",
 	}
 
 	// Ensure network and volume paths execute
@@ -72,6 +75,16 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 
 	// Start agent container when podman exists
 	_ = StartAgentContainer(ctx, cfg, paths, "127.0.0.1", 6379)
+
+	// Also start with default dummy key branch (empty ModelAPIKey)
+	cfgNoKey := &config.AgentConfig{
+		Name:          "mock-start-nokey",
+		ContainerName: "mock-start-nokey-container",
+		VolumeName:    "mock-start-nokey-vol",
+		Image:         "agent-sandbox-base:latest",
+		ModelURL:      "http://127.0.0.1:8000/v1",
+	}
+	_ = StartAgentContainer(ctx, cfgNoKey, paths, "127.0.0.1", 6379)
 	// Query state
 	info, _ := InspectAgentContainer(ctx, cfg.ContainerName)
 	if info != nil {

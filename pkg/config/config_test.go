@@ -48,11 +48,11 @@ func TestPathsAndAgentConfig(t *testing.T) {
 		t.Errorf("expected error for empty agent name")
 	}
 
-	cfg, err := NewAgentConfig("test-agent", "opencode", "")
+	cfg, err := NewAgentConfig("test-agent", "opencode", "", "http://localhost:11434/v1", "llama3", "secret-key")
 	if err != nil {
 		t.Fatalf("NewAgentConfig failed: %v", err)
 	}
-	if cfg.Name != "test-agent" || cfg.Role != "coding-agent" || !strings.Contains(cfg.ContainerName, "test-agent") {
+	if cfg.Name != "test-agent" || cfg.Role != "coding-agent" || cfg.ModelURL != "http://localhost:11434/v1" || cfg.ModelName != "llama3" || cfg.ModelAPIKey != "secret-key" || !strings.Contains(cfg.ContainerName, "test-agent") {
 		t.Errorf("unexpected agent config: %+v", cfg)
 	}
 

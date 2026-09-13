@@ -77,7 +77,7 @@ Domains:
   gui         Launch native desktop Backplane GUI client
 
 Agent Commands:
-  sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>]
+  sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
   sndbx agent start <name>
   sndbx agent connect <name>
   sndbx agent ssh <name>
@@ -128,13 +128,16 @@ func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout,
 
 func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>]")
+		fmt.Fprintln(stderr, "Usage: sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]")
 		return 1
 	}
 
 	agentName := args[0]
 	var image string
 	var role string
+	var modelURL string
+	var modelName string
+	var modelKey string
 
 	// Check natural language 'as <type>'
 	if len(args) >= 3 && strings.ToLower(args[1]) == "as" {
@@ -146,6 +149,9 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	fs.SetOutput(stderr)
 	fs.StringVar(&image, "image", image, "OCI image or preset (base, opencode, claude, agy)")
 	fs.StringVar(&role, "role", "coding-agent", "Role metadata description")
+	fs.StringVar(&modelURL, "model-url", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible inference endpoint URL")
+	fs.StringVar(&modelName, "model-name", os.Getenv("OPENAI_MODEL"), "Target model name")
+	fs.StringVar(&modelKey, "model-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
 
 	var flagArgs []string
 	if len(args) >= 3 && strings.ToLower(args[1]) == "as" {
@@ -161,7 +167,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		image = "base"
 	}
 
-	cfg, err := config.NewAgentConfig(agentName, image, role)
+	cfg, err := config.NewAgentConfig(agentName, image, role, modelURL, modelName, modelKey)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
 		return 1
@@ -178,6 +184,12 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
 	fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
 	fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
+	if cfg.ModelURL != "" {
+		fmt.Fprintf(stdout, "  Model URL:  %s\n", cfg.ModelURL)
+	}
+	if cfg.ModelName != "" {
+		fmt.Fprintf(stdout, "  Model Name: %s\n", cfg.ModelName)
+	}
 	fmt.Fprintf(stdout, "  Container:  %s\n", cfg.ContainerName)
 	fmt.Fprintf(stdout, "  Volume:     %s\n", cfg.VolumeName)
 	fmt.Fprintf(stdout, "To start: sndbx agent start %s\n", cfg.Name)

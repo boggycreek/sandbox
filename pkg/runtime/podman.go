@@ -104,6 +104,37 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"-e", fmt.Sprintf("BP_PORT=%d", bpPort),
 		"-e", fmt.Sprintf("BP_SIGNING_KEY_PEM=%s", cfg.SigningKeyPEM),
 	}
+
+	if cfg.ModelURL != "" {
+		// Translate localhost / 127.0.0.1 to host.containers.internal for Podman bridge access
+		containerModelURL := cfg.ModelURL
+		containerModelURL = strings.ReplaceAll(containerModelURL, "://localhost", "://host.containers.internal")
+		containerModelURL = strings.ReplaceAll(containerModelURL, "://127.0.0.1", "://host.containers.internal")
+
+		args = append(args,
+			"-e", fmt.Sprintf("OPENAI_BASE_URL=%s", containerModelURL),
+			"-e", fmt.Sprintf("OPENAI_API_BASE=%s", containerModelURL),
+			"-e", fmt.Sprintf("MODEL_URL=%s", containerModelURL),
+		)
+	}
+
+	if cfg.ModelName != "" {
+		args = append(args,
+			"-e", fmt.Sprintf("MODEL_NAME=%s", cfg.ModelName),
+			"-e", fmt.Sprintf("OPENAI_MODEL=%s", cfg.ModelName),
+			"-e", fmt.Sprintf("LLM_MODEL=%s", cfg.ModelName),
+		)
+	}
+
+	if cfg.ModelAPIKey != "" {
+		args = append(args,
+			"-e", fmt.Sprintf("OPENAI_API_KEY=%s", cfg.ModelAPIKey),
+		)
+	} else if cfg.ModelURL != "" {
+		// Default dummy key for endpoints that require header presence (e.g. LiteLLM/vLLM)
+		args = append(args, "-e", "OPENAI_API_KEY=local-openai-key")
+	}
+
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 

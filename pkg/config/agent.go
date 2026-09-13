@@ -36,6 +36,9 @@ type AgentConfig struct {
 	Password      string    `json:"password"`
 	SigningKeyPEM string    `json:"signing_key_pem"`
 	PublicKeyB64  string    `json:"public_key_b64"`
+	ModelURL      string    `json:"model_url,omitempty"`
+	ModelName     string    `json:"model_name,omitempty"`
+	ModelAPIKey   string    `json:"model_api_key,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
@@ -52,7 +55,7 @@ func ResolveImage(input string) string {
 }
 
 // NewAgentConfig creates a newly initialized AgentConfig with random credentials
-func NewAgentConfig(name, imageInput, role string) (*AgentConfig, error) {
+func NewAgentConfig(name, imageInput, role string, modelOpts ...string) (*AgentConfig, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return nil, fmt.Errorf("agent name cannot be empty")
@@ -60,6 +63,17 @@ func NewAgentConfig(name, imageInput, role string) (*AgentConfig, error) {
 
 	if role == "" {
 		role = "coding-agent"
+	}
+
+	var modelURL, modelName, modelAPIKey string
+	if len(modelOpts) > 0 {
+		modelURL = strings.TrimSpace(modelOpts[0])
+	}
+	if len(modelOpts) > 1 {
+		modelName = strings.TrimSpace(modelOpts[1])
+	}
+	if len(modelOpts) > 2 {
+		modelAPIKey = strings.TrimSpace(modelOpts[2])
 	}
 
 	// Generate random 32-character hex password
@@ -89,6 +103,9 @@ func NewAgentConfig(name, imageInput, role string) (*AgentConfig, error) {
 		Password:      password,
 		SigningKeyPEM: pemStr,
 		PublicKeyB64:  pubB64,
+		ModelURL:      modelURL,
+		ModelName:     modelName,
+		ModelAPIKey:   modelAPIKey,
 		CreatedAt:     time.Now().UTC(),
 	}, nil
 }
