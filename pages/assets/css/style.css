@@ -199,17 +199,11 @@ header {
 
 .terminal-header {
   background: #161b22;
-  padding: 0.5rem 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.terminal-header-left {
+  padding: 0.6rem 1rem;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .dot {
@@ -231,7 +225,7 @@ header {
 .terminal-body {
   padding: 1.5rem;
   font-family: var(--font-mono);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: #c9d1d9;
   line-height: 1.7;
 }
@@ -242,35 +236,6 @@ header {
 
 .terminal-body .comment {
   color: var(--text-muted);
-}
-
-/* Header Copy Button */
-.terminal-copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid transparent;
-  padding: 0.25rem 0.6rem;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.terminal-copy-btn:hover {
-  color: var(--text-main);
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: var(--border-color);
-}
-
-.terminal-copy-btn.copied {
-  color: var(--accent-green);
-  background-color: rgba(0, 230, 118, 0.1);
-  border-color: rgba(0, 230, 118, 0.3);
 }
 
 .features-section {
@@ -328,68 +293,6 @@ header {
 .feature-card p {
   color: var(--text-muted);
   font-size: 0.95rem;
-}
-
-/* Architecture Section */
-.arch-diagram {
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 2.5rem;
-  margin-bottom: 2.5rem;
-}
-
-.arch-layer {
-  border: 1px dashed var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-  background: rgba(10, 14, 20, 0.4);
-}
-
-.arch-layer:last-child {
-  margin-bottom: 0;
-}
-
-.arch-layer-title {
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent-cyan);
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.arch-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1rem;
-}
-
-.arch-node {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 1rem 1.25rem;
-}
-
-.arch-node h4 {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #fff;
-  margin-bottom: 0.25rem;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.arch-node p {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  line-height: 1.4;
 }
 
 footer {
