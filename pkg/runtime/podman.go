@@ -433,3 +433,41 @@ func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
 	return results, nil
 }
 
+// FormatSSHConfigBlock returns a standard OpenSSH host block string.
+func FormatSSHConfigBlock(name string, port int, keyFile string) string {
+	return fmt.Sprintf("Host sndbx-%s\n    HostName 127.0.0.1\n    Port %d\n    User agent\n    IdentityFile %s\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n", name, port, keyFile)
+}
+
+// SyncSSHConfigFile updates the managed SSH config file with Host blocks for all currently running agents.
+func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
+	configs, err := config.ListAgentConfigs(paths)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString("# Agent Sandbox Auto-Generated SSH Configuration\n")
+	buf.WriteString("# Managed automatically by sndbx. Do not edit manually.\n\n")
+
+	runningCount := 0
+	for _, c := range configs {
+		port, err := GetAgentSSHPort(ctx, c.ContainerName)
+		if err == nil && port > 0 {
+			if runningCount > 0 {
+				buf.WriteString("\n")
+			}
+			buf.WriteString(FormatSSHConfigBlock(c.Name, port, paths.IDEKeyFile))
+			runningCount++
+		}
+	}
+
+	if paths.SSHConfigFile == "" {
+		paths.SSHConfigFile = filepath.Join(paths.DataHome, "ssh_config")
+	}
+	if dir := filepath.Dir(paths.SSHConfigFile); dir != "" {
+		_ = os.MkdirAll(dir, 0700)
+	}
+	return os.WriteFile(paths.SSHConfigFile, buf.Bytes(), 0600)
+}
+
+

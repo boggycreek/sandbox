@@ -88,6 +88,12 @@ Cross-agent communication bus built on Valkey/Redis Streams:
 - All agent containers receive `--add-host=llm-gateway:host-gateway` to route traffic to local OpenAI-compatible inference servers (Ollama, llama.cpp, vLLM, LiteLLM) running on the physical host.
 - Local URLs (`localhost` or `127.0.0.1`) are translated to `http://llm-gateway:<port>/v1` in agent configuration.
 
+### 5. IDE Remote-SSH Ensembling & Managed SSH Config
+- Unprivileged OpenSSH daemon runs on port `2222` inside each agent container.
+- `install.sh` manages a dedicated keypair (`~/.ssh/agent-sandbox`) and adds `Include ~/.local/share/agent-sandbox/ssh_config` to `~/.ssh/config`.
+- `sndbx` automatically updates `~/.local/share/agent-sandbox/ssh_config` on `start`, `stop`, `clean`, `destroy`, and `retire`, providing zero-touch host discovery in VS Code, Cursor, and JetBrains Gateway (`ssh sndbx-<name>`).
+
+
 ---
 
 ## Quality Gates & Engineering Guidelines

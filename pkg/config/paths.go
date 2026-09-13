@@ -13,13 +13,14 @@ import (
 
 // Paths holds XDG-compliant filesystem paths for the sandbox
 type Paths struct {
-	DataHome   string
-	AgentsDir  string
-	SecretsDir string
-	BinDir     string
-	EnvFile    string
-	SSHDir     string
-	IDEKeyFile string
+	DataHome      string
+	AgentsDir     string
+	SecretsDir    string
+	BinDir        string
+	EnvFile       string
+	SSHDir        string
+	IDEKeyFile    string
+	SSHConfigFile string
 }
 
 // GetPaths returns standard paths resolved against XDG environment variables
@@ -38,19 +39,23 @@ func GetPaths() Paths {
 	sshDir := filepath.Join(home, ".ssh")
 
 	return Paths{
-		DataHome:   dataHome,
-		AgentsDir:  filepath.Join(dataHome, "agents"),
-		SecretsDir: filepath.Join(dataHome, "secrets"),
-		BinDir:     filepath.Join(home, ".local", "bin"),
-		EnvFile:    filepath.Join(dataHome, ".env"),
-		SSHDir:     sshDir,
-		IDEKeyFile: filepath.Join(sshDir, "agent-sandbox"),
+		DataHome:      dataHome,
+		AgentsDir:     filepath.Join(dataHome, "agents"),
+		SecretsDir:    filepath.Join(dataHome, "secrets"),
+		BinDir:        filepath.Join(home, ".local", "bin"),
+		EnvFile:       filepath.Join(dataHome, ".env"),
+		SSHDir:        sshDir,
+		IDEKeyFile:    filepath.Join(sshDir, "agent-sandbox"),
+		SSHConfigFile: filepath.Join(dataHome, "ssh_config"),
 	}
 }
 
 // EnsureDirectories creates required data and secrets directories
 func (p Paths) EnsureDirectories() error {
 	for _, dir := range []string{p.DataHome, p.AgentsDir, p.SecretsDir, p.BinDir, p.SSHDir} {
+		if dir == "" {
+			continue
+		}
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err
 		}

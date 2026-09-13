@@ -277,4 +277,22 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	if !strings.Contains(configOut.String(), "Host sndbx-my-agent") || !strings.Contains(configOut.String(), "Port 2222") {
 		t.Errorf("printSSHConfigBlock output unexpected: %s", configOut.String())
 	}
+
+	// 16. GUI command
+	code = Run([]string{"gui"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("gui command failed")
+	}
+
+	// 17. List with --json flag
+	code = Run([]string{"agent", "list", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("agent list --json failed")
+	}
+
+	// 18. handleAgentClean and handleAgentDestroy on existing config
+	_ = config.SaveAgentConfig(cfg, paths)
+	_ = handleAgentClean(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
+	_ = handleAgentDestroy(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
 }
+

@@ -30,4 +30,5 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00022 — Agent Deprovisioning and Full Infrastructure Retirement](00022-AgentDeprovisioningAndRetirement.md)
 - [00023 — In-Container Environment Documentation and Dedicated doc Directory](00023-InContainerEnvironmentDocumentationAndDocDirectory.md)
 - [00024 — In-Container Unprivileged SSH Daemon and IDE Ensembling Workflow](00024-InContainerSshdAndIdeEnsemblingWorkflow.md)
+- [00025 — Auto-Managed OpenSSH Include File for Agent Lifecycle Integration](00025-ManagedSshConfigIncludeForIdeEnsembling.md)
 

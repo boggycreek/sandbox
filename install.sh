@@ -205,6 +205,42 @@ else
   echo "  Existing IDE keypair found at ${SSH_KEY}"
 fi
 
+# Ensure managed ssh_config file exists
+MANAGED_SSH_CONFIG="${DATA_HOME}/ssh_config"
+if [ ! -f "${MANAGED_SSH_CONFIG}" ]; then
+  cat > "${MANAGED_SSH_CONFIG}" <<'EOF'
+# Agent Sandbox Auto-Generated SSH Configuration
+# Managed automatically by sndbx. Do not edit manually.
+EOF
+  chmod 600 "${MANAGED_SSH_CONFIG}"
+fi
+
+# Configure Include in ~/.ssh/config if not already present
+SSH_USER_CONFIG="${HOME}/.ssh/config"
+INCLUDE_DIRECTIVE="Include ${MANAGED_SSH_CONFIG}"
+if [ -f "${SSH_USER_CONFIG}" ]; then
+  if ! grep -qF "${MANAGED_SSH_CONFIG}" "${SSH_USER_CONFIG}"; then
+    echo "  Adding Include directive for Agent Sandbox to ${SSH_USER_CONFIG}"
+    TMP_CONFIG="$(mktemp)"
+    {
+      echo "# Agent Sandbox Host Include"
+      echo "${INCLUDE_DIRECTIVE}"
+      echo ""
+      cat "${SSH_USER_CONFIG}"
+    } > "${TMP_CONFIG}"
+    mv "${TMP_CONFIG}" "${SSH_USER_CONFIG}"
+    chmod 600 "${SSH_USER_CONFIG}"
+  fi
+else
+  echo "  Creating ${SSH_USER_CONFIG} with Agent Sandbox Include directive"
+  {
+    echo "# OpenSSH Configuration"
+    echo "# Agent Sandbox Host Include"
+    echo "${INCLUDE_DIRECTIVE}"
+  } > "${SSH_USER_CONFIG}"
+  chmod 600 "${SSH_USER_CONFIG}"
+fi
+
 # 6. Initialize Environment and CLI Entrypoint
 echo
 echo "[6/6] Initializing configuration and host CLI..."

@@ -116,5 +116,36 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	_ = exec.Command("podman", "network", "rm", "-f", testNet).Run()
 	_ = EnsureNetwork(ctx, testNet)
 	_ = exec.Command("podman", "network", "rm", "-f", testNet).Run()
+
+	// Test FormatSSHConfigBlock
+	block := FormatSSHConfigBlock("alpha", 34567, "/home/test/.ssh/agent-sandbox")
+	if !bytes.Contains([]byte(block), []byte("Host sndbx-alpha")) || !bytes.Contains([]byte(block), []byte("Port 34567")) {
+		t.Errorf("unexpected FormatSSHConfigBlock output: %s", block)
+	}
+
+	// Test SyncSSHConfigFile
+	paths.AgentsDir = filepath.Join(tmpDir, "agents")
+	paths.SSHConfigFile = filepath.Join(tmpDir, "ssh_config")
+	_ = paths.EnsureDirectories()
+
+	// Save an agent config
+	_ = config.SaveAgentConfig(cfg, paths)
+	if err := SyncSSHConfigFile(ctx, paths); err != nil {
+		t.Errorf("SyncSSHConfigFile failed: %v", err)
+	}
+	if _, err := os.Stat(paths.SSHConfigFile); err != nil {
+		t.Errorf("expected ssh_config file created at %s: %v", paths.SSHConfigFile, err)
+	}
+
+	// SyncSSHConfigFile error on invalid agents dir
+	invalidPaths := config.Paths{AgentsDir: "/dev/null/forbidden"}
+	if err := SyncSSHConfigFile(ctx, invalidPaths); err == nil {
+		t.Errorf("expected error from SyncSSHConfigFile on invalid paths")
+	}
+
+	// StopAgentContainer with nonexistent container
+	_ = StopAgentContainer(ctx, "nonexistent-container-stop-test")
 }
+
+
 

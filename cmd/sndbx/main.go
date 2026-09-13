@@ -323,6 +323,8 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 		return 1
 	}
 
+	_ = runtime.SyncSSHConfigFile(ctx, paths)
+
 	fmt.Fprintf(stdout, "Agent %q started (%s).\n", cfg.Name, cfg.ContainerName)
 	fmt.Fprintf(stdout, "Connect via: sndbx agent connect %s\n", cfg.Name)
 	return 0
@@ -432,13 +434,7 @@ func handleAgentSSHConfig(ctx context.Context, paths config.Paths, args []string
 }
 
 func printSSHConfigBlock(w io.Writer, name string, port int, keyFile string) {
-	fmt.Fprintf(w, "Host sndbx-%s\n", name)
-	fmt.Fprintf(w, "    HostName 127.0.0.1\n")
-	fmt.Fprintf(w, "    Port %d\n", port)
-	fmt.Fprintf(w, "    User agent\n")
-	fmt.Fprintf(w, "    IdentityFile %s\n", keyFile)
-	fmt.Fprintf(w, "    StrictHostKeyChecking no\n")
-	fmt.Fprintf(w, "    UserKnownHostsFile /dev/null\n")
+	fmt.Fprint(w, runtime.FormatSSHConfigBlock(name, port, keyFile))
 }
 
 func handleAgentStop(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
@@ -453,6 +449,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 			_ = runtime.StopAgentContainer(ctx, c.ContainerName)
 			fmt.Fprintf(stdout, "Stopped %s\n", c.Name)
 		}
+		_ = runtime.SyncSSHConfigFile(ctx, paths)
 		return 0
 	}
 
@@ -467,6 +464,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 		fmt.Fprintf(stderr, "sndbx error stopping %s: %v\n", cfg.Name, err)
 		return 1
 	}
+	_ = runtime.SyncSSHConfigFile(ctx, paths)
 	fmt.Fprintf(stdout, "Agent %q stopped.\n", cfg.Name)
 	return 0
 }
@@ -487,6 +485,7 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 		fmt.Fprintf(stderr, "sndbx error cleaning %s: %v\n", cfg.Name, err)
 		return 1
 	}
+	_ = runtime.SyncSSHConfigFile(ctx, paths)
 	fmt.Fprintf(stdout, "Agent container %q removed (home volume preserved).\n", cfg.ContainerName)
 	return 0
 }
@@ -508,6 +507,7 @@ func handleAgentDestroy(ctx context.Context, paths config.Paths, args []string, 
 		return 1
 	}
 	_ = config.DeleteAgentConfig(name, paths)
+	_ = runtime.SyncSSHConfigFile(ctx, paths)
 
 	fmt.Fprintf(stdout, "Agent %q and volume %q destroyed completely.\n", cfg.Name, cfg.VolumeName)
 	return 0
@@ -536,6 +536,9 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 
 	// 4. Deprovision Gitea user & keys
 	deprovisionGiteaUser(ctx, name)
+
+	// 5. Update SSH config file
+	_ = runtime.SyncSSHConfigFile(ctx, paths)
 
 	fmt.Fprintf(stdout, "Agent %q retired and deprovisioned successfully.\n", name)
 	fmt.Fprintf(stdout, "  ✓ Container (%s) and volume (%s) destroyed\n", cfg.ContainerName, cfg.VolumeName)

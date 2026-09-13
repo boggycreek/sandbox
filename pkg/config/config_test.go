@@ -90,7 +90,7 @@ func TestPathsAndAgentConfig(t *testing.T) {
 
 	// 6. GetPaths
 	defaultPaths := GetPaths()
-	if defaultPaths.DataHome == "" {
-		t.Errorf("GetPaths returned empty DataHome")
+	if defaultPaths.DataHome == "" || defaultPaths.SSHConfigFile == "" {
+		t.Errorf("GetPaths returned empty DataHome or SSHConfigFile: %+v", defaultPaths)
 	}
 }
