@@ -124,10 +124,10 @@ func TestSndbxAgentDomain(t *testing.T) {
 		t.Errorf("expected error cleaning nonexistent agent")
 	}
 
-	// Destroy
-	code, out, _ = runSndbx([]string{"agent", "destroy", "coder-1"})
-	if code != 0 || !strings.Contains(out, "destroyed completely") {
-		t.Errorf("agent destroy failed: %s", out)
+	// Retire
+	code, out, _ = runSndbx([]string{"agent", "retire", "coder-1", "--force"})
+	if code != 0 || !strings.Contains(out, "retired and deprovisioned successfully") {
+		t.Errorf("agent retire failed: %s", out)
 	}
 
 	// Missing commands

@@ -66,8 +66,7 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
   - `sndbx agent list [--json]`: Lists all agents, container status, and dynamic SSH ports.
   - `sndbx agent stop [name] [--all]`: Stops agent containers.
   - `sndbx agent clean <name>`: Removes container while preserving home volume.
-  - `sndbx agent destroy <name>`: Purges container, persistent volume, and configs.
-  - `sndbx agent retire <name>`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Gitea account.
+  - `sndbx agent retire <name> [--force]`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Gitea account.
 - **Shared Infrastructure**:
   - `sndbx infra up`: Starts shared Valkey 8 (`agent-sandbox-valkey`) and Gitea 1.22 (`agent-sandbox-gitea`) containers on the `agent-sandbox-infra` bridge network.
   - `sndbx infra list`: Inspects runtime status and ports.
@@ -106,7 +105,7 @@ Cross-agent communication bus built on Valkey/Redis Streams:
 ### 5. IDE Remote-SSH Ensembling & Managed SSH Config
 - Unprivileged OpenSSH daemon runs on port `2222` inside each agent container.
 - `install.sh` manages a dedicated keypair (`~/.ssh/agent-sandbox`) and adds `Include ~/.local/share/agent-sandbox/ssh_config` to `~/.ssh/config`.
-- `sndbx` automatically updates `~/.local/share/agent-sandbox/ssh_config` on `start`, `stop`, `clean`, `destroy`, and `retire`, providing zero-touch host discovery in VS Code, Cursor, and JetBrains Gateway (`ssh sndbx-<name>`).
+- `sndbx` automatically updates `~/.local/share/agent-sandbox/ssh_config` on `start`, `stop`, `clean`, and `retire`, providing zero-touch host discovery in VS Code, Cursor, and JetBrains Gateway (`ssh sndbx-<name>`).
 
 
 ---

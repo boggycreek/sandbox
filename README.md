@@ -73,8 +73,7 @@ sndbx agent doctor <name>                                # Host-side diagnostic 
 sndbx agent list [--json]                                # List configured instances, status, and SSH ports
 sndbx agent stop [name] [--all]                          # Stop agent container(s)
 sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)
-sndbx agent destroy <name>                               # Purge container, home volume, and secrets
-sndbx agent retire <name>                                # Fully deprovision agent (container, volume, Valkey, Gitea)
+sndbx agent retire <name> [--force]                       # Fully deprovision agent (container, volume, Valkey, Gitea)
 
 # Repository Operations
 sndbx repo path                                          # Print sandbox installation root path

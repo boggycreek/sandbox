@@ -89,8 +89,7 @@ Agent Commands:
   sndbx agent stop [name] [--all]
   sndbx agent list [--json]
   sndbx agent clean <name>
-  sndbx agent destroy <name> [--force]
-  sndbx agent retire <name>
+  sndbx agent retire <name> [--force]
 
 Infra Commands:
   sndbx infra up
@@ -103,7 +102,7 @@ Run 'sndbx <domain> help' for more details on each command.`)
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|ssh-config|doctor|stop|list|clean|destroy|retire>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|ssh-config|doctor|stop|list|clean|retire>")
 		return 1
 	}
 
@@ -142,10 +141,7 @@ Commands:
   clean <name>
     Remove the agent container while preserving its home directory volume.
 
-  destroy <name> [--force]
-    Permanently purge the agent container, home volume, and secrets.
-
-  retire <name>
+  retire <name> [--force]
     Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).`)
 		return 0
 	case "create":
@@ -166,10 +162,11 @@ Commands:
 		return handleAgentList(ctx, paths, subArgs, stdout, stderr)
 	case "clean":
 		return handleAgentClean(ctx, paths, subArgs, stdout, stderr)
-	case "destroy":
-		return handleAgentDestroy(ctx, paths, subArgs, stdout, stderr)
 	case "retire":
 		return handleAgentRetire(ctx, paths, subArgs, stdout, stderr)
+	case "destroy":
+		fmt.Fprintln(stderr, "sndbx error: 'destroy' has been removed. Use 'sndbx agent retire <name>' to fully decommission an agent.")
+		return 1
 	default:
 		fmt.Fprintf(stderr, "sndbx agent: unknown command %q\n", sub)
 		return 1
@@ -525,35 +522,28 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 	return 0
 }
 
-func handleAgentDestroy(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent destroy <name>")
-		return 1
-	}
-	name := args[0]
-	cfg, err := config.LoadAgentConfig(name, paths)
-	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
-		return 1
-	}
-
-	if err := runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName); err != nil {
-		fmt.Fprintf(stderr, "sndbx error destroying %s: %v\n", cfg.Name, err)
-		return 1
-	}
-	_ = config.DeleteAgentConfig(name, paths)
-	_ = runtime.SyncSSHConfigFile(ctx, paths)
-
-	fmt.Fprintf(stdout, "Agent %q and volume %q destroyed completely.\n", cfg.Name, cfg.VolumeName)
-	return 0
-}
-
 func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent retire <name>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent retire <name> [--force]")
 		return 1
 	}
-	name := strings.ToLower(strings.TrimSpace(args[0]))
+
+	var name string
+	force := false
+	for _, arg := range args {
+		if arg == "--force" || arg == "-f" {
+			force = true
+		} else if name == "" {
+			name = strings.ToLower(strings.TrimSpace(arg))
+		}
+	}
+
+	if name == "" {
+		fmt.Fprintln(stderr, "Usage: sndbx agent retire <name> [--force]")
+		return 1
+	}
+	_ = force // Flag parsed and supported for scripts/automation
+
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)

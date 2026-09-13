@@ -35,7 +35,7 @@ We implement an **Auto-Managed OpenSSH Include File** synchronized automatically
 2. **Lifecycle Synchronization**:
    - `sndbx agent start`: After starting agent container(s), `SyncSSHConfigFile` regenerates `ssh_config` with live dynamic ports.
    - `sndbx agent stop`: After stopping agent container(s), `SyncSSHConfigFile` removes stopped agents from `ssh_config`.
-   - `sndbx agent clean` / `destroy` / `retire`: `SyncSSHConfigFile` purges decommissioned agents immediately.
+   - `sndbx agent clean` / `retire`: `SyncSSHConfigFile` purges decommissioned agents immediately.
 
 3. **Installer Integration**:
    - `install.sh` ensures `Include ~/.local/share/agent-sandbox/ssh_config` (or XDG equivalent) is present at the top of the user's `~/.ssh/config`.
