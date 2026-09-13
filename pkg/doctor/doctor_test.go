@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/agent-sandbox/pkg/runtime"
 	"github.com/boggycreek/agent-sandbox/test/harness"
 )
 
@@ -420,6 +421,9 @@ func TestCheckAndHealValkeyHealPath(t *testing.T) {
 	t.Cleanup(func() {
 		_ = exec.Command("podman", "stop", harnessCtr).Run()
 		_ = exec.Command("podman", "rm", "-f", harnessCtr).Run()
+		// Restore live infra container if StartInfraStack recreated it with tmpDir paths
+		realPaths := config.GetPaths()
+		_ = runtime.StartInfraStack(context.Background(), realPaths, "", "", "")
 	})
 
 	// Wait for container to be ready
