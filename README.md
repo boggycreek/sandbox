@@ -68,6 +68,7 @@ sndbx agent start <name>                                 # Start the agent daemo
 sndbx agent connect <name>                               # Attach directly to running tmux supervisor
 sndbx agent ssh <name>                                   # SSH directly into unprivileged environment
 sndbx agent ssh-config [name] [--all]                    # Generate OpenSSH config stanzas for IDE Remote-SSH
+sndbx agent doctor <name>                                # Host-side diagnostic check and auto-heal for human operator
 sndbx agent list [--json]                                # List configured instances, status, and SSH ports
 sndbx agent stop [name] [--all]                          # Stop agent container(s)
 sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)

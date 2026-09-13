@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/agent-sandbox/pkg/doctor"
 	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
 	"github.com/boggycreek/agent-sandbox/pkg/runtime"
@@ -84,6 +85,7 @@ Agent Commands:
   sndbx agent connect <name>
   sndbx agent ssh <name>
   sndbx agent ssh-config [name] [--all]
+  sndbx agent doctor <name>
   sndbx agent stop [name] [--all]
   sndbx agent list [--json]
   sndbx agent clean <name>
@@ -100,7 +102,7 @@ Run 'sndbx <domain> help' for more details on each command.`)
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|ssh-config|stop|list|clean|destroy|retire>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|ssh-config|doctor|stop|list|clean|destroy|retire>")
 		return 1
 	}
 
@@ -127,6 +129,9 @@ Commands:
   ssh-config [name] [--all]
     Generate OpenSSH host configuration stanza(s) for IDE remote development.
 
+  doctor <name>
+    Diagnose configuration, cryptographic keys, storage, and infrastructure provisioning, and auto-heal defects.
+
   stop [name] [--all]
     Stop a running agent container (or all agents with --all).
 
@@ -152,6 +157,8 @@ Commands:
 		return handleAgentSSH(ctx, paths, subArgs, stdout, stderr)
 	case "ssh-config", "sshconfig":
 		return handleAgentSSHConfig(ctx, paths, subArgs, stdout, stderr)
+	case "doctor":
+		return handleAgentDoctor(ctx, paths, subArgs, stdout, stderr)
 	case "stop":
 		return handleAgentStop(ctx, paths, subArgs, stdout, stderr)
 	case "list":
@@ -435,6 +442,26 @@ func handleAgentSSHConfig(ctx context.Context, paths config.Paths, args []string
 
 func printSSHConfigBlock(w io.Writer, name string, port int, keyFile string) {
 	fmt.Fprint(w, runtime.FormatSSHConfigBlock(name, port, keyFile))
+}
+
+func handleAgentDoctor(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Usage: sndbx agent doctor <name>")
+		return 1
+	}
+
+	name := args[0]
+	report, err := doctor.DiagnoseAndHealAgent(ctx, name, paths)
+	if err != nil && report == nil {
+		fmt.Fprintf(stderr, "sndbx doctor error: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprint(stdout, doctor.FormatDoctorReport(report))
+	if report.UnrepairableCount > 0 {
+		return 1
+	}
+	return 0
 }
 
 func handleAgentStop(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {

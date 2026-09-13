@@ -294,5 +294,38 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	_ = config.SaveAgentConfig(cfg, paths)
 	_ = handleAgentClean(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
 	_ = handleAgentDestroy(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
+
+	// 19. Agent doctor command
+	code = Run([]string{"agent", "doctor"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent doctor with empty args should return 1")
+	}
+	code = Run([]string{"agent", "doctor", "nonexistent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent doctor nonexistent should return 1")
+	}
+	_ = config.SaveAgentConfig(cfg, paths)
+	code = Run([]string{"agent", "doctor", "acl-test-agent"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("agent doctor acl-test-agent failed: %s", stderr.String())
+	}
+
+	// 20. Doctor on corrupted agent (unrepairable error path)
+	_ = os.WriteFile(filepath.Join(paths.AgentsDir, "broken.json"), []byte("{invalid"), 0600)
+	code = Run([]string{"agent", "doctor", "broken"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent doctor on broken JSON should return 1")
+	}
+
+	// 21. Table formatting for agent list with multiple agents
+	_ = config.SaveAgentConfig(cfg, paths)
+	cfg2, _ := config.NewAgentConfig("second-agent", "opencode", "developer")
+	_ = config.SaveAgentConfig(cfg2, paths)
+	code = Run([]string{"agent", "list"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("agent list table output failed")
+	}
 }
+
+
 
