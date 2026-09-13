@@ -7,9 +7,16 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/agent-sandbox/pkg/libbp"
+	"github.com/boggycreek/agent-sandbox/test/harness"
 )
 
 func runSndbx(args []string) (int, string, string) {
@@ -125,6 +132,61 @@ func TestSndbxAgentDomain(t *testing.T) {
 	}
 }
 
+func TestSndbxWithLiveValkey(t *testing.T) {
+	valkey := harness.StartValkeyHarness(t)
+	defer valkey.Teardown()
+
+	tmpDir := t.TempDir()
+	os.Setenv("XDG_DATA_HOME", tmpDir)
+	os.Setenv("BP_HOST", "127.0.0.1")
+	os.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
+
+	// Create agent with live Valkey connected
+	code, out, _ := runSndbx([]string{"agent", "create", "valkey-bot", "as", "base", "--role", "worker"})
+	if code != 0 || !strings.Contains(out, "created successfully") {
+		t.Errorf("agent create with live valkey failed: %s", out)
+	}
+
+	// Verify agent ACL was registered by connecting as valkey-bot
+	loaded, err := config.LoadAgentConfig("valkey-bot", config.GetPaths())
+	if err != nil {
+		t.Fatalf("failed loading agent config: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	agentClient, err := libbp.Dial(ctx, libbp.ClientConfig{
+		Host:     "127.0.0.1",
+		Port:     valkey.Port,
+		Username: "valkey-bot",
+		Password: loaded.Password,
+		AgentID:  "valkey-bot",
+	})
+	if err != nil {
+		t.Fatalf("failed dialing valkey as registered agent: %v", err)
+	}
+	defer agentClient.Close()
+
+	// Stop all agents flag test
+	code, out, _ = runSndbx([]string{"agent", "stop", "--all"})
+	if code != 0 || !strings.Contains(out, "Stopped valkey-bot") {
+		t.Errorf("agent stop --all failed: %s", out)
+	}
+
+	// Infra subcommands
+	code, _, _ = runSndbx([]string{"infra"})
+	if code != 1 {
+		t.Errorf("infra empty should fail")
+	}
+
+	code, _, errOut := runSndbx([]string{"infra", "unknown"})
+	if code != 1 || !strings.Contains(errOut, "unknown command") {
+		t.Errorf("infra unknown failed")
+	}
+}
+
 func TestSndbxRepoAndGUIDomains(t *testing.T) {
 	// Repo path
 	code, out, _ := runSndbx([]string{"repo", "path"})
@@ -138,9 +200,16 @@ func TestSndbxRepoAndGUIDomains(t *testing.T) {
 		t.Errorf("repo empty should return 1")
 	}
 
+	// Repo unknown
+	code, _, _ = runSndbx([]string{"repo", "unknown"})
+	if code != 1 {
+		t.Errorf("repo unknown should fail")
+	}
+
 	// GUI
 	code, out, _ = runSndbx([]string{"gui"})
 	if code != 0 || !strings.Contains(out, "Launching Backplane GUI") {
 		t.Errorf("gui command failed: %s", out)
 	}
 }
+

@@ -65,6 +65,34 @@ func TestConfigCoverageBoost(t *testing.T) {
 		t.Errorf("expected error saving to invalid secrets path")
 	}
 
+	// 5b. SaveAgentConfig JSON file write failure (directory with same name exists)
+	jsonBlockPaths := Paths{
+		DataHome:   filepath.Join(tmpDir, "jsonfail"),
+		AgentsDir:  filepath.Join(tmpDir, "jsonfail", "agents"),
+		SecretsDir: filepath.Join(tmpDir, "jsonfail", "secrets"),
+	}
+	_ = jsonBlockPaths.EnsureDirectories()
+	_ = os.MkdirAll(filepath.Join(jsonBlockPaths.AgentsDir, "jsonblock.json"), 0700)
+	jsonBlockCfg, _ := NewAgentConfig("jsonblock", "base", "tester")
+	if err := SaveAgentConfig(jsonBlockCfg, jsonBlockPaths); err == nil {
+		t.Errorf("expected error writing json file when directory conflicts")
+	}
+
+	// 5c. SaveAgentConfig key file write failure
+	secretDir := filepath.Join(tmpDir, "keyfail", "secrets", "keyfail-agent")
+	_ = os.MkdirAll(secretDir, 0700)
+	// Create signing-key.pem as a directory to force os.WriteFile failure
+	_ = os.MkdirAll(filepath.Join(secretDir, "signing-key.pem"), 0700)
+	keyFailPaths := Paths{
+		DataHome:   filepath.Join(tmpDir, "keyfail"),
+		AgentsDir:  filepath.Join(tmpDir, "keyfail", "agents"),
+		SecretsDir: filepath.Join(tmpDir, "keyfail", "secrets"),
+	}
+	keyCfg, _ := NewAgentConfig("keyfail-agent", "base", "tester")
+	if err := SaveAgentConfig(keyCfg, keyFailPaths); err == nil {
+		t.Errorf("expected error writing key file")
+	}
+
 	// 6. List with corrupted JSON entries
 	list, err := ListAgentConfigs(paths)
 	if err != nil {
@@ -77,10 +105,14 @@ func TestConfigCoverageBoost(t *testing.T) {
 		t.Errorf("expected error from EnsureDirectories on read-only path")
 	}
 
-	// 8. GetPaths with custom XDG_DATA_HOME
+	// 8. GetPaths with custom XDG_DATA_HOME and empty home
 	os.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "custom-xdg"))
 	customPaths := GetPaths()
 	if customPaths.DataHome != filepath.Join(tmpDir, "custom-xdg", "agent-sandbox") {
 		t.Errorf("unexpected custom data home: %s", customPaths.DataHome)
 	}
+
+	// Default GetPaths without XDG_DATA_HOME
+	os.Unsetenv("XDG_DATA_HOME")
+	_ = GetPaths()
 }
