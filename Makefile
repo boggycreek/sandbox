@@ -14,22 +14,23 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode format clean clean-test-env clean-all build build-cli build-libbp
+.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all format clean clean-test-env clean-all build build-cli build-libbp
 
 all: check build
 
-help: ## Show Makefile targets
-	@echo "Agent Sandbox — Available Targets:"
-	@echo
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
-	@echo
+# --- Help Target ---
 
-dev-setup: ## Run developer environment configuration script
+help: ## Show available Makefile targets
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# --- Development & Setup ---
+
+dev-setup: ## Run developer workstation configuration and dependency checks
 	@./dev-setup.sh
 
-# --- Quality Gates: Linting ---
+# --- Quality Gates: Linting & Static Analysis ---
 
-lint: lint-go lint-shell ## Run all linters (Go + Shell)
+lint: lint-go lint-shell ## Run all Go and shell linter checks
 
 lint-go: ## Run golangci-lint on Go code
 	@echo "==> Running golangci-lint..."
@@ -42,7 +43,7 @@ lint-go: ## Run golangci-lint on Go code
 lint-shell: ## Run shellcheck on bash scripts
 	@echo "==> Running shellcheck..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck install.sh dev-setup.sh scripts/clean-test-env.sh; \
+		shellcheck install.sh dev-setup.sh scripts/clean-test-env.sh scripts/deadcode-check.sh; \
 	else \
 		echo "Warning: shellcheck not installed. Run ./dev-setup.sh to install."; \
 	fi
@@ -109,14 +110,13 @@ gosec: ## Run gosec static security analysis
 		echo "Notice: gosec not installed. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 	fi
 
-deadcode: ## Run deadcode reachability analysis
-	@echo "==> Running deadcode reachability analysis..."
-	@DEADCODE_BIN=$$(command -v deadcode 2>/dev/null || ( [ -x "$$($(GO) env GOPATH)/bin/deadcode" ] && echo "$$($(GO) env GOPATH)/bin/deadcode" ) || true); \
-	if [ -n "$${DEADCODE_BIN}" ] && [ -x "$${DEADCODE_BIN}" ]; then \
-		$${DEADCODE_BIN} -test ./...; \
-	else \
-		echo "Notice: deadcode not installed. Install via: go install golang.org/x/tools/cmd/deadcode@latest"; \
-	fi
+deadcode: deadcode-diff ## Run deadcode analysis on staged/local changes (alias to deadcode-diff)
+
+deadcode-diff: ## Check for dead code introduced or orphaned by staged/local changes
+	@./scripts/deadcode-check.sh --diff
+
+deadcode-all: ## Run comprehensive whole-codebase dead code audit (accumulated debt)
+	@./scripts/deadcode-check.sh --all
 
 check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) + SCA security
 
