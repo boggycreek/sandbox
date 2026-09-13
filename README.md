@@ -67,6 +67,7 @@ sndbx agent create <name> [as <type>] [--role <role>]    # Provision a new named
 sndbx agent start <name>                                 # Start the agent daemon container
 sndbx agent connect <name>                               # Attach directly to running tmux supervisor
 sndbx agent ssh <name>                                   # SSH directly into unprivileged environment
+sndbx agent ssh-config [name] [--all]                    # Generate OpenSSH config stanzas for IDE Remote-SSH
 sndbx agent list [--json]                                # List configured instances, status, and SSH ports
 sndbx agent stop [name] [--all]                          # Stop agent container(s)
 sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)

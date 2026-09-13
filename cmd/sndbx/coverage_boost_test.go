@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/boggycreek/agent-sandbox/pkg/config"
@@ -249,5 +250,31 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	code = Run([]string{"unknown-root-cmd"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("sndbx unknown-root-cmd failed")
+	}
+
+	// 15. Agent ssh-config command
+	code = Run([]string{"agent", "ssh-config", "nonexistent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("ssh-config nonexistent should fail")
+	}
+	code = Run([]string{"agent", "ssh-config", "acl-test-agent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("ssh-config on stopped agent should fail")
+	}
+	code = Run([]string{"agent", "ssh-config"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("ssh-config with no args should succeed: %s", stderr.String())
+	}
+	code = Run([]string{"agent", "ssh-config", "--all"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("ssh-config --all should succeed: %s", stderr.String())
+	}
+
+	// Direct tests for handleAgentSSHConfig & printSSHConfigBlock
+	_ = handleAgentSSHConfig(context.Background(), roPaths, []string{}, &stdout, &stderr)
+	var configOut bytes.Buffer
+	printSSHConfigBlock(&configOut, "my-agent", 2222, "/home/test/.ssh/agent-sandbox")
+	if !strings.Contains(configOut.String(), "Host sndbx-my-agent") || !strings.Contains(configOut.String(), "Port 2222") {
+		t.Errorf("printSSHConfigBlock output unexpected: %s", configOut.String())
 	}
 }

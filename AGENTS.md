@@ -48,6 +48,7 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
   - `sndbx agent start <name>`: Starts container via Podman.
   - `sndbx agent connect <name>`: Attaches interactively to container tmux supervisor.
   - `sndbx agent ssh <name>`: Direct SSH into unprivileged agent environment.
+  - `sndbx agent ssh-config [name] [--all]`: Emits OpenSSH configuration stanzas for IDE Remote-SSH discovery.
   - `sndbx agent list [--json]`: Lists all agents, container status, and dynamic SSH ports.
   - `sndbx agent stop [name] [--all]`: Stops agent containers.
   - `sndbx agent clean <name>`: Removes container while preserving home volume.

@@ -83,6 +83,7 @@ Agent Commands:
   sndbx agent start <name>
   sndbx agent connect <name>
   sndbx agent ssh <name>
+  sndbx agent ssh-config [name] [--all]
   sndbx agent stop [name] [--all]
   sndbx agent list [--json]
   sndbx agent clean <name>
@@ -99,7 +100,7 @@ Run 'sndbx <domain> help' for more details on each command.`)
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|stop|list|clean|destroy|retire>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|ssh-config|stop|list|clean|destroy|retire>")
 		return 1
 	}
 
@@ -122,6 +123,9 @@ Commands:
 
   ssh <name>
     Connect directly via SSH to the agent's unprivileged environment.
+
+  ssh-config [name] [--all]
+    Generate OpenSSH host configuration stanza(s) for IDE remote development.
 
   stop [name] [--all]
     Stop a running agent container (or all agents with --all).
@@ -146,6 +150,8 @@ Commands:
 		return handleAgentConnect(ctx, paths, subArgs, stdout, stderr)
 	case "ssh":
 		return handleAgentSSH(ctx, paths, subArgs, stdout, stderr)
+	case "ssh-config", "sshconfig":
+		return handleAgentSSHConfig(ctx, paths, subArgs, stdout, stderr)
 	case "stop":
 		return handleAgentStop(ctx, paths, subArgs, stdout, stderr)
 	case "list":
@@ -379,6 +385,60 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 		return 1
 	}
 	return 0
+}
+
+func handleAgentSSHConfig(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	var targetAgent string
+	for _, a := range args {
+		if a != "--all" && !strings.HasPrefix(a, "-") && targetAgent == "" {
+			targetAgent = a
+		}
+	}
+
+	if targetAgent != "" {
+		cfg, err := config.LoadAgentConfig(targetAgent, paths)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+			return 1
+		}
+		port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
+		if err != nil || port <= 0 {
+			fmt.Fprintf(stderr, "sndbx error: agent %q is not running or SSH port is unavailable\n", cfg.Name)
+			return 1
+		}
+		printSSHConfigBlock(stdout, cfg.Name, port, paths.IDEKeyFile)
+		return 0
+	}
+
+	configs, err := config.ListAgentConfigs(paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	runningCount := 0
+	for _, c := range configs {
+		port, err := runtime.GetAgentSSHPort(ctx, c.ContainerName)
+		if err == nil && port > 0 {
+			if runningCount > 0 {
+				fmt.Fprintln(stdout)
+			}
+			printSSHConfigBlock(stdout, c.Name, port, paths.IDEKeyFile)
+			runningCount++
+		}
+	}
+
+	return 0
+}
+
+func printSSHConfigBlock(w io.Writer, name string, port int, keyFile string) {
+	fmt.Fprintf(w, "Host sndbx-%s\n", name)
+	fmt.Fprintf(w, "    HostName 127.0.0.1\n")
+	fmt.Fprintf(w, "    Port %d\n", port)
+	fmt.Fprintf(w, "    User agent\n")
+	fmt.Fprintf(w, "    IdentityFile %s\n", keyFile)
+	fmt.Fprintf(w, "    StrictHostKeyChecking no\n")
+	fmt.Fprintf(w, "    UserKnownHostsFile /dev/null\n")
 }
 
 func handleAgentStop(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
