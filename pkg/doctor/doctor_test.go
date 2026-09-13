@@ -8,6 +8,7 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -182,8 +183,10 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	_ = exec.Command("podman", "volume", "rm", "-f", cfg.VolumeName).Run()
 	reportDirect := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealPodmanStorage(ctx, cfg, reportDirect)
+	// Second run when volume already exists (healed == false branch)
+	checkAndHealPodmanStorage(ctx, cfg, reportDirect)
 	checkAndHealContainer(ctx, cfg, paths, reportDirect)
-	if len(reportDirect.Checks) < 2 {
+	if len(reportDirect.Checks) < 3 {
 		t.Errorf("expected storage and container checks in report")
 	}
 
@@ -195,6 +198,29 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	checkAndHealSigningKey(cfg, paths, reportKey)
 	if reportKey.HealedCount == 0 {
 		t.Errorf("expected key to be healed when corrupt")
+	}
+	// Run again now that key is healed and valid
+	reportKeyIntact := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSigningKey(cfg, paths, reportKeyIntact)
+	if len(reportKeyIntact.Checks) == 0 || reportKeyIntact.Checks[0].Status != StatusOK {
+		t.Errorf("expected intact signing key to return StatusOK")
+	}
+
+	// Test healing of permissions when key permissions are 0644
+	_ = os.Chmod(keyPath, 0644)
+	reportKeyPerm := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSigningKey(cfg, paths, reportKeyPerm)
+	if reportKeyPerm.HealedCount == 0 {
+		t.Errorf("expected permission auto-healing for signing key")
+	}
+
+	// Test healing of agent config permissions when 0644
+	agentCfgPath := filepath.Join(paths.AgentsDir, fmt.Sprintf("%s.json", cfg.Name))
+	_ = os.Chmod(agentCfgPath, 0644)
+	reportCfgPerm := &DoctorReport{AgentName: "heal-agent"}
+	_, _ = checkAndHealConfig(paths, cfg.Name, reportCfgPerm)
+	if reportCfgPerm.HealedCount == 0 {
+		t.Errorf("expected permission auto-healing for agent config JSON")
 	}
 
 	// 12. Gitea server 500 error branch
@@ -257,6 +283,14 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 	}
 	if report2.UnrepairableCount > 0 {
 		t.Errorf("expected 0 unrepairable items on second pass")
+	}
+
+	// Test healing of .env permissions when 0644
+	_ = os.Chmod(paths.EnvFile, 0644)
+	reportEnvPerm := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealInfraEnv(paths, reportEnvPerm)
+	if reportEnvPerm.HealedCount == 0 {
+		t.Errorf("expected permission auto-healing for .env file")
 	}
 
 	// 3. Direct checks
@@ -349,6 +383,98 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 	}
 }
 
+// TestCheckAndHealValkeyHealPath exercises the auto-heal code path in checkAndHealValkeyContainer
+// by overriding the infraValkeyContainer package-level var to point at an ephemeral test container.
+func TestCheckAndHealValkeyHealPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
 
+	// Start an ephemeral Valkey container with a "correct" password that our check will fail against
+	// (we'll intentionally set the wrong admin password so auth fails while state is "running")
+	harnessCtr := fmt.Sprintf("test-heal-valkey-%d", os.Getpid())
+	aclPath := filepath.Join(tmpDir, "valkey-users.acl")
+	realAdminPass := "real_admin_pass_heal_test"
+	aclContent := fmt.Sprintf("user default off\nuser admin on >%s ~* &* +@all\n", realAdminPass)
+	_ = os.WriteFile(aclPath, []byte(aclContent), 0644)
 
+	port, err := getFreeTestPort()
+	if err != nil {
+		t.Skip("Cannot find free port for heal test")
+	}
+
+	startCmd := exec.Command("podman", "run", "-d", "--name", harnessCtr,
+		"-p", fmt.Sprintf("127.0.0.1:%d:6379", port),
+		"-v", fmt.Sprintf("%s:/etc/valkey/users.acl:ro", aclPath),
+		"docker.io/valkey/valkey:8-alpine",
+		"valkey-server", "--aclfile", "/etc/valkey/users.acl",
+	)
+	if out, err := startCmd.CombinedOutput(); err != nil {
+		t.Skipf("Cannot start ephemeral Valkey container for heal test: %v (%s)", err, string(out))
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "stop", harnessCtr).Run()
+		_ = exec.Command("podman", "rm", "-f", harnessCtr).Run()
+	})
+
+	// Wait for container to be ready
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Override the package-level var so doctor targets our ephemeral container
+	origContainer := infraValkeyContainer
+	infraValkeyContainer = harnessCtr
+	defer func() { infraValkeyContainer = origContainer }()
+
+	paths := config.Paths{
+		DataHome: filepath.Join(tmpDir, "data"),
+	}
+	_ = os.MkdirAll(paths.DataHome, 0755)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Case 1: Container running but wrong password → triggers heal attempt
+	os.Setenv("BP_HOST", "127.0.0.1")
+	os.Setenv("BP_PORT", fmt.Sprintf("%d", port))
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", "wrong_password_for_heal_test")
+
+	report1 := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(ctx, paths, report1)
+	// Either healed or warning — both are valid since StartInfraStack will try to fix the ACL
+	if len(report1.Checks) == 0 {
+		t.Errorf("expected at least one check item in heal path test")
+	}
+
+	// Case 2: Container running with correct password → exercises the OK path
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", realAdminPass)
+	// Wait a brief moment for Valkey to be ready post-start
+	time.Sleep(500 * time.Millisecond)
+	report2 := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(ctx, paths, report2)
+	if len(report2.Checks) == 0 {
+		t.Errorf("expected at least one check item in correct-password test")
+	}
+}
+
+func getFreeTestPort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
 

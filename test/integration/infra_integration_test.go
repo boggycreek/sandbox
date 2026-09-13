@@ -7,15 +7,15 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
+	"github.com/boggycreek/agent-sandbox/test/harness"
 )
 
 func TestInfraLifecycleIntegration(t *testing.T) {
@@ -23,142 +23,91 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 		t.Skip("podman not installed or not in PATH; skipping infra lifecycle integration test")
 	}
 
-	tmpDir := t.TempDir()
+	infra := harness.StartEphemeralInfraHarness(t)
+	// harness.StartEphemeralInfraHarness registers t.Cleanup(infra.Teardown)
 
-	// Build sndbx binary
-	binPath := filepath.Join(tmpDir, "sndbx")
-	buildCmd := exec.Command("go", "build", "-o", binPath, "github.com/boggycreek/agent-sandbox/cmd/sndbx")
-	out, err := buildCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("failed building sndbx binary: %v (%s)", err, string(out))
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Ensure clean initial state and cleanup at end of test
-	stopInfra := func() {
-		downCtx, downCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer downCancel()
-		cleanupCmd := exec.CommandContext(downCtx, binPath, "infra", "down")
-		cleanupCmd.Env = os.Environ()
-		_ = cleanupCmd.Run()
-	}
-	stopInfra()
-	defer stopInfra()
-
-	// 1. sndbx infra up
-	t.Log("Starting infrastructure via 'sndbx infra up'...")
-	upCmd := exec.CommandContext(ctx, binPath, "infra", "up")
-	upCmd.Env = os.Environ()
-	out, err = upCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("'sndbx infra up' failed: %v\nOutput: %s", err, string(out))
-	}
-	upOutput := string(out)
-	if !strings.Contains(upOutput, "Shared infrastructure is online") {
-		t.Errorf("unexpected up output: %s", upOutput)
-	}
-
-	// 2. sndbx infra list (while running)
-	t.Log("Inspecting infrastructure via 'sndbx infra list'...")
-	listCmd := exec.CommandContext(ctx, binPath, "infra", "list")
-	listCmd.Env = os.Environ()
-	out, err = listCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("'sndbx infra list' failed: %v\nOutput: %s", err, string(out))
-	}
-	listOutput := string(out)
-	if !strings.Contains(listOutput, "agent-sandbox-valkey") {
-		t.Errorf("expected agent-sandbox-valkey in list output: %s", listOutput)
-	}
-	if !strings.Contains(listOutput, "agent-sandbox-gitea") {
-		t.Errorf("expected agent-sandbox-gitea in list output: %s", listOutput)
-	}
-	if !strings.Contains(listOutput, "running") {
-		t.Errorf("expected 'running' status in list output: %s", listOutput)
-	}
-
-	// 2b. Create agent and verify provisioning in Valkey & Gitea
-	t.Log("Creating agent and testing Valkey & Gitea user provisioning...")
-	createCmd := exec.CommandContext(ctx, binPath, "agent", "create", "infra-test-agent", "as", "base", "--role", "tester")
-	createCmd.Env = os.Environ()
-	out, err = createCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("'sndbx agent create' failed: %v\nOutput: %s", err, string(out))
-	}
-
-	// Verify agent exists in Gitea
-	giteaUserURL := "http://127.0.0.1:3000/api/v1/users/infra-test-agent"
+	// 1. Verify Gitea is online and fleet org exists
+	t.Log("Verifying Gitea REST API...")
+	giteaUserURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/orgs/fleet", infra.GiteaHTTPPort)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaUserURL, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Errorf("expected Gitea user infra-test-agent to exist (status: %v, err: %v)", resp.StatusCode, err)
+		t.Fatalf("expected Gitea fleet organization to exist (status: %v, err: %v)", resp.StatusCode, err)
 	}
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
 
-	// Verify agent identity in Valkey
+	// 2. Verify Valkey is reachable and pingable
+	t.Log("Verifying Valkey backplane connection...")
 	vClient, err := libbp.Dial(ctx, libbp.ClientConfig{
 		Host:     "127.0.0.1",
-		Port:     6379,
+		Port:     infra.ValkeyPort,
 		Username: "admin",
-		Password: "admin_backplane_pass",
+		Password: infra.AdminPassword,
 	})
-	if err == nil {
-		idRecord, err := vClient.GetIdentity(ctx, "infra-test-agent")
-		if err != nil || idRecord.Name != "infra-test-agent" {
-			t.Errorf("expected Valkey identity for infra-test-agent, got %+v (err: %v)", idRecord, err)
-		}
-		_ = vClient.Close()
-	}
-
-	// Retire agent and verify complete deprovisioning from Valkey and Gitea
-	t.Log("Retiring agent via 'sndbx agent retire'...")
-	retireCmd := exec.CommandContext(ctx, binPath, "agent", "retire", "infra-test-agent")
-	retireCmd.Env = os.Environ()
-	out, err = retireCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("'sndbx agent retire' failed: %v\nOutput: %s", err, string(out))
+		t.Fatalf("failed connecting to ephemeral Valkey: %v", err)
 	}
-	if !strings.Contains(string(out), "retired and deprovisioned successfully") {
-		t.Errorf("unexpected retire output: %s", string(out))
+	defer vClient.Close()
+
+	// 3. Create agent in isolated environment and verify Gitea & Valkey provisioning
+	t.Log("Creating agent and testing Valkey & Gitea user provisioning...")
+	out, err := infra.ExecSndbx(ctx, "agent", "create", "infra-test-agent", "as", "base", "--role", "tester")
+	if err != nil {
+		t.Fatalf("'sndbx agent create' failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(out, "created successfully") {
+		t.Errorf("unexpected agent create output: %s", out)
 	}
 
-	// Verify agent user was purged from Gitea (404)
-	reqAfter, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaUserURL, nil)
+	// Verify agent user exists in Gitea
+	userURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/users/infra-test-agent", infra.GiteaHTTPPort)
+	reqUser, _ := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
+	respUser, err := http.DefaultClient.Do(reqUser)
+	if err != nil || respUser.StatusCode != http.StatusOK {
+		t.Errorf("expected Gitea user infra-test-agent to exist (status: %v, err: %v)", respUser.StatusCode, err)
+	}
+	if respUser != nil {
+		_ = respUser.Body.Close()
+	}
+
+	// Verify agent identity in Valkey
+	idRecord, err := vClient.GetIdentity(ctx, "infra-test-agent")
+	if err != nil || idRecord.Name != "infra-test-agent" {
+		t.Errorf("expected Valkey identity for infra-test-agent, got %+v (err: %v)", idRecord, err)
+	}
+
+	// 4. Test sndbx agent doctor on created agent
+	t.Log("Testing 'sndbx agent doctor' on provisioned agent...")
+	docOut, err := infra.ExecSndbx(ctx, "agent", "doctor", "infra-test-agent")
+	if err != nil {
+		t.Fatalf("'sndbx agent doctor' failed: %v\nOutput: %s", err, docOut)
+	}
+	if !strings.Contains(docOut, "Diagnosing agent \"infra-test-agent\"") {
+		t.Errorf("unexpected doctor output: %s", docOut)
+	}
+
+	// 5. Test sndbx agent retire
+	t.Log("Retiring agent via 'sndbx agent retire'...")
+	retireOut, err := infra.ExecSndbx(ctx, "agent", "retire", "infra-test-agent")
+	if err != nil {
+		t.Fatalf("'sndbx agent retire' failed: %v\nOutput: %s", err, retireOut)
+	}
+	if !strings.Contains(retireOut, "retired and deprovisioned successfully") {
+		t.Errorf("unexpected retire output: %s", retireOut)
+	}
+
+	// Verify agent was purged from Gitea (404)
+	reqAfter, _ := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
 	respAfter, err := http.DefaultClient.Do(reqAfter)
 	if err != nil || respAfter.StatusCode != http.StatusNotFound {
 		t.Errorf("expected Gitea user to be 404 after retire, got status %v (err: %v)", respAfter.StatusCode, err)
 	}
 	if respAfter != nil {
 		_ = respAfter.Body.Close()
-	}
-
-	// 3. sndbx infra down
-	t.Log("Stopping infrastructure via 'sndbx infra down'...")
-	downCmd := exec.CommandContext(ctx, binPath, "infra", "down")
-	downCmd.Env = os.Environ()
-	out, err = downCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("'sndbx infra down' failed: %v\nOutput: %s", err, string(out))
-	}
-	downOutput := string(out)
-	if !strings.Contains(downOutput, "Shared infrastructure stopped") {
-		t.Errorf("unexpected down output: %s", downOutput)
-	}
-
-	// 4. sndbx infra list (after shutdown)
-	t.Log("Inspecting infrastructure after down...")
-	listAfterCmd := exec.CommandContext(ctx, binPath, "infra", "list")
-	listAfterCmd.Env = os.Environ()
-	out, err = listAfterCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("'sndbx infra list' after down failed: %v\nOutput: %s", err, string(out))
-	}
-	listAfterOutput := string(out)
-	if strings.Contains(listAfterOutput, "running") {
-		t.Errorf("expected no running containers in list output after down: %s", listAfterOutput)
 	}
 }

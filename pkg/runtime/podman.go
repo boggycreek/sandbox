@@ -22,6 +22,13 @@ import (
 	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 )
 
+// infraValkeyContainer and infraGiteaContainer are the expected shared infra container names.
+// These are package-level vars so tests can override them with ephemeral container names.
+var (
+	infraValkeyContainer = "agent-sandbox-valkey"
+	infraGiteaContainer  = "agent-sandbox-gitea"
+)
+
 // ContainerInfo describes a container's runtime state
 type ContainerInfo struct {
 	ID      string `json:"Id"`
@@ -266,7 +273,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (
 	_ = os.Chmod(valkeyConfigDir, 0755)
 
 	// 1. Start Valkey container if not already running
-	valkeyContainer := "agent-sandbox-valkey"
+	valkeyContainer := infraValkeyContainer
 	valkeyArgs := []string{
 		"run", "-d",
 		"--name", valkeyContainer,
@@ -297,7 +304,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (
 	}
 
 	// 2. Start Gitea container if not already running
-	giteaContainer := "agent-sandbox-gitea"
+	giteaContainer := infraGiteaContainer
 	giteaArgs := []string{
 		"run", "-d",
 		"--name", giteaContainer,
@@ -415,14 +422,14 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 
 // StopInfraStack halts shared infrastructure containers
 func StopInfraStack(ctx context.Context) error {
-	_ = exec.CommandContext(ctx, "podman", "stop", "agent-sandbox-valkey").Run()
-	_ = exec.CommandContext(ctx, "podman", "stop", "agent-sandbox-gitea").Run()
+	_ = exec.CommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
 	return nil
 }
 
 // InspectInfraStack returns the runtime state of Valkey and Gitea containers
 func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
-	containers := []string{"agent-sandbox-valkey", "agent-sandbox-gitea"}
+	containers := []string{infraValkeyContainer, infraGiteaContainer}
 	var results []ContainerInfo
 	for _, c := range containers {
 		info, err := InspectAgentContainer(ctx, c)
@@ -474,5 +481,3 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 	}
 	return os.WriteFile(paths.SSHConfigFile, buf.Bytes(), 0600)
 }
-
-

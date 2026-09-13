@@ -290,8 +290,13 @@ func registerGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 		adminPass = "admin_backplane_pass"
 	}
 
+	giteaURL := os.Getenv("GITEA_URL")
+	if giteaURL == "" {
+		giteaURL = "http://127.0.0.1:3000"
+	}
+
 	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   "http://127.0.0.1:3000",
+		BaseURL:   giteaURL,
 		AdminUser: "giteaadmin",
 		AdminPass: adminPass,
 		Timeout:   2 * time.Second,
@@ -609,8 +614,13 @@ func deprovisionGiteaUser(ctx context.Context, agentName string) {
 		adminPass = "admin_backplane_pass"
 	}
 
+	giteaURL := os.Getenv("GITEA_URL")
+	if giteaURL == "" {
+		giteaURL = "http://127.0.0.1:3000"
+	}
+
 	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   "http://127.0.0.1:3000",
+		BaseURL:   giteaURL,
 		AdminUser: "giteaadmin",
 		AdminPass: adminPass,
 		Timeout:   3 * time.Second,

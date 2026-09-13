@@ -88,6 +88,9 @@ user agent-2 on >%s ~agent-2:* ~identity:agent-2 %%R~*:* &* +@all -@admin -@dang
 	}
 
 	h.waitForReady()
+	t.Cleanup(func() {
+		h.Teardown()
+	})
 	return h
 }
 
@@ -155,6 +158,7 @@ func (h *ValkeyHarness) waitForReady() {
 func (h *ValkeyHarness) Teardown() {
 	if h.containerID != "" && h.engine != "" {
 		_ = exec.Command(h.engine, "stop", h.containerID).Run()
+		_ = exec.Command(h.engine, "rm", "-f", h.containerID).Run()
 	}
 	if h.serverCmd != nil && h.serverCmd.Process != nil {
 		_ = h.serverCmd.Process.Kill()

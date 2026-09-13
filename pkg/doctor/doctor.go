@@ -138,12 +138,19 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 		healed = true
 	}
 
+	// Check and heal file permissions to 0600
+	if fi, err := os.Stat(cfgPath); err == nil && fi.Mode().Perm() != 0600 {
+		if err := os.Chmod(cfgPath, 0600); err == nil {
+			healed = true
+		}
+	}
+
 	if healed {
 		_ = config.SaveAgentConfig(cfg, paths)
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Configuration File",
 			Status:  StatusHealed,
-			Message: "Repaired missing fields and saved config",
+			Message: fmt.Sprintf("Repaired configuration and permissions (0600) at %s", cfgPath),
 			Healed:  true,
 		})
 		report.HealedCount++
@@ -151,7 +158,7 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Configuration File",
 			Status:  StatusOK,
-			Message: fmt.Sprintf("Valid configuration (%s)", cfgPath),
+			Message: fmt.Sprintf("Valid configuration and permissions (%s)", cfgPath),
 		})
 	}
 
@@ -167,8 +174,24 @@ func checkAndHealSigningKey(cfg *config.AgentConfig, paths config.Paths, report 
 			keyValid = true
 		}
 	}
+	keyHealedPerm := false
+	if fi, err := os.Stat(keyPath); err == nil && fi.Mode().Perm() != 0600 {
+		if err := os.Chmod(keyPath, 0600); err == nil {
+			keyHealedPerm = true
+		}
+	}
 
 	if keyValid && cfg.SigningKeyPEM != "" && cfg.PublicKeyB64 != "" {
+		if keyHealedPerm {
+			report.Checks = append(report.Checks, CheckItem{
+				Name:    "Ed25519 Signing Keys",
+				Status:  StatusHealed,
+				Message: "Repaired signing key file permissions to 0600",
+				Healed:  true,
+			})
+			report.HealedCount++
+			return
+		}
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Ed25519 Signing Keys",
 			Status:  StatusOK,

@@ -21,6 +21,13 @@ import (
 	"github.com/boggycreek/agent-sandbox/pkg/runtime"
 )
 
+// infraValkeyContainer and infraGiteaContainer are the expected shared infra container names.
+// These are package-level vars so integration tests can override them with ephemeral container names.
+var (
+	infraValkeyContainer = "agent-sandbox-valkey"
+	infraGiteaContainer  = "agent-sandbox-gitea"
+)
+
 // DiagnoseAndHealInfra performs a comprehensive health check and auto-healing on shared infrastructure
 func DiagnoseAndHealInfra(ctx context.Context, paths config.Paths) (*DoctorReport, error) {
 	report := &DoctorReport{
@@ -73,11 +80,28 @@ func checkAndHealInfraEnv(paths config.Paths, report *DoctorReport) {
 		report.HealedCount++
 	} else {
 		paths.LoadEnv()
-		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Environment Config (.env)",
-			Status:  StatusOK,
-			Message: fmt.Sprintf("Valid configuration present (%s)", paths.EnvFile),
-		})
+		healedEnvPerm := false
+		if fi, err := os.Stat(paths.EnvFile); err == nil && fi.Mode().Perm() != 0600 {
+			if err := os.Chmod(paths.EnvFile, 0600); err == nil {
+				healedEnvPerm = true
+			}
+		}
+
+		if healedEnvPerm {
+			report.Checks = append(report.Checks, CheckItem{
+				Name:    "Environment Config (.env)",
+				Status:  StatusHealed,
+				Message: fmt.Sprintf("Repaired environment file permissions (0600) at %s", paths.EnvFile),
+				Healed:  true,
+			})
+			report.HealedCount++
+		} else {
+			report.Checks = append(report.Checks, CheckItem{
+				Name:    "Environment Config (.env)",
+				Status:  StatusOK,
+				Message: fmt.Sprintf("Valid configuration present (%s)", paths.EnvFile),
+			})
+		}
 	}
 }
 
@@ -122,7 +146,7 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 }
 
 func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {
-	containerName := "agent-sandbox-valkey"
+	containerName := infraValkeyContainer
 	info, err := runtime.InspectAgentContainer(ctx, containerName)
 	state := "stopped"
 	if err == nil && info != nil {
@@ -135,27 +159,6 @@ func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report
 		adminPass = "admin_backplane_pass"
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-
-	client, err := libbp.Dial(dialCtx, libbp.ClientConfig{
-		Host:     bpCfg.Host,
-		Port:     bpCfg.Port,
-		Username: "admin",
-		Password: adminPass,
-	})
-	if err != nil {
-		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Valkey Service",
-			Status:  StatusWarning,
-			Message: fmt.Sprintf("Valkey container is %s (%v; start via `sndbx infra up`)", state, err),
-		})
-		report.WarningCount++
-		return
-	}
-	defer client.Close()
-
-	// Ensure human operator ACL is configured
 	humanName := os.Getenv("HUMAN_NAME")
 	if humanName == "" {
 		humanName = "operator"
@@ -165,6 +168,57 @@ func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report
 		humanPass = "human_backplane_pass"
 	}
 
+	dialCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	client, dialErr := libbp.Dial(dialCtx, libbp.ClientConfig{
+		Host:     bpCfg.Host,
+		Port:     bpCfg.Port,
+		Username: "admin",
+		Password: adminPass,
+	})
+	cancel()
+
+	if dialErr != nil {
+		// If container is running, attempt to auto-heal by restarting stack with valid ACL file
+		if state == "running" {
+			healCtx, healCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer healCancel()
+
+			if err := runtime.StartInfraStack(healCtx, paths, adminPass, humanPass, humanName); err == nil {
+				// Re-test connection after restart
+				retryCtx, retryCancel := context.WithTimeout(ctx, 2*time.Second)
+				clientRetry, retryErr := libbp.Dial(retryCtx, libbp.ClientConfig{
+					Host:     bpCfg.Host,
+					Port:     bpCfg.Port,
+					Username: "admin",
+					Password: adminPass,
+				})
+				retryCancel()
+
+				if retryErr == nil {
+					defer clientRetry.Close()
+					report.Checks = append(report.Checks, CheckItem{
+						Name:    "Valkey Service",
+						Status:  StatusHealed,
+						Message: "Repaired Valkey container mount and synchronized admin ACL credentials",
+						Healed:  true,
+					})
+					report.HealedCount++
+					return
+				}
+			}
+		}
+
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Valkey Service",
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("Valkey container is %s (%v; start via `sndbx infra up`)", state, dialErr),
+		})
+		report.WarningCount++
+		return
+	}
+	defer client.Close()
+
+	// Ensure human operator ACL is configured
 	aclArgs := []string{
 		"SETUSER", humanName, "on",
 		">" + humanPass,
@@ -223,7 +277,7 @@ func checkAndHealGiteaContainer(ctx context.Context, paths config.Paths, report 
 
 	_ = client.EnsureOrg(ctx, "fleet")
 	_ = client.EnsureRepo(ctx, "fleet", "tools", "Fleet shared utility repositories", true)
-	_ = client.EnsureRepo(ctx, "fleet", "tasks", "Fleet task tracking backlog", true)
+	_ = client.EnsureRepo(ctx, "fleet", "tasks", "Fleet shared task tracking backlog", true)
 
 	report.Checks = append(report.Checks, CheckItem{
 		Name:    "Gitea Service",

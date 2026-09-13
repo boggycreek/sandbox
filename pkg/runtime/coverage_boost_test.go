@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,9 +103,17 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	_ = CleanAgentContainer(ctx, cfg.ContainerName)
 	_ = DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName)
 
-	// Test StartInfraStack with defaults and already-running paths
-	_ = StartInfraStack(ctx, paths, "", "", "")
-	_ = StartInfraStack(ctx, paths, "test_admin_pass", "test_human_pass", "test_human_name")
+	// Test StartInfraStack with an isolated DataHome that won't stomp live host ACL
+	infraPaths := config.Paths{
+		DataHome: filepath.Join(tmpDir, "infra-data"),
+	}
+	_ = os.MkdirAll(infraPaths.DataHome, 0755)
+	// These calls exercise the code paths including the existing-container branch
+	// (the live infra containers already exist, so this will exercise the start/restart branch)
+	_ = StartInfraStack(ctx, infraPaths, "test_admin_pass", "test_human_pass", "test_human_name")
+
+	// Call a second time to exercise the "container already exists, podman start" path
+	_ = StartInfraStack(ctx, infraPaths, "test_admin_pass2", "test_human_pass2", "test_human_name2")
 
 	giteaMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -119,7 +128,6 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	if err != nil || len(infraList) == 0 {
 		t.Errorf("InspectInfraStack failed: %v", err)
 	}
-	_ = StopInfraStack(ctx)
 
 	// Ensure network creation path
 	testNet := "agent-sandbox-unit-test-net"
@@ -154,9 +162,60 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	}
 	_ = SyncSSHConfigFile(ctx, pathsDefaultSSH)
 
+	// Test SyncSSHConfigFile error when AgentsDir is an invalid file path
+	invalidAgentsPath := filepath.Join(tmpDir, "file-not-dir")
+	_ = os.WriteFile(invalidAgentsPath, []byte("plain file"), 0600)
+	_ = SyncSSHConfigFile(ctx, config.Paths{AgentsDir: invalidAgentsPath})
+
 	// StopAgentContainer with nonexistent container
 	_ = StopAgentContainer(ctx, "nonexistent-container-stop-test")
 }
 
+// TestStopInfraStackCoverage exercises StopInfraStack with ephemeral container names.
+// It overrides the package-level infra container name vars so the real production containers are not affected.
+func TestStopInfraStackCoverage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
+	// Use unique ephemeral container names that won't conflict with production
+	pid := os.Getpid()
+	testValkeyName := fmt.Sprintf("unit-test-valkey-stop-%d", pid)
+	testGiteaName := fmt.Sprintf("unit-test-gitea-stop-%d", pid)
 
+	// Override package-level vars so StopInfraStack targets our ephemeral containers
+	origValkey := infraValkeyContainer
+	origGitea := infraGiteaContainer
+	infraValkeyContainer = testValkeyName
+	infraGiteaContainer = testGiteaName
+	defer func() {
+		infraValkeyContainer = origValkey
+		infraGiteaContainer = origGitea
+	}()
+
+	// Start a minimal ephemeral Valkey container for the stop test
+	startOut, err := exec.CommandContext(ctx, "podman", "run", "-d", "--name", testValkeyName,
+		"docker.io/valkey/valkey:8-alpine",
+	).CombinedOutput()
+	if err != nil {
+		t.Skipf("Cannot start ephemeral valkey container for stop test: %v (%s)", err, string(startOut))
+	}
+	// Ensure cleanup even if StopInfraStack doesn't fully clean up
+	defer func() {
+		_ = exec.Command("podman", "rm", "-f", testValkeyName).Run()
+		_ = exec.Command("podman", "rm", "-f", testGiteaName).Run()
+	}()
+
+	// Now exercise StopInfraStack — should stop our ephemeral containers
+	if err := StopInfraStack(ctx); err != nil {
+		t.Errorf("StopInfraStack returned unexpected error: %v", err)
+	}
+
+	// Also exercise InspectInfraStack with our ephemeral containers (stopped state)
+	list, err := InspectInfraStack(ctx)
+	if err != nil {
+		t.Errorf("InspectInfraStack failed: %v", err)
+	}
+	if len(list) == 0 {
+		t.Errorf("InspectInfraStack returned empty list")
+	}
+}
