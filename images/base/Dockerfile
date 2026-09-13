@@ -41,7 +41,7 @@ ENV LANG=en_US.UTF-8 \
 # Create unprivileged agent user (UID 1000, GID 1000)
 RUN groupadd -g 1000 agent && \
     useradd -u 1000 -g agent -m -s /bin/bash agent && \
-    mkdir -p /home/agent/workspace /home/agent/.ssh /home/agent/.local/bin /home/agent/.config && \
+    mkdir -p /home/agent/workspace /home/agent/.ssh /home/agent/.local/bin /home/agent/.config /home/agent/doc && \
     chown -R agent:agent /home/agent
 
 # Configure OpenSSH daemon for unprivileged execution
@@ -51,6 +51,11 @@ RUN mkdir -p /var/run/sshd && chmod 755 /var/run/sshd
 # Install static bp CLI binary from builder
 COPY --from=builder /build/bp /usr/local/bin/bp
 RUN chmod +x /usr/local/bin/bp
+
+# Install in-container documentation
+COPY images/base/doc/ /usr/local/share/doc/agent-sandbox/
+COPY images/base/doc/ /home/agent/doc/
+RUN chown -R agent:agent /home/agent/doc
 
 # Install tmux configuration and entrypoint
 COPY images/base/tmux.conf /home/agent/.tmux.conf

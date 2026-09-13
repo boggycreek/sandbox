@@ -28,4 +28,5 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00020 — Agent Creation and Lifecycle Separation in sndbx CLI](00020-AgentCreationAndLifecycleSeparation.md)
 - [00021 — Local OpenAI-Compatible Inference Support and Host Gateway Routing](00021-LocalOpenAICompatibleInferenceSupport.md)
 - [00022 — Agent Deprovisioning and Full Infrastructure Retirement](00022-AgentDeprovisioningAndRetirement.md)
+- [00023 — In-Container Environment Documentation and Dedicated doc Directory](00023-InContainerEnvironmentDocumentationAndDocDirectory.md)
 

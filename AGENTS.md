@@ -31,7 +31,7 @@ agent-sandbox/
 ├── test/
 │   ├── harness/            # Embedded Valkey test server harness
 │   └── integration/        # End-to-end integration tests (bp, sndbx, infra lifecycle)
-├── doc/adr/                # Architecture Decision Records (00001 - 00022)
+├── doc/adr/                # Architecture Decision Records (00001 - 00023)
 ├── install.sh              # Host installation & bootstrap script
 ├── dev-setup.sh            # Developer environment setup & verification script
 └── Makefile                # Quality gates, tests, linting, and build targets

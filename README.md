@@ -86,7 +86,7 @@ sndbx repo build-images                                  # Build base and deriva
 Detailed architectural specifications and decision records are maintained in the repository:
 
 - **[AGENTS.md](AGENTS.md)**: Comprehensive guide covering system architecture, messaging protocol, local inference gateway, security boundaries, and engineering quality gates.
-- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00022).
+- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00023).
 
 ---
 

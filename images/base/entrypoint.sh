@@ -39,6 +39,13 @@ if [ -x "/usr/sbin/sshd" ] || command -v sshd >/dev/null 2>&1; then
   /usr/sbin/sshd -f /etc/ssh/sshd_config -E "${SSH_DIR}/sshd.log" 2>/dev/null || true
 fi
 
+# Ensure in-container platform documentation is populated in persistent home
+DOC_DIR="/home/agent/doc"
+mkdir -p "${DOC_DIR}"
+if [ -d "/usr/local/share/doc/agent-sandbox" ]; then
+  cp -ru /usr/local/share/doc/agent-sandbox/* "${DOC_DIR}/" 2>/dev/null || cp -r /usr/local/share/doc/agent-sandbox/* "${DOC_DIR}/" 2>/dev/null || true
+fi
+
 # Announce online presence to Valkey backplane if bp is available and configured
 if command -v bp >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
   bp say "online (container started)" 2>/dev/null || true
