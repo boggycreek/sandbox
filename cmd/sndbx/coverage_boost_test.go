@@ -105,10 +105,6 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	if code != 0 {
 		t.Errorf("agent clean failed")
 	}
-	code = Run([]string{"agent", "destroy"}, &stdout, &stderr)
-	if code != 1 {
-		t.Errorf("agent destroy deprecated should return 1")
-	}
 	code = Run([]string{"agent", "clean"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("agent clean missing args should fail")

@@ -164,9 +164,6 @@ Commands:
 		return handleAgentClean(ctx, paths, subArgs, stdout, stderr)
 	case "retire":
 		return handleAgentRetire(ctx, paths, subArgs, stdout, stderr)
-	case "destroy":
-		fmt.Fprintln(stderr, "sndbx error: 'destroy' has been removed. Use 'sndbx agent retire <name>' to fully decommission an agent.")
-		return 1
 	default:
 		fmt.Fprintf(stderr, "sndbx agent: unknown command %q\n", sub)
 		return 1
@@ -566,7 +563,7 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 	_ = runtime.SyncSSHConfigFile(ctx, paths)
 
 	fmt.Fprintf(stdout, "Agent %q retired and deprovisioned successfully.\n", name)
-	fmt.Fprintf(stdout, "  ✓ Container (%s) and volume (%s) destroyed\n", cfg.ContainerName, cfg.VolumeName)
+	fmt.Fprintf(stdout, "  ✓ Container (%s) and volume (%s) removed\n", cfg.ContainerName, cfg.VolumeName)
 	fmt.Fprintf(stdout, "  ✓ Local configuration and secrets purged\n")
 	fmt.Fprintf(stdout, "  ✓ Valkey ACL user and backplane identity removed\n")
 	fmt.Fprintf(stdout, "  ✓ Gitea user account and authorized keys purged\n")
