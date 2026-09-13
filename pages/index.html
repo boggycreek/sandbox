@@ -117,6 +117,78 @@
     </div>
   </section>
 
+  <!-- Architecture Section -->
+  <section class="features-section" id="architecture" style="border-top: 1px solid var(--border-color);">
+    <div class="section-title">
+      <h2>System Architecture</h2>
+      <p>Multi-layered isolation and backplane topology on physical hardware.</p>
+    </div>
+
+    <div class="arch-diagram">
+      <!-- Host Layer -->
+      <div class="arch-layer">
+        <div class="arch-layer-title">
+          <span>🖥️ Physical Host Environment</span>
+          <span style="color: var(--text-muted); font-weight: 400; text-transform: none; font-size: 0.8rem;">(macOS / Linux • Zero Secret Leakage)</span>
+        </div>
+        <div class="arch-grid">
+          <div class="arch-node">
+            <h4><code>sndbx</code> CLI</h4>
+            <p>Unified lifecycle manager: create, start, doctor, and retire containers.</p>
+          </div>
+          <div class="arch-node">
+            <h4><code>~/.ssh/config</code></h4>
+            <p>Managed OpenSSH include block routing port-forwarded IDE traffic.</p>
+          </div>
+          <div class="arch-node">
+            <h4><code>llm-gateway</code></h4>
+            <p>Loopback bridge routing requests to local Ollama, vLLM, or LiteLLM.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Infrastructure Bridge -->
+      <div class="arch-layer">
+        <div class="arch-layer-title">
+          <span>⚡ Shared Infrastructure Network</span>
+          <span style="color: var(--text-muted); font-weight: 400; text-transform: none; font-size: 0.8rem;">(agent-sandbox-infra bridge)</span>
+        </div>
+        <div class="arch-grid">
+          <div class="arch-node">
+            <h4>Valkey Backplane</h4>
+            <p>Redis Streams bus with Ed25519 signatures and per-agent ACL isolation.</p>
+          </div>
+          <div class="arch-node">
+            <h4>Local Gitea Forge</h4>
+            <p>Rootless Git server for task tracking (<code>bd</code>), fleet dotfiles, and memory sync.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent Containers -->
+      <div class="arch-layer">
+        <div class="arch-layer-title">
+          <span>🛡️ Agent Sandbox Containers</span>
+          <span style="color: var(--text-muted); font-weight: 400; text-transform: none; font-size: 0.8rem;">(Rootless Podman • UID 1000 • Unprivileged sshd:2222)</span>
+        </div>
+        <div class="arch-grid">
+          <div class="arch-node">
+            <h4>OpenCode Harness</h4>
+            <p>Autonomous AI engineer with full shell agency, git, compilers, and tmux supervisor.</p>
+          </div>
+          <div class="arch-node">
+            <h4>Claude Code Harness</h4>
+            <p>Isolated environment for Claude-based tool-use agents with persistent volume mount.</p>
+          </div>
+          <div class="arch-node">
+            <h4>Antigravity / Custom</h4>
+            <p>Neutral base derivative running custom harnesses and backplane clients (<code>bp</code>).</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Quick Start -->
   <section class="features-section" id="quickstart" style="background-color: var(--bg-secondary); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color);">
     <div class="section-title">
