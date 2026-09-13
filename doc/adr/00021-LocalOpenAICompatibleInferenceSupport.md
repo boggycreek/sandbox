@@ -15,8 +15,9 @@ The Agent Sandbox implements unified, declarative support for OpenAI-compatible 
    - `sndbx agent create` accepts `--model-url <url>`, `--model-name <name>`, and `--model-key <key>`, with automatic fallback to host environment variables (`OPENAI_BASE_URL`, `OPENAI_MODEL`, `OPENAI_API_KEY`).
    - If `--model-url` is specified without `--model-name`, agent runners auto-detect or default to their configured models.
 
-2. **Automatic Host Gateway Address Translation**:
-   - In `pkg/runtime/podman.go`, if `model_url` references `localhost` or `127.0.0.1` (e.g. `http://localhost:11434/v1`), the runtime automatically translates the URL to `http://host.containers.internal:11434/v1` when constructing container arguments.
+2. **Well-Known Host Gateway Address Translation (`llm-gateway`)**:
+   - In `pkg/runtime/podman.go`, containers are launched with `--add-host=llm-gateway:host-gateway`.
+   - If `model_url` references `localhost` or `127.0.0.1` (e.g. `http://localhost:11434/v1`), the runtime automatically translates the URL to `http://llm-gateway:11434/v1` when constructing container arguments. This creates a clean, predictable, and platform-agnostic hostname across all container runners.
 
 3. **Standard Container Environment Injection**:
    - The runtime injects the standard OpenAI variables:

@@ -96,6 +96,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"--name", cfg.ContainerName,
 		"--hostname", fmt.Sprintf("%s-sandbox", cfg.Name),
 		"--network", netName,
+		"--add-host", "llm-gateway:host-gateway",
 		"-p", "127.0.0.1::2222",
 		"-e", fmt.Sprintf("AGENT_NAME=%s", cfg.Name),
 		"-e", fmt.Sprintf("BP_AGENT=%s", cfg.Name),
@@ -106,10 +107,10 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	}
 
 	if cfg.ModelURL != "" {
-		// Translate localhost / 127.0.0.1 to host.containers.internal for Podman bridge access
+		// Translate localhost / 127.0.0.1 to llm-gateway for container-to-host bridge access
 		containerModelURL := cfg.ModelURL
-		containerModelURL = strings.ReplaceAll(containerModelURL, "://localhost", "://host.containers.internal")
-		containerModelURL = strings.ReplaceAll(containerModelURL, "://127.0.0.1", "://host.containers.internal")
+		containerModelURL = strings.ReplaceAll(containerModelURL, "://localhost", "://llm-gateway")
+		containerModelURL = strings.ReplaceAll(containerModelURL, "://127.0.0.1", "://llm-gateway")
 
 		args = append(args,
 			"-e", fmt.Sprintf("OPENAI_BASE_URL=%s", containerModelURL),
