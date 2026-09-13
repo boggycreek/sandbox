@@ -87,3 +87,46 @@ func (p Paths) LoadEnv() {
 	}
 }
 
+// ResolveRepoDir returns the absolute path to the local repository checkout.
+// It checks AGENT_SANDBOX_REPO, SANDBOX_ROOT, the parent of the binary,
+// the current working directory, and the standard ~/.local/share/agent-sandbox/repo fallback.
+func (p Paths) ResolveRepoDir() string {
+	// 1. Explicit environment variable override
+	if repo := os.Getenv("AGENT_SANDBOX_REPO"); repo != "" {
+		if fi, err := os.Stat(filepath.Join(repo, "Makefile")); err == nil && !fi.IsDir() {
+			return repo
+		}
+	}
+	if repo := os.Getenv("SANDBOX_ROOT"); repo != "" {
+		if fi, err := os.Stat(filepath.Join(repo, "Makefile")); err == nil && !fi.IsDir() {
+			return repo
+		}
+	}
+
+	// 2. Current working directory
+	if cwd, err := os.Getwd(); err == nil {
+		if fi, err := os.Stat(filepath.Join(cwd, "Makefile")); err == nil && !fi.IsDir() {
+			return cwd
+		}
+	}
+
+	// 3. Relative to the executing binary (e.g. repo/bin/sndbx -> repo)
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		parent := filepath.Dir(exeDir)
+		if fi, err := os.Stat(filepath.Join(parent, "Makefile")); err == nil && !fi.IsDir() {
+			return parent
+		}
+	}
+
+	// 4. Default standard XDG repository location
+	standardRepo := filepath.Join(p.DataHome, "repo")
+	if fi, err := os.Stat(filepath.Join(standardRepo, "Makefile")); err == nil && !fi.IsDir() {
+		return standardRepo
+	}
+
+	// Fallback to current working directory if none found
+	cwd, _ := os.Getwd()
+	return cwd
+}
+

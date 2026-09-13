@@ -8,6 +8,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -129,4 +130,30 @@ func TestConfigCoverageBoost(t *testing.T) {
 	// LoadEnv on missing file
 	missingEnvPaths := Paths{EnvFile: filepath.Join(tmpDir, "missing.env")}
 	missingEnvPaths.LoadEnv()
+
+	// 10. ResolveRepoDir tests
+	// a. AGENT_SANDBOX_REPO env var
+	mockRepoDir := filepath.Join(tmpDir, "mock-repo")
+	_ = os.MkdirAll(mockRepoDir, 0755)
+	_ = os.WriteFile(filepath.Join(mockRepoDir, "Makefile"), []byte("# mock"), 0644)
+	os.Setenv("AGENT_SANDBOX_REPO", mockRepoDir)
+	if r := paths.ResolveRepoDir(); r != mockRepoDir {
+		t.Errorf("expected %s from AGENT_SANDBOX_REPO, got %s", mockRepoDir, r)
+	}
+	os.Unsetenv("AGENT_SANDBOX_REPO")
+
+	// b. SANDBOX_ROOT env var
+	os.Setenv("SANDBOX_ROOT", mockRepoDir)
+	if r := paths.ResolveRepoDir(); r != mockRepoDir {
+		t.Errorf("expected %s from SANDBOX_ROOT, got %s", mockRepoDir, r)
+	}
+	os.Unsetenv("SANDBOX_ROOT")
+
+	// c. Standard XDG repo directory
+	stdRepo := filepath.Join(paths.DataHome, "repo")
+	_ = os.MkdirAll(stdRepo, 0755)
+	_ = os.WriteFile(filepath.Join(stdRepo, "Makefile"), []byte("# mock std"), 0644)
+	if r := paths.ResolveRepoDir(); r != stdRepo && !strings.Contains(r, "agent-sandbox") {
+		t.Errorf("expected standard repo fallback, got %s", r)
+	}
 }

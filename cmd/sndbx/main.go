@@ -771,6 +771,8 @@ func handleRepo(ctx context.Context, paths config.Paths, args []string, stdout, 
 		return 1
 	}
 	sub := strings.ToLower(args[0])
+	repoDir := paths.ResolveRepoDir()
+
 	switch sub {
 	case "help", "-h", "--help":
 		fmt.Fprintln(stdout, `Usage: sndbx repo <command>
@@ -781,11 +783,11 @@ Commands:
   path          Print absolute path to the local repository checkout`)
 		return 0
 	case "path":
-		cwd, _ := os.Getwd()
-		fmt.Fprintln(stdout, cwd)
+		fmt.Fprintln(stdout, repoDir)
 		return 0
 	case "build":
 		cmd := exec.CommandContext(ctx, "make", "build-cli")
+		cmd.Dir = repoDir
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
@@ -794,6 +796,7 @@ Commands:
 		return 0
 	case "build-images":
 		cmd := exec.CommandContext(ctx, "make", "build-images")
+		cmd.Dir = repoDir
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {

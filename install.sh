@@ -263,6 +263,7 @@ if [ ! -f "${ENV_FILE}" ]; then
 # Agent Sandbox Environment Configuration
 # Generated for ${OS_PRETTY} (${OS}/${ARCH})
 
+SANDBOX_ROOT=${SANDBOX_ROOT}
 HUMAN_NAME=${HUMAN_NAME}
 ADMIN_BACKPLANE_PASSWORD=${ADMIN_PW}
 HUMAN_BACKPLANE_PASSWORD=${HUMAN_PW}
@@ -275,6 +276,10 @@ EOF
   chmod 600 "${ENV_FILE}"
 else
   echo "  Existing configuration file found at ${ENV_FILE}"
+  # Ensure SANDBOX_ROOT is recorded if not present
+  if ! grep -q "^SANDBOX_ROOT=" "${ENV_FILE}" 2>/dev/null; then
+    echo "SANDBOX_ROOT=${SANDBOX_ROOT}" >> "${ENV_FILE}"
+  fi
 fi
 
 # Configure sndbx and bp CLI executables
