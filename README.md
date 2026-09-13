@@ -54,27 +54,28 @@ The installer automatically recognizes the local checkout and sets it up as the 
 
 ## Host CLI (`sndbx`) Cheat Sheet
 
-The `sndbx` CLI manages the fleet and shared infrastructure:
+The `sndbx` CLI manages the fleet, shared infrastructure, and build targets:
 
 ```bash
 # Shared Infrastructure (Valkey Backplane + Gitea Git Server)
-sndbx infra up                   # Start Valkey and Gitea stack
-sndbx infra list                 # View service status and connection endpoints
-sndbx infra down                 # Stop shared services (preserves data volumes)
+sndbx infra up                                           # Start Valkey and Gitea stack
+sndbx infra list                                         # View service status and connection endpoints
+sndbx infra down                                         # Stop shared services (preserves data volumes)
 
 # Agent Instance Lifecycle
-sndbx agent start <name>         # Start a named agent instance
-sndbx agent start <name> --type=claude --connect  # Start and attach via tmux
-sndbx agent connect <name>       # Attach directly to running tmux session
-sndbx agent list                 # List running instances, status, and dynamic SSH ports
-sndbx agent ssh <name>           # SSH directly into the instance environment
-sndbx agent stop <name>          # Stop an agent instance
-sndbx agent clean <name>         # Remove container (keeps persistent home volume)
-sndbx agent clean-all <name>     # Remove container and wipe all persistent storage
-sndbx agent refresh <name>       # Rebuild image and recreate container (keeps volume)
+sndbx agent create <name> [as <type>] [--role <role>]    # Provision a new named agent
+sndbx agent start <name>                                 # Start the agent daemon container
+sndbx agent connect <name>                               # Attach directly to running tmux supervisor
+sndbx agent ssh <name>                                   # SSH directly into unprivileged environment
+sndbx agent list [--json]                                # List configured instances, status, and SSH ports
+sndbx agent stop [name] [--all]                          # Stop agent container(s)
+sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)
+sndbx agent destroy <name>                               # Purge container, home volume, and secrets
 
-# Desktop GUI Monitor
-sndbx gui                        # Launch native desktop backplane client (macOS/Linux)
+# Repository Operations
+sndbx repo path                                          # Print sandbox installation root path
+sndbx repo build                                         # Compile native CLI binaries (bin/sndbx, bin/bp)
+sndbx repo build-images                                  # Build base and derivative OCI container images
 ```
 
 ---
@@ -83,8 +84,8 @@ sndbx gui                        # Launch native desktop backplane client (macOS
 
 Detailed architectural specifications and decision records are maintained in the repository:
 
-- **[SPEC.md](SPEC.md)**: Full system specification covering the Go monorepo layout, `libbp` FFI, container runtime, Valkey protocol, Gitea setup, and memory backup model.
-- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00017).
+- **[AGENTS.md](AGENTS.md)**: Comprehensive guide covering system architecture, messaging protocol, local inference gateway, security boundaries, and engineering quality gates.
+- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00021).
 
 ---
 
