@@ -107,3 +107,43 @@ func TestPodmanHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAgentImage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 1. Presets
+	img, _ := ResolveAgentImage(ctx, "base")
+	if img != "agent-sandbox-base:latest" {
+		t.Errorf("expected agent-sandbox-base:latest, got %s", img)
+	}
+	img, _ = ResolveAgentImage(ctx, "")
+	if img != "agent-sandbox-base:latest" {
+		t.Errorf("expected empty to resolve to agent-sandbox-base:latest, got %s", img)
+	}
+	img, _ = ResolveAgentImage(ctx, "opencode")
+	if img != "agent-sandbox-opencode:latest" {
+		t.Errorf("expected opencode preset, got %s", img)
+	}
+	img, _ = ResolveAgentImage(ctx, "claude")
+	if img != "agent-sandbox-claude:latest" {
+		t.Errorf("expected claude preset, got %s", img)
+	}
+	img, _ = ResolveAgentImage(ctx, "agy")
+	if img != "agent-sandbox-agy:latest" {
+		t.Errorf("expected agy preset, got %s", img)
+	}
+
+	// 2. Remote OCI references
+	img, isLocal := ResolveAgentImage(ctx, "quay.io/boggycreek/custom-bot:v1")
+	if img != "quay.io/boggycreek/custom-bot:v1" || isLocal {
+		t.Errorf("expected remote quay.io image not local, got %s (local: %v)", img, isLocal)
+	}
+
+	// 3. Untagged remote OCI reference
+	img, _ = ResolveAgentImage(ctx, "ghcr.io/org/repo")
+	if img != "ghcr.io/org/repo:latest" {
+		t.Errorf("expected :latest appended to untagged remote OCI, got %s", img)
+	}
+}
+

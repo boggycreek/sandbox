@@ -218,7 +218,9 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		image = "base"
 	}
 
-	cfg, err := config.NewAgentConfig(agentName, image, role, modelURL, modelName, modelKey)
+	resolvedImage, _ := runtime.ResolveAgentImage(ctx, image)
+
+	cfg, err := config.NewAgentConfig(agentName, resolvedImage, role, modelURL, modelName, modelKey)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
 		return 1

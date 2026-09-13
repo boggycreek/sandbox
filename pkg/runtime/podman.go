@@ -57,6 +57,51 @@ type AgentStatus struct {
 	IDEConnect    string `json:"ide_connect"`
 }
 
+// ResolveAgentImage resolves an image input according to ADR 00029:
+// 1. Well-known presets (base, opencode, claude, agy)
+// 2. Local Podman store images (matching local tags or localhost/ prefix)
+// 3. Remote OCI image references
+func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal bool) {
+	lower := strings.ToLower(strings.TrimSpace(input))
+	if preset, ok := config.WellKnownImages[lower]; ok {
+		// Check if the preset image exists locally
+		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", preset)
+		return preset, checkCmd.Run() == nil
+	}
+	if lower == "" {
+		preset := config.WellKnownImages["base"]
+		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", preset)
+		return preset, checkCmd.Run() == nil
+	}
+
+	// Tier 2: Check local Podman storage
+	candidates := []string{input}
+	if !strings.Contains(input, ":") {
+		candidates = append(candidates, input+":latest")
+	}
+	if !strings.HasPrefix(input, "localhost/") {
+		candidates = append(candidates, "localhost/"+input)
+		if !strings.Contains(input, ":") {
+			candidates = append(candidates, "localhost/"+input+":latest")
+		}
+	}
+
+	for _, cand := range candidates {
+		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", cand)
+		if err := checkCmd.Run(); err == nil {
+			return cand, true
+		}
+	}
+
+	// Tier 3: External OCI image reference
+	resolved := input
+	if !strings.Contains(resolved, ":") && !strings.Contains(resolved, "@") {
+		resolved = resolved + ":latest"
+	}
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", resolved)
+	return resolved, checkCmd.Run() == nil
+}
+
 // EnsureNetwork creates the bridge network if it does not already exist
 func EnsureNetwork(ctx context.Context, netName string) error {
 	cmd := exec.CommandContext(ctx, "podman", "network", "exists", netName)

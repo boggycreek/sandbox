@@ -81,7 +81,10 @@ func DiagnoseAndHealAgent(ctx context.Context, agentName string, paths config.Pa
 	// 4. Podman Storage (Volume & Network) Check & Heal
 	checkAndHealPodmanStorage(ctx, cfg, report)
 
-	// 5. Valkey Backplane Registration Check & Heal
+	// 5. Image Resolution and Cache Verification
+	checkAndHealImage(ctx, cfg, paths, report)
+
+	// 6. Valkey Backplane Registration Check & Heal
 	checkAndHealValkey(ctx, cfg, paths, report)
 
 	// 6. Gitea Git Forge Registration Check & Heal
@@ -323,6 +326,38 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 		})
 	}
 }
+
+func checkAndHealImage(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	resolved, isLocal := runtime.ResolveAgentImage(ctx, cfg.Image)
+	if resolved != cfg.Image {
+		cfg.Image = resolved
+		_ = config.SaveAgentConfig(cfg, paths)
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Agent Image",
+			Status:  StatusHealed,
+			Message: fmt.Sprintf("Updated image reference to %s", resolved),
+			Healed:  true,
+		})
+		report.HealedCount++
+		return
+	}
+
+	if isLocal {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Agent Image",
+			Status:  StatusOK,
+			Message: fmt.Sprintf("Image %s present in local Podman storage", cfg.Image),
+		})
+	} else {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Agent Image",
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("Image %s not cached locally (will be pulled on start)", cfg.Image),
+		})
+		report.WarningCount++
+	}
+}
+
 
 func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
 	bpCfg := libbp.LoadClientFromEnv()
