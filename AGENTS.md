@@ -31,11 +31,24 @@ agent-sandbox/
 ├── test/
 │   ├── harness/            # Embedded Valkey test server harness
 │   └── integration/        # End-to-end integration tests (bp, sndbx, infra lifecycle)
-├── doc/adr/                # Architecture Decision Records (00001 - 00028)
+├── doc/
+│   ├── adr/                # Architecture Decision Records (00001 - 00029)
+│   └── ai/                 # Progressive disclosure knowledge base optimized for AI agents
 ├── install.sh              # Host installation & bootstrap script
 ├── dev-setup.sh            # Developer environment setup & verification script
 └── Makefile                # Quality gates, tests, linting, and build targets
 ```
+
+---
+
+## Agent Knowledge Base (`doc/ai/`)
+
+For in-depth architectural specifications and operational protocols, refer to the progressive disclosure documents:
+- **[Development Workflow & PR Protocol](doc/ai/dev-workflow.md)**: Branching, PR requirements, conventional commits, quality gates checklist.
+- **[Architecture & Runtime](doc/ai/architecture.md)**: Podman isolation, security boundary, layered OCI hierarchy, local LLM gateway.
+- **[OCI Image Resolution & Tagging](doc/ai/image-resolution.md)**: 3-tier image resolution, well-known presets, local store discovery, remote OCI refs (ADR 00029).
+- **[Testing Guidelines & Coverage Gates](doc/ai/testing-guidelines.md)**: Strict >=90% test coverage enforcement, rootless Podman cleanup patterns, containerized smoke testing.
+- **[Diagnostic Doctor & Auto-Healing](doc/ai/doctor-diagnostics.md)**: `sndbx agent doctor` and `sndbx infra doctor` diagnostic checks and self-healing.
 
 ---
 
