@@ -1,6 +1,6 @@
 # Multi-stage build: 
 # Stage 1: Build static bp CLI binary
-FROM golang:1.27-bookworm AS builder
+FROM docker.io/library/golang:1.25-bookworm AS builder
 WORKDIR /src
 COPY go.mod ./
 COPY pkg/ ./pkg/
@@ -8,7 +8,7 @@ COPY cmd/ ./cmd/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./cmd/bp
 
 # Stage 2: Clean, neutral Base OCI Image
-FROM debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim
 
 # Install core CLI tools, unprivileged OpenSSH, tmux, git, and system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
