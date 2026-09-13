@@ -1,6 +1,6 @@
 # Multi-stage build: 
 # Stage 1: Build static bp CLI binary
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.27-bookworm AS builder
 WORKDIR /src
 COPY go.mod ./
 COPY pkg/ ./pkg/
