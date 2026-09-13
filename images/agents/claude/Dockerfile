@@ -29,6 +29,9 @@ COPY images/agents/claude/claude-settings.json /etc/claude/settings.json
 COPY images/agents/claude/claude-entrypoint.sh /usr/local/bin/claude-entrypoint.sh
 RUN chmod +x /usr/local/bin/claude-entrypoint.sh
 
+# Ensure home directory ownership belongs to agent
+RUN chown -R agent:agent /home/agent
+
 USER agent
 WORKDIR /home/agent/workspace
 

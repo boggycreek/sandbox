@@ -29,6 +29,9 @@ COPY images/agents/opencode/opencode.json /etc/opencode/opencode.json
 COPY images/agents/opencode/opencode-entrypoint.sh /usr/local/bin/opencode-entrypoint.sh
 RUN chmod +x /usr/local/bin/opencode-entrypoint.sh
 
+# Ensure home directory ownership belongs to agent
+RUN chown -R agent:agent /home/agent
+
 USER agent
 WORKDIR /home/agent/workspace
 

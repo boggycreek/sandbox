@@ -147,6 +147,11 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	}
 	mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent:z", cfg.VolumeName))
 
+	containerBPHost := bpHost
+	if containerBPHost == "localhost" || containerBPHost == "127.0.0.1" || containerBPHost == "" {
+		containerBPHost = "agent-sandbox-valkey"
+	}
+
 	args := []string{
 		"run", "-d",
 		"--name", cfg.ContainerName,
@@ -157,7 +162,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"-e", fmt.Sprintf("AGENT_NAME=%s", cfg.Name),
 		"-e", fmt.Sprintf("BP_AGENT=%s", cfg.Name),
 		"-e", fmt.Sprintf("BP_PASSWORD=%s", cfg.Password),
-		"-e", fmt.Sprintf("BP_HOST=%s", bpHost),
+		"-e", fmt.Sprintf("BP_HOST=%s", containerBPHost),
 		"-e", fmt.Sprintf("BP_PORT=%d", bpPort),
 		"-e", fmt.Sprintf("BP_SIGNING_KEY_PEM=%s", cfg.SigningKeyPEM),
 	}

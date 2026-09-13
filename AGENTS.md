@@ -155,4 +155,8 @@ make build             # Compile all native binaries into bin/
 # Development Setup
 ./dev-setup.sh         # Verify/install development tools (golangci-lint, shellcheck, gosec, etc.)
 ./install.sh           # Install/update sndbx and bp binaries in ~/.local/bin
+
+# Environment & Test Cleanup
+make clean-test-env    # Safely clear stale test containers, orphaned netns, and test conmon processes
+make clean-all         # Clean build artifacts + test environment state
 ```
