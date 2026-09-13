@@ -154,6 +154,11 @@ func TestClientExtraCoverage(t *testing.T) {
 		t.Errorf("expected SigningKey to be populated from SigningKeyPEM")
 	}
 	clientWithPEM.Close()
+
+	// 14. AssertAllowed error coverage in Exec
+	if _, err := client.Exec(ctx, "SHUTDOWN"); err == nil {
+		t.Errorf("expected error from dangerous command in Exec")
+	}
 }
 
 func TestSigningExtraCoverage(t *testing.T) {
