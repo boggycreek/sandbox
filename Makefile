@@ -14,7 +14,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck format clean clean-test-env clean-all build build-cli build-libbp
+.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode format clean clean-test-env clean-all build build-cli build-libbp
 
 all: check build
 
@@ -107,6 +107,15 @@ gosec: ## Run gosec static security analysis
 		fi; \
 	else \
 		echo "Notice: gosec not installed. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
+	fi
+
+deadcode: ## Run deadcode reachability analysis
+	@echo "==> Running deadcode reachability analysis..."
+	@DEADCODE_BIN=$$(command -v deadcode 2>/dev/null || ( [ -x "$$($(GO) env GOPATH)/bin/deadcode" ] && echo "$$($(GO) env GOPATH)/bin/deadcode" ) || true); \
+	if [ -n "$${DEADCODE_BIN}" ] && [ -x "$${DEADCODE_BIN}" ]; then \
+		$${DEADCODE_BIN} -test ./...; \
+	else \
+		echo "Notice: deadcode not installed. Install via: go install golang.org/x/tools/cmd/deadcode@latest"; \
 	fi
 
 check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) + SCA security

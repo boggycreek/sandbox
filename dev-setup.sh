@@ -64,9 +64,18 @@ check_cmd() {
   local name="${2:-$1}"
   local category="${3:-core}"
 
-  if command -v "${cmd}" >/dev/null 2>&1; then
+  local target="${cmd}"
+  if ! command -v "${target}" >/dev/null 2>&1; then
+    local gopath_bin
+    gopath_bin="$(go env GOPATH 2>/dev/null || true)/bin/${cmd}"
+    if [ -n "${gopath_bin}" ] && [ -x "${gopath_bin}" ]; then
+      target="${gopath_bin}"
+    fi
+  fi
+
+  if command -v "${target}" >/dev/null 2>&1 || [ -x "${target}" ]; then
     local version
-    version="$("${cmd}" --version 2>/dev/null | head -n1 || echo "installed")"
+    version="$("${target}" --version 2>/dev/null | head -n1 || echo "installed")"
     printf "  [✓] %-20s : %s\n" "${name}" "${version}"
   else
     printf "  [✗] %-20s : NOT FOUND\n" "${name}"
@@ -99,6 +108,7 @@ check_cmd "golangci-lint" "golangci-lint" "dev"
 check_cmd "shellcheck" "ShellCheck" "dev"
 check_cmd "govulncheck" "govulncheck (SCA)" "dev"
 check_cmd "gosec" "gosec (AST Security)" "dev"
+check_cmd "deadcode" "deadcode (Reachability)" "dev"
 
 # GUI Development Toolchains
 echo
@@ -134,6 +144,7 @@ if [ ${#MISSING_CORE[@]} -ne 0 ] || [ ${#MISSING_DEV[@]} -ne 0 ]; then
     echo "  brew install go podman podman-compose make pkg-config golangci-lint shellcheck"
     echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"
     echo "  go install github.com/securego/gosec/v2/cmd/gosec@latest"
+    echo "  go install golang.org/x/tools/cmd/deadcode@latest"
   elif [ "${OS}" = "linux" ]; then
     case "${DISTRO_ID:-}" in
       ubuntu|debian|pop)
@@ -141,6 +152,7 @@ if [ ${#MISSING_CORE[@]} -ne 0 ] || [ ${#MISSING_DEV[@]} -ne 0 ]; then
         echo "  sudo apt update && sudo apt install -y golang-go podman build-essential pkg-config shellcheck libgtk-4-dev libadwaita-1-dev librsvg2-dev"
         echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"
         echo "  go install github.com/securego/gosec/v2/cmd/gosec@latest"
+        echo "  go install golang.org/x/tools/cmd/deadcode@latest"
         echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin"
         ;;
       fedora|rhel)
