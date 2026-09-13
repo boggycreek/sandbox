@@ -86,11 +86,7 @@ podman exec -u tester "${CONTAINER_NAME}" bash -c "
   export PATH=\"/home/tester/.local/bin:\$PATH\"
   sndbx --help >/dev/null
   bp --help >/dev/null
-
-  # Verify repo path resolution works
-  RESOLVED_PATH=\"\$(sndbx repo path)\"
-  echo \"Resolved repo path: \$RESOLVED_PATH\"
-  test \"\$RESOLVED_PATH\" = \"/home/tester/agent-sandbox\"
+  sndbx update --help >/dev/null
 "
 
 echo "=========================================================="

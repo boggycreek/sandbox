@@ -158,31 +158,19 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("infra doctor failed: %s", stderr.String())
 	}
 
-	// 6. Repo subcommands
-	code = Run([]string{"repo", "help"}, &stdout, &stderr)
+	// 6. Update subcommands
+	code = Run([]string{"update", "help"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("repo help should return 0")
+		t.Errorf("update help should return 0")
 	}
-	code = Run([]string{"repo", "-h"}, &stdout, &stderr)
+	code = Run([]string{"update", "-h"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("repo -h should return 0")
+		t.Errorf("update -h should return 0")
 	}
-	code = Run([]string{"repo", "unknown"}, &stdout, &stderr)
-	if code != 1 {
-		t.Errorf("repo unknown should return 1")
-	}
-	code = Run([]string{"repo"}, &stdout, &stderr)
-	if code != 1 {
-		t.Errorf("repo empty should return 1")
-	}
-	code = Run([]string{"repo", "path"}, &stdout, &stderr)
+	code = Run([]string{"update", "--help"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("repo path should return 0")
+		t.Errorf("update --help should return 0")
 	}
-	code = Run([]string{"repo", "build"}, &stdout, &stderr)
-	_ = code
-	code = Run([]string{"repo", "build-images"}, &stdout, &stderr)
-	_ = code
 
 	// 7. Test Start / Connect / SSH error paths
 	code = Run([]string{"agent", "start", "nonexistent"}, &stdout, &stderr)
@@ -348,22 +336,63 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("infra doctor failed: %s", stderr.String())
 	}
 
-	// 23. Repo commands
+	// 23. Update command branches
 	code = Run([]string{"repo"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("repo empty args should return 1")
+		t.Errorf("repo should return 1 as unknown command")
 	}
-	code = Run([]string{"repo", "help"}, &stdout, &stderr)
+	code = Run([]string{"update", "help"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("repo help should return 0")
+		t.Errorf("update help should return 0")
 	}
-	code = Run([]string{"repo", "path"}, &stdout, &stderr)
+
+	// Test handleUpdate error paths using custom execCommandContext
+	origExec := execCommandContext
+	defer func() { execCommandContext = origExec }()
+
+	// 1. Success path
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
+	code = Run([]string{"update"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("repo path should return 0")
+		t.Errorf("update mock success should return 0, got %d", code)
 	}
-	code = Run([]string{"repo", "unknown"}, &stdout, &stderr)
+
+	// 2. Failure at sndbx build
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "go" && len(args) > 2 && strings.Contains(args[2], "sndbx") {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	code = Run([]string{"update"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("repo unknown should return 1")
+		t.Errorf("update failure at sndbx build should return 1")
+	}
+
+	// 3. Failure at bp build
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "go" && len(args) > 2 && strings.Contains(args[2], "bp") {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	code = Run([]string{"update"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("update failure at bp build should return 1")
+	}
+
+	// 4. Failure at make build-images
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "make" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	code = Run([]string{"update"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("update failure at build-images should return 1")
 	}
 }
 

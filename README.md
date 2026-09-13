@@ -75,10 +75,8 @@ sndbx agent stop [name] [--all]                          # Stop agent container(
 sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)
 sndbx agent retire <name> [--force]                       # Fully deprovision agent (container, volume, Valkey, Gitea)
 
-# Repository Operations
-sndbx repo path                                          # Print sandbox installation root path
-sndbx repo build                                         # Compile native CLI binaries (bin/sndbx, bin/bp)
-sndbx repo build-images                                  # Build base and derivative OCI container images
+# Installation & Workspace Updates
+sndbx update                                             # Comprehensive update: sync git repo, compile CLIs, and build OCI images
 ```
 
 ---
@@ -88,7 +86,7 @@ sndbx repo build-images                                  # Build base and deriva
 Detailed architectural specifications and decision records are maintained in the repository:
 
 - **[AGENTS.md](AGENTS.md)**: Comprehensive guide covering system architecture, messaging protocol, local inference gateway, security boundaries, and engineering quality gates.
-- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00023).
+- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00030).
 
 ---
 

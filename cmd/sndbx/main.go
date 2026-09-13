@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,6 +23,8 @@ import (
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
 	"github.com/boggycreek/agent-sandbox/pkg/runtime"
 )
+
+var execCommandContext = exec.CommandContext
 
 func main() {
 	os.Exit(Run(os.Args[1:], os.Stdout, os.Stderr))
@@ -55,8 +58,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "infra":
 		return handleInfra(ctx, paths, domainArgs, stdout, stderr)
 
-	case "repo":
-		return handleRepo(ctx, paths, domainArgs, stdout, stderr)
+	case "update":
+		return handleUpdate(ctx, paths, domainArgs, stdout, stderr)
 
 	case "gui":
 		return handleGUI(ctx, paths, domainArgs, stdout, stderr)
@@ -71,13 +74,15 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, `Agent Sandbox CLI (sndbx)
 
 Usage:
-  sndbx <domain> <command> [args...]
+  sndbx <domain|command> [args...]
 
 Domains:
   agent       Manage agent instance provisioning and container lifecycles
   infra       Manage shared Valkey backplane and Gitea Git infrastructure
-  repo        Manage monorepo builds, image compilation, and upgrades
   gui         Launch native desktop Backplane GUI client
+
+Commands:
+  update      Synchronize git repo, rebuild host CLIs, and compile all OCI images
 
 Agent Commands:
   sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
@@ -96,6 +101,9 @@ Infra Commands:
   sndbx infra down
   sndbx infra list
   sndbx infra doctor
+
+Update Command:
+  sndbx update
 
 Run 'sndbx <domain> help' for more details on each command.`)
 }
@@ -754,48 +762,75 @@ Commands:
 	}
 }
 
-func handleRepo(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx repo <build|build-images|path>")
-		return 1
+func handleUpdate(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
+		sub := strings.ToLower(args[0])
+		if sub == "help" || sub == "-h" || sub == "--help" {
+			fmt.Fprintln(stdout, `Usage: sndbx update
+
+Comprehensive update of the Agent Sandbox local environment:
+  1. Synchronizes local git repository checkout with remote (git pull)
+  2. Compiles native CLI binaries (sndbx, bp) and installs to ~/.local/bin
+  3. Rebuilds all native OCI container images (base, opencode, claude, agy)`)
+			return 0
+		}
 	}
-	sub := strings.ToLower(args[0])
+
 	repoDir := paths.ResolveRepoDir()
-
-	switch sub {
-	case "help", "-h", "--help":
-		fmt.Fprintln(stdout, `Usage: sndbx repo <command>
-
-Commands:
-  build         Compile native CLI binaries (sndbx, bp) into bin/
-  build-images  Build all OCI container images (base, opencode, claude, agy)
-  path          Print absolute path to the local repository checkout`)
-		return 0
-	case "path":
-		fmt.Fprintln(stdout, repoDir)
-		return 0
-	case "build":
-		cmd := exec.CommandContext(ctx, "make", "build-cli")
-		cmd.Dir = repoDir
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
-			return 1
-		}
-		return 0
-	case "build-images":
-		cmd := exec.CommandContext(ctx, "make", "build-images")
-		cmd.Dir = repoDir
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
-			return 1
-		}
-		return 0
-	default:
-		fmt.Fprintf(stderr, "sndbx repo: unknown command %q\n", sub)
+	if repoDir == "" {
+		fmt.Fprintln(stderr, "sndbx update: unable to locate local agent-sandbox repository")
 		return 1
 	}
+
+	fmt.Fprintf(stdout, "==> Synchronizing repository (%s)...\n", repoDir)
+	gitCmd := execCommandContext(ctx, "git", "pull", "--ff-only")
+	gitCmd.Dir = repoDir
+	gitCmd.Stdout = stdout
+	gitCmd.Stderr = stderr
+	if err := gitCmd.Run(); err != nil {
+		fmt.Fprintf(stderr, "sndbx update: warning: git pull --ff-only failed (%v), continuing with local checkout\n", err)
+	}
+
+	binDir := paths.BinDir
+	if binDir == "" {
+		binDir = filepath.Join(os.Getenv("HOME"), ".local", "bin")
+	}
+	_ = os.MkdirAll(binDir, 0755)
+
+	fmt.Fprintf(stdout, "==> Compiling native CLI binaries to %s...\n", binDir)
+	sndbxBin := filepath.Join(binDir, "sndbx")
+	bpBin := filepath.Join(binDir, "bp")
+
+	buildSndbx := execCommandContext(ctx, "go", "build", "-o", sndbxBin, "./cmd/sndbx")
+	buildSndbx.Dir = repoDir
+	buildSndbx.Stdout = stdout
+	buildSndbx.Stderr = stderr
+	if err := buildSndbx.Run(); err != nil {
+		fmt.Fprintf(stderr, "sndbx update: failed compiling sndbx: %v\n", err)
+		return 1
+	}
+
+	buildBP := execCommandContext(ctx, "go", "build", "-o", bpBin, "./cmd/bp")
+	buildBP.Dir = repoDir
+	buildBP.Stdout = stdout
+	buildBP.Stderr = stderr
+	if err := buildBP.Run(); err != nil {
+		fmt.Fprintf(stderr, "sndbx update: failed compiling bp: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, "==> Building all native OCI container images...")
+	imgCmd := execCommandContext(ctx, "make", "build-images")
+	imgCmd.Dir = repoDir
+	imgCmd.Stdout = stdout
+	imgCmd.Stderr = stderr
+	if err := imgCmd.Run(); err != nil {
+		fmt.Fprintf(stderr, "sndbx update: failed building OCI container images: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(stdout, "==> Update complete.")
+	return 0
 }
 
 func handleGUI(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
