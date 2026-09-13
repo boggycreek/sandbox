@@ -87,6 +87,7 @@ Agent Commands:
   sndbx agent list [--json]
   sndbx agent clean <name>
   sndbx agent destroy <name> [--force]
+  sndbx agent retire <name>
 
 Infra Commands:
   sndbx infra up
@@ -98,7 +99,7 @@ Run 'sndbx <domain> help' for more details on each command.`)
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|stop|list|clean|destroy>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|stop|list|clean|destroy|retire>")
 		return 1
 	}
 
@@ -132,7 +133,10 @@ Commands:
     Remove the agent container while preserving its home directory volume.
 
   destroy <name> [--force]
-    Permanently purge the agent container, home volume, and secrets.`)
+    Permanently purge the agent container, home volume, and secrets.
+
+  retire <name>
+    Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).`)
 		return 0
 	case "create":
 		return handleAgentCreate(ctx, paths, subArgs, stdout, stderr)
@@ -150,6 +154,8 @@ Commands:
 		return handleAgentClean(ctx, paths, subArgs, stdout, stderr)
 	case "destroy":
 		return handleAgentDestroy(ctx, paths, subArgs, stdout, stderr)
+	case "retire":
+		return handleAgentRetire(ctx, paths, subArgs, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "sndbx agent: unknown command %q\n", sub)
 		return 1
@@ -445,6 +451,81 @@ func handleAgentDestroy(ctx context.Context, paths config.Paths, args []string, 
 
 	fmt.Fprintf(stdout, "Agent %q and volume %q destroyed completely.\n", cfg.Name, cfg.VolumeName)
 	return 0
+}
+
+func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Usage: sndbx agent retire <name>")
+		return 1
+	}
+	name := strings.ToLower(strings.TrimSpace(args[0]))
+	cfg, err := config.LoadAgentConfig(name, paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	// 1. Destroy container and persistent volume
+	_ = runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName)
+
+	// 2. Delete local config and secrets
+	_ = config.DeleteAgentConfig(name, paths)
+
+	// 3. Deprovision Valkey ACL user & streams
+	deprovisionValkeyUser(ctx, name)
+
+	// 4. Deprovision Gitea user & keys
+	deprovisionGiteaUser(ctx, name)
+
+	fmt.Fprintf(stdout, "Agent %q retired and deprovisioned successfully.\n", name)
+	fmt.Fprintf(stdout, "  ✓ Container (%s) and volume (%s) destroyed\n", cfg.ContainerName, cfg.VolumeName)
+	fmt.Fprintf(stdout, "  ✓ Local configuration and secrets purged\n")
+	fmt.Fprintf(stdout, "  ✓ Valkey ACL user and backplane identity removed\n")
+	fmt.Fprintf(stdout, "  ✓ Gitea user account and authorized keys purged\n")
+	return 0
+}
+
+func deprovisionValkeyUser(ctx context.Context, agentName string) {
+	bpCfg := libbp.LoadClientFromEnv()
+	client, err := libbp.Dial(ctx, libbp.ClientConfig{
+		Host:     bpCfg.Host,
+		Port:     bpCfg.Port,
+		Username: "admin",
+		Password: os.Getenv("ADMIN_BACKPLANE_PASSWORD"),
+	})
+	if err != nil {
+		return
+	}
+	defer client.Close()
+
+	// Delete ACL user
+	_, _ = client.Exec(ctx, "ACL", "DELUSER", agentName)
+
+	// Clean up backplane keys & identity
+	_, _ = client.Exec(ctx, "DEL",
+		fmt.Sprintf("identity:%s", agentName),
+		fmt.Sprintf("%s:inbox", agentName),
+		fmt.Sprintf("%s:out", agentName),
+		fmt.Sprintf("%s:seq", agentName),
+		fmt.Sprintf("%s:finger", agentName),
+		fmt.Sprintf("%s:status", agentName),
+	)
+}
+
+func deprovisionGiteaUser(ctx context.Context, agentName string) {
+	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	if adminPass == "" {
+		adminPass = "admin_backplane_pass"
+	}
+
+	client := gitea.NewClient(gitea.ClientConfig{
+		BaseURL:   "http://127.0.0.1:3000",
+		AdminUser: "giteaadmin",
+		AdminPass: adminPass,
+		Timeout:   3 * time.Second,
+	})
+
+	_ = client.DeleteUser(ctx, agentName, true)
 }
 
 func handleAgentList(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {

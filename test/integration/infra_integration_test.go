@@ -114,10 +114,27 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 		_ = vClient.Close()
 	}
 
-	// Clean up created agent
-	destroyCmd := exec.CommandContext(ctx, binPath, "agent", "destroy", "infra-test-agent")
-	destroyCmd.Env = os.Environ()
-	_ = destroyCmd.Run()
+	// Retire agent and verify complete deprovisioning from Valkey and Gitea
+	t.Log("Retiring agent via 'sndbx agent retire'...")
+	retireCmd := exec.CommandContext(ctx, binPath, "agent", "retire", "infra-test-agent")
+	retireCmd.Env = os.Environ()
+	out, err = retireCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("'sndbx agent retire' failed: %v\nOutput: %s", err, string(out))
+	}
+	if !strings.Contains(string(out), "retired and deprovisioned successfully") {
+		t.Errorf("unexpected retire output: %s", string(out))
+	}
+
+	// Verify agent user was purged from Gitea (404)
+	reqAfter, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaUserURL, nil)
+	respAfter, err := http.DefaultClient.Do(reqAfter)
+	if err != nil || respAfter.StatusCode != http.StatusNotFound {
+		t.Errorf("expected Gitea user to be 404 after retire, got status %v (err: %v)", respAfter.StatusCode, err)
+	}
+	if respAfter != nil {
+		_ = respAfter.Body.Close()
+	}
 
 	// 3. sndbx infra down
 	t.Log("Stopping infrastructure via 'sndbx infra down'...")

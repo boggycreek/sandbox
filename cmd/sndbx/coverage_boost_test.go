@@ -97,7 +97,7 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	code = Run([]string{"agent", "stop", "test-agent"}, &stdout, &stderr)
 	_ = code
 
-	// 4. Clean & Destroy
+	// 4. Clean, Destroy & Retire
 	code = Run([]string{"agent", "clean", "test-agent"}, &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("agent clean failed")
@@ -113,6 +113,18 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	code = Run([]string{"agent", "clean"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("agent clean missing args should fail")
+	}
+	code = Run([]string{"agent", "retire"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent retire missing args should fail")
+	}
+	code = Run([]string{"agent", "retire", "role-agent"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("agent retire role-agent failed: %s", stderr.String())
+	}
+	code = Run([]string{"agent", "retire", "nonexistent-agent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent retire nonexistent should fail")
 	}
 
 	// 5. Infra subcommands

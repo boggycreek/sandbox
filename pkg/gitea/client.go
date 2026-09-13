@@ -129,6 +129,25 @@ func (c *Client) EnsureUser(ctx context.Context, username, password, email strin
 	return nil
 }
 
+// DeleteUser purges a user account and associated repositories from Gitea
+func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("username cannot be empty")
+	}
+
+	endpoint := fmt.Sprintf("/admin/users/%s?purge=%t", username, purge)
+	resp, respBody, err := c.doRequest(ctx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("failed deleting gitea user %s (status %d): %s", username, resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 // AddUserSSHKey associates an SSH public key with a user account
 func (c *Client) AddUserSSHKey(ctx context.Context, username, title, keyContent string) error {
 	username = strings.TrimSpace(username)

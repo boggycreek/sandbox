@@ -71,6 +71,7 @@ sndbx agent list [--json]                                # List configured insta
 sndbx agent stop [name] [--all]                          # Stop agent container(s)
 sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)
 sndbx agent destroy <name>                               # Purge container, home volume, and secrets
+sndbx agent retire <name>                                # Fully deprovision agent (container, volume, Valkey, Gitea)
 
 # Repository Operations
 sndbx repo path                                          # Print sandbox installation root path
@@ -85,7 +86,7 @@ sndbx repo build-images                                  # Build base and deriva
 Detailed architectural specifications and decision records are maintained in the repository:
 
 - **[AGENTS.md](AGENTS.md)**: Comprehensive guide covering system architecture, messaging protocol, local inference gateway, security boundaries, and engineering quality gates.
-- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00021).
+- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of sequential architectural decisions (00001 through 00022).
 
 ---
 

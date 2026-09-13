@@ -31,7 +31,7 @@ agent-sandbox/
 ├── test/
 │   ├── harness/            # Embedded Valkey test server harness
 │   └── integration/        # End-to-end integration tests (bp, sndbx, infra lifecycle)
-├── doc/adr/                # Architecture Decision Records (00001 - 00021)
+├── doc/adr/                # Architecture Decision Records (00001 - 00022)
 ├── install.sh              # Host installation & bootstrap script
 ├── dev-setup.sh            # Developer environment setup & verification script
 └── Makefile                # Quality gates, tests, linting, and build targets
@@ -52,6 +52,7 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
   - `sndbx agent stop [name] [--all]`: Stops agent containers.
   - `sndbx agent clean <name>`: Removes container while preserving home volume.
   - `sndbx agent destroy <name>`: Purges container, persistent volume, and configs.
+  - `sndbx agent retire <name>`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Gitea account.
 - **Shared Infrastructure**:
   - `sndbx infra up`: Starts shared Valkey 8 (`agent-sandbox-valkey`) and Gitea 1.22 (`agent-sandbox-gitea`) containers on the `agent-sandbox-infra` bridge network.
   - `sndbx infra list`: Inspects runtime status and ports.

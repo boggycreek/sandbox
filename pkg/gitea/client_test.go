@@ -46,6 +46,13 @@ func TestGiteaClientSuite(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":10,"username":"new-user"}`))
 
+		case r.Method == http.MethodDelete && path == "/api/v1/admin/users/existing-user":
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodDelete && path == "/api/v1/admin/users/fail-delete":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"delete failed"}`))
+
 		case r.Method == http.MethodPost && path == "/api/v1/admin/users/test-agent/keys":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":1,"title":"test-agent-key"}`))
@@ -157,6 +164,17 @@ func TestGiteaClientSuite(t *testing.T) {
 	}
 	if err := client.EnsureUser(ctx, "", "pass", ""); err == nil {
 		t.Errorf("expected error on empty username")
+	}
+
+	// 1b. DeleteUser
+	if err := client.DeleteUser(ctx, "existing-user", true); err != nil {
+		t.Errorf("DeleteUser existing-user failed: %v", err)
+	}
+	if err := client.DeleteUser(ctx, "fail-delete", true); err == nil {
+		t.Errorf("expected error on fail-delete")
+	}
+	if err := client.DeleteUser(ctx, "", true); err == nil {
+		t.Errorf("expected error on empty username in DeleteUser")
 	}
 
 	// 2. AddUserSSHKey
