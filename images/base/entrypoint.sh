@@ -60,12 +60,13 @@ if [ $# -gt 0 ]; then
   exec "$@"
 fi
 
-# Otherwise start background tmux session and sleep or loop
 TMUX_SESSION="${AGENT_NAME:-sandbox}"
 if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
   tmux new-session -d -s "${TMUX_SESSION}" -c "/home/agent/workspace" bash
+  tmux send-keys -t "${TMUX_SESSION}" "echo 'Agent Sandbox environment ready. Refer to ~/doc/INDEX.md for guides.'" C-m
 fi
 
 echo "Agent Sandbox container ready [$(hostname)]. Session: ${TMUX_SESSION}"
+echo "Documentation available at: ~/doc/INDEX.md"
 # Keep container foreground process alive
 exec tail -f /dev/null
