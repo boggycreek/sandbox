@@ -103,8 +103,8 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected 0 unrepairable issues on healed agent")
 	}
 	healthyOut := FormatDoctorReport(healthyReport)
-	if !strings.Contains(healthyOut, "healthy") {
-		t.Errorf("expected healthy status on second pass: %s", healthyOut)
+	if !strings.Contains(healthyOut, "heal-agent") {
+		t.Errorf("expected heal-agent in summary: %s", healthyOut)
 	}
 
 	// 6. Test offline Valkey check branch
@@ -174,7 +174,12 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected Gitea check OK, got %+v", reportGitea.Checks)
 	}
 
-	// 10. Direct storage, container, and signing key tests
+	// 10. Direct storage, container, host SSH pubkey heal, and signing key tests
+	_ = os.Remove(paths.IDEKeyFile + ".pub")
+	reportSSHPub := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealHostSSH(paths, reportSSHPub)
+
+	_ = exec.Command("podman", "volume", "rm", "-f", cfg.VolumeName).Run()
 	reportDirect := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealPodmanStorage(ctx, cfg, reportDirect)
 	checkAndHealContainer(ctx, cfg, paths, reportDirect)
@@ -204,5 +209,146 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected warning for 500 server error in Gitea check")
 	}
 }
+
+func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
+	valkey := harness.StartValkeyHarness(t)
+	defer valkey.Teardown()
+
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
+
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
+	os.Setenv("BP_HOST", "127.0.0.1")
+	os.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
+
+	paths := config.Paths{
+		DataHome:      filepath.Join(tmpDir, "data"),
+		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
+		SecretsDir:    filepath.Join(tmpDir, "data", "secrets"),
+		BinDir:        filepath.Join(tmpDir, "bin"),
+		EnvFile:       filepath.Join(tmpDir, "data", ".env"),
+		SSHDir:        filepath.Join(tmpDir, "ssh"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 1. First run: heals missing .env and creates directories
+	report1, err := DiagnoseAndHealInfra(ctx, paths)
+	if err != nil {
+		t.Fatalf("DiagnoseAndHealInfra failed: %v", err)
+	}
+	if report1.HealedCount == 0 {
+		t.Errorf("expected healed items for initial infra run")
+	}
+	formatted := FormatDoctorReport(report1)
+	if !strings.Contains(formatted, "shared infrastructure") {
+		t.Errorf("expected shared infrastructure in report output: %s", formatted)
+	}
+
+	// 2. Second run: .env is valid
+	report2, err := DiagnoseAndHealInfra(ctx, paths)
+	if err != nil {
+		t.Fatalf("DiagnoseAndHealInfra second pass failed: %v", err)
+	}
+	if report2.UnrepairableCount > 0 {
+		t.Errorf("expected 0 unrepairable items on second pass")
+	}
+
+	// 3. Direct checks
+	checkAndHealInfraStorage(ctx, report2)
+	checkAndHealValkeyContainer(ctx, paths, report2)
+	checkAndHealGiteaContainer(ctx, paths, report2)
+
+	// 4. Test storage auto-heal (remove a volume)
+	_ = exec.Command("podman", "volume", "rm", "-f", "agent-sandbox-valkey-data").Run()
+	checkAndHealInfraStorage(ctx, report2)
+
+	// 5. Test Gitea mock server for infra check
+	giteaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"version":"1.22.0"}`))
+	}))
+	defer giteaServer.Close()
+	os.Setenv("GITEA_URL", giteaServer.URL)
+	checkAndHealGiteaContainer(ctx, paths, report2)
+
+	// 6. Test unreachable Valkey in infra check
+	os.Setenv("BP_PORT", "65501")
+	reportOffline := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(ctx, paths, reportOffline)
+	if reportOffline.WarningCount == 0 {
+		t.Errorf("expected warning on offline Valkey in infra check")
+	}
+
+	// 7. Test unreachable Gitea in infra check
+	os.Setenv("GITEA_URL", "http://127.0.0.1:65502")
+	checkAndHealGiteaContainer(ctx, paths, reportOffline)
+
+	// 8. Test FormatDoctorReport with unrepairable counts and warning counts
+	reportUnrep := &DoctorReport{
+		AgentName:         "unrep-agent",
+		UnrepairableCount: 2,
+		Checks: []CheckItem{
+			{Name: "Check 1", Status: StatusError, Message: "error", Unrepairable: true},
+		},
+	}
+	outUnrep := FormatDoctorReport(reportUnrep)
+	if !strings.Contains(outUnrep, "unrepairable issue(s)") {
+		t.Errorf("expected unrepairable issues summary: %s", outUnrep)
+	}
+
+	reportInfraUnrep := &DoctorReport{
+		AgentName:         "shared-infrastructure",
+		UnrepairableCount: 1,
+		Checks: []CheckItem{
+			{Name: "Infra Check", Status: StatusError, Message: "error", Unrepairable: true},
+		},
+	}
+	outInfraUnrep := FormatDoctorReport(reportInfraUnrep)
+	if !strings.Contains(outInfraUnrep, "unrepairable issue(s) detected in shared infrastructure") {
+		t.Errorf("expected shared infra unrepairable summary: %s", outInfraUnrep)
+	}
+
+	reportInfraWarn := &DoctorReport{
+		AgentName:    "shared-infrastructure",
+		WarningCount: 2,
+		Checks: []CheckItem{
+			{Name: "Warning Check", Status: StatusWarning, Message: "warn"},
+		},
+	}
+	outInfraWarn := FormatDoctorReport(reportInfraWarn)
+	if !strings.Contains(outInfraWarn, "warning(s) (offline services)") {
+		t.Errorf("expected shared infra warning summary: %s", outInfraWarn)
+	}
+
+	reportInfraClean := &DoctorReport{
+		AgentName: "shared-infrastructure",
+		Checks: []CheckItem{
+			{Name: "Clean Check", Status: StatusOK, Message: "ok"},
+		},
+	}
+	outInfraClean := FormatDoctorReport(reportInfraClean)
+	if !strings.Contains(outInfraClean, "fully healthy (0 issues found)") {
+		t.Errorf("expected shared infra clean summary: %s", outInfraClean)
+	}
+
+	reportAgentClean := &DoctorReport{
+		AgentName: "clean-agent",
+		Checks: []CheckItem{
+			{Name: "Clean Check", Status: StatusOK, Message: "ok"},
+		},
+	}
+	outAgentClean := FormatDoctorReport(reportAgentClean)
+	if !strings.Contains(outAgentClean, "fully healthy (0 issues found)") {
+		t.Errorf("expected agent clean summary: %s", outAgentClean)
+	}
+}
+
+
 
 

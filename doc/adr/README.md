@@ -32,4 +32,5 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00024 — In-Container Unprivileged SSH Daemon and IDE Ensembling Workflow](00024-InContainerSshdAndIdeEnsemblingWorkflow.md)
 - [00025 — Auto-Managed OpenSSH Include File for Agent Lifecycle Integration](00025-ManagedSshConfigIncludeForIdeEnsembling.md)
 - [00026 — Agent Diagnostic Doctor and Automated Self-Healing](00026-AgentDiagnosticDoctorAndAutoHealing.md)
+- [00027 — Shared Infrastructure Diagnostic Doctor and Automated Self-Healing](00027-InfrastructureDiagnosticDoctorAndAutoHealing.md)
 

@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -151,6 +153,10 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	_ = code
 	code = Run([]string{"infra", "list"}, &stdout, &stderr)
 	_ = code
+	code = Run([]string{"infra", "doctor"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("infra doctor failed: %s", stderr.String())
+	}
 
 	// 6. Repo subcommands
 	code = Run([]string{"repo", "help"}, &stdout, &stderr)
@@ -203,11 +209,18 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	// 8. registerValkeyACL & registerGiteaUser direct test
 	cfg, _ := config.NewAgentConfig("acl-test-agent", "base", "tester")
 	registerValkeyACL(context.Background(), cfg, paths)
-	registerGiteaUser(context.Background(), cfg, paths)
 
-	// With pub key
+	// Mock Gitea server for registerGiteaUser and deprovisionGiteaUser
+	giteaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer giteaServer.Close()
+	os.Setenv("GITEA_URL", giteaServer.URL)
+
 	_ = os.WriteFile(paths.IDEKeyFile+".pub", []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA test"), 0644)
 	registerGiteaUser(context.Background(), cfg, paths)
+	deprovisionGiteaUser(context.Background(), "acl-test-agent")
 
 	// 9. Corrupted JSON file in list & handleAgentList error branch
 	corruptFile := filepath.Join(paths.AgentsDir, "corrupted.json")
@@ -217,10 +230,13 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("agent list should tolerate or skip corrupted configs")
 	}
 
-	// 10. Direct execution of handleAgentConnect & handleAgentSSH with created mock agent
+	// 10. Direct execution of handleAgentConnect, handleAgentSSH, handleAgentStart with created mock agent
 	_ = config.SaveAgentConfig(cfg, paths)
+	_ = handleAgentStart(context.Background(), paths, []string{}, &stdout, &stderr)
+	_ = handleAgentStart(context.Background(), paths, []string{"nonexistent-start"}, &stdout, &stderr)
 	_ = handleAgentConnect(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
 	_ = handleAgentSSH(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
+	_ = handleAgentStop(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
 
 	// 11. handleAgentList error on invalid paths
 	roPaths := config.Paths{AgentsDir: "/dev/null/forbidden/agents"}
@@ -324,6 +340,30 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	code = Run([]string{"agent", "list"}, &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("agent list table output failed")
+	}
+
+	// 22. Infra doctor command
+	code = Run([]string{"infra", "doctor"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("infra doctor failed: %s", stderr.String())
+	}
+
+	// 23. Repo commands
+	code = Run([]string{"repo"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("repo empty args should return 1")
+	}
+	code = Run([]string{"repo", "help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("repo help should return 0")
+	}
+	code = Run([]string{"repo", "path"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("repo path should return 0")
+	}
+	code = Run([]string{"repo", "unknown"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("repo unknown should return 1")
 	}
 }
 

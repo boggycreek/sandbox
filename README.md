@@ -60,6 +60,7 @@ The `sndbx` CLI manages the fleet, shared infrastructure, and build targets:
 # Shared Infrastructure (Valkey Backplane + Gitea Git Server)
 sndbx infra up                                           # Start Valkey and Gitea stack
 sndbx infra list                                         # View service status and connection endpoints
+sndbx infra doctor                                       # Diagnose shared infrastructure and auto-heal defects
 sndbx infra down                                         # Stop shared services (preserves data volumes)
 
 # Agent Instance Lifecycle

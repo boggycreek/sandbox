@@ -280,4 +280,14 @@ func TestClientConnectionFailure(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected liaison set failure")
 	}
+
+	// Flag parse errors
+	code = Run([]string{"recv", "--invalid-flag"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected recv invalid flag failure")
+	}
+	code = Run([]string{"human", "--invalid-flag"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected human invalid flag failure")
+	}
 }

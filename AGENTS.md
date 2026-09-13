@@ -58,6 +58,7 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
 - **Shared Infrastructure**:
   - `sndbx infra up`: Starts shared Valkey 8 (`agent-sandbox-valkey`) and Gitea 1.22 (`agent-sandbox-gitea`) containers on the `agent-sandbox-infra` bridge network.
   - `sndbx infra list`: Inspects runtime status and ports.
+  - `sndbx infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Gitea repos, and auto-heals defects.
   - `sndbx infra down`: Halts infrastructure containers.
 - **Repository Operations**:
   - `sndbx repo path`: Prints installation root path.

@@ -96,6 +96,7 @@ Infra Commands:
   sndbx infra up
   sndbx infra down
   sndbx infra list
+  sndbx infra doctor
 
 Run 'sndbx <domain> help' for more details on each command.`)
 }
@@ -681,7 +682,7 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 
 func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx infra <up|down|list>")
+		fmt.Fprintln(stderr, "Usage: sndbx infra <up|down|list|doctor>")
 		return 1
 	}
 
@@ -693,7 +694,8 @@ func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout,
 Commands:
   up      Start shared Valkey and Gitea services via Podman Compose
   down    Stop shared infrastructure services
-  list    Show status of running infrastructure containers`)
+  list    Show status of running infrastructure containers
+  doctor  Diagnose shared infrastructure storage, containers, and services, and auto-heal defects`)
 		return 0
 
 	case "up":
@@ -715,6 +717,18 @@ Commands:
 			return 1
 		}
 		fmt.Fprintln(stdout, "Shared infrastructure stopped.")
+		return 0
+
+	case "doctor":
+		report, err := doctor.DiagnoseAndHealInfra(ctx, paths)
+		if err != nil && report == nil {
+			fmt.Fprintf(stderr, "sndbx infra doctor error: %v\n", err)
+			return 1
+		}
+		fmt.Fprint(stdout, doctor.FormatDoctorReport(report))
+		if report.UnrepairableCount > 0 {
+			return 1
+		}
 		return 0
 
 	case "list":

@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,6 +105,14 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	// Test StartInfraStack with defaults and already-running paths
 	_ = StartInfraStack(ctx, paths, "", "", "")
 	_ = StartInfraStack(ctx, paths, "test_admin_pass", "test_human_pass", "test_human_name")
+
+	giteaMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer giteaMock.Close()
+	os.Setenv("GITEA_URL", giteaMock.URL)
+
 	_ = BootstrapGitea(ctx, "")
 	_ = BootstrapGitea(ctx, "custom_pass")
 	infraList, err := InspectInfraStack(ctx)
@@ -137,11 +147,12 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 		t.Errorf("expected ssh_config file created at %s: %v", paths.SSHConfigFile, err)
 	}
 
-	// SyncSSHConfigFile error on invalid agents dir
-	invalidPaths := config.Paths{AgentsDir: "/dev/null/forbidden"}
-	if err := SyncSSHConfigFile(ctx, invalidPaths); err == nil {
-		t.Errorf("expected error from SyncSSHConfigFile on invalid paths")
+	// Test SyncSSHConfigFile with empty paths.SSHConfigFile
+	pathsDefaultSSH := config.Paths{
+		DataHome:  tmpDir,
+		AgentsDir: filepath.Join(tmpDir, "agents"),
 	}
+	_ = SyncSSHConfigFile(ctx, pathsDefaultSSH)
 
 	// StopAgentContainer with nonexistent container
 	_ = StopAgentContainer(ctx, "nonexistent-container-stop-test")

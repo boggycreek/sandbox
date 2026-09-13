@@ -348,12 +348,17 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 		adminPass = "admin_backplane_pass"
 	}
 
+	giteaURL := os.Getenv("GITEA_URL")
+	if giteaURL == "" {
+		giteaURL = "http://127.0.0.1:3000"
+	}
+
 	// Wait up to 10 seconds for Gitea HTTP service to become responsive
 	httpClient := &http.Client{Timeout: 1 * time.Second}
 	deadline := time.Now().Add(10 * time.Second)
 	ready := false
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:3000/api/v1/version", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaURL+"/api/v1/version", nil)
 		resp, err := httpClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
@@ -395,7 +400,7 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 
 	// Ensure fleet organization and repos via API
 	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   "http://127.0.0.1:3000",
+		BaseURL:   giteaURL,
 		AdminUser: "giteaadmin",
 		AdminPass: adminPass,
 		Timeout:   3 * time.Second,

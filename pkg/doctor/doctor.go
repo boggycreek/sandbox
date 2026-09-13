@@ -435,7 +435,11 @@ func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths c
 // FormatDoctorReport formats the diagnostic report as human-readable text
 func FormatDoctorReport(report *DoctorReport) string {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "Diagnosing agent %q...\n", report.AgentName)
+	if report.AgentName == "shared-infrastructure" || report.AgentName == "infra" {
+		fmt.Fprintf(&b, "Diagnosing shared infrastructure...\n")
+	} else {
+		fmt.Fprintf(&b, "Diagnosing agent %q...\n", report.AgentName)
+	}
 
 	for _, c := range report.Checks {
 		symbol := "[✓]"
@@ -451,14 +455,26 @@ func FormatDoctorReport(report *DoctorReport) string {
 	}
 
 	fmt.Fprintln(&b)
-	if report.UnrepairableCount > 0 {
-		fmt.Fprintf(&b, "Summary: %d unrepairable issue(s) detected for agent %q.\n", report.UnrepairableCount, report.AgentName)
-	} else if report.HealedCount > 0 {
-		fmt.Fprintf(&b, "Summary: Agent %q is healthy (%d issue(s) automatically healed).\n", report.AgentName, report.HealedCount)
-	} else if report.WarningCount > 0 {
-		fmt.Fprintf(&b, "Summary: Agent %q is healthy with %d warning(s) (offline dependencies).\n", report.AgentName, report.WarningCount)
+	if report.AgentName == "shared-infrastructure" || report.AgentName == "infra" {
+		if report.UnrepairableCount > 0 {
+			fmt.Fprintf(&b, "Summary: %d unrepairable issue(s) detected in shared infrastructure.\n", report.UnrepairableCount)
+		} else if report.HealedCount > 0 {
+			fmt.Fprintf(&b, "Summary: Shared infrastructure is healthy (%d issue(s) automatically healed).\n", report.HealedCount)
+		} else if report.WarningCount > 0 {
+			fmt.Fprintf(&b, "Summary: Shared infrastructure has %d warning(s) (offline services).\n", report.WarningCount)
+		} else {
+			fmt.Fprintf(&b, "Summary: Shared infrastructure is fully healthy (0 issues found).\n")
+		}
 	} else {
-		fmt.Fprintf(&b, "Summary: Agent %q is fully healthy (0 issues found).\n", report.AgentName)
+		if report.UnrepairableCount > 0 {
+			fmt.Fprintf(&b, "Summary: %d unrepairable issue(s) detected for agent %q.\n", report.UnrepairableCount, report.AgentName)
+		} else if report.HealedCount > 0 {
+			fmt.Fprintf(&b, "Summary: Agent %q is healthy (%d issue(s) automatically healed).\n", report.AgentName, report.HealedCount)
+		} else if report.WarningCount > 0 {
+			fmt.Fprintf(&b, "Summary: Agent %q has %d warning(s) (offline dependencies).\n", report.AgentName, report.WarningCount)
+		} else {
+			fmt.Fprintf(&b, "Summary: Agent %q is fully healthy (0 issues found).\n", report.AgentName)
+		}
 	}
 
 	return b.String()
