@@ -77,12 +77,12 @@ func TestSndbxCLIEndToEnd(t *testing.T) {
 		t.Errorf("expected test-bot in agent list: %s", listStr)
 	}
 
-	// 4. Destroy agent via sndbx CLI
-	destroyStr, err := runSndbx(ctx, "agent", "destroy", "test-bot")
+	// 4. Retire agent via sndbx CLI
+	retireStr, err := runSndbx(ctx, "agent", "retire", "test-bot", "--force")
 	if err != nil {
-		t.Fatalf("sndbx agent destroy failed: %v (%s)", err, destroyStr)
+		t.Fatalf("sndbx agent retire failed: %v (%s)", err, retireStr)
 	}
-	if !strings.Contains(destroyStr, "destroyed completely") {
-		t.Errorf("unexpected destroy output: %s", destroyStr)
+	if !strings.Contains(retireStr, "retired and deprovisioned successfully") {
+		t.Errorf("unexpected retire output: %s", retireStr)
 	}
 }

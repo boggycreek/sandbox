@@ -25,7 +25,7 @@ The `sndbx` host management CLI separates **agent provisioning and configuration
    - `sndbx agent ssh <name>`: Discovers the dynamic SSH port and connects via host SSH.
    - `sndbx agent stop [name]`: Halts running containers.
    - `sndbx agent clean <name>`: Removes the container while keeping persistent volumes.
-   - `sndbx agent destroy <name> [--force]`: Purges container, volumes, and secrets.
+   - `sndbx agent retire <name> [--force]`: Permanently deprovisions agent across container, volumes, secrets, Valkey ACLs, and Gitea account.
 
 3. **Implementation in Go**:
    - `sndbx` is implemented as a native compiled Go binary in `cmd/sndbx`, sharing the Go monorepo's `pkg/libbp` client library and Podman container runtime package `pkg/runtime`.

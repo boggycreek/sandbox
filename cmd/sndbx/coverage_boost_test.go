@@ -100,18 +100,10 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	code = Run([]string{"agent", "stop", "test-agent"}, &stdout, &stderr)
 	_ = code
 
-	// 4. Clean, Destroy & Retire
+	// 4. Clean & Retire
 	code = Run([]string{"agent", "clean", "test-agent"}, &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("agent clean failed")
-	}
-	code = Run([]string{"agent", "destroy", "test-agent"}, &stdout, &stderr)
-	if code != 0 {
-		t.Errorf("agent destroy failed")
-	}
-	code = Run([]string{"agent", "destroy"}, &stdout, &stderr)
-	if code != 1 {
-		t.Errorf("agent destroy missing args should fail")
 	}
 	code = Run([]string{"agent", "clean"}, &stdout, &stderr)
 	if code != 1 {
@@ -121,7 +113,15 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	if code != 1 {
 		t.Errorf("agent retire missing args should fail")
 	}
-	code = Run([]string{"agent", "retire", "role-agent"}, &stdout, &stderr)
+	code = Run([]string{"agent", "retire", "--force"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("agent retire without name should fail")
+	}
+	code = Run([]string{"agent", "retire", "test-agent", "--force"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("agent retire test-agent failed")
+	}
+	code = Run([]string{"agent", "retire", "role-agent", "-f"}, &stdout, &stderr)
 	if code != 0 {
 		t.Errorf("agent retire role-agent failed: %s", stderr.String())
 	}
@@ -245,9 +245,9 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	// 12. handleAgentCreate failure on save
 	_ = handleAgentCreate(context.Background(), roPaths, []string{"fail-create"}, &stdout, &stderr)
 
-	// 13. handleAgentClean / handleAgentDestroy on nonexistent agent
+	// 13. handleAgentClean / handleAgentRetire on nonexistent agent
 	_ = handleAgentClean(context.Background(), paths, []string{"nonexistent-clean"}, &stdout, &stderr)
-	_ = handleAgentDestroy(context.Background(), paths, []string{"nonexistent-destroy"}, &stdout, &stderr)
+	_ = handleAgentRetire(context.Background(), paths, []string{"nonexistent-retire", "--force"}, &stdout, &stderr)
 	_ = handleAgentStop(context.Background(), paths, []string{"nonexistent-stop"}, &stdout, &stderr)
 
 	// 14. Root CLI options
@@ -306,10 +306,10 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("agent list --json failed")
 	}
 
-	// 18. handleAgentClean and handleAgentDestroy on existing config
+	// 18. handleAgentClean and handleAgentRetire on existing config
 	_ = config.SaveAgentConfig(cfg, paths)
 	_ = handleAgentClean(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
-	_ = handleAgentDestroy(context.Background(), paths, []string{"acl-test-agent"}, &stdout, &stderr)
+	_ = handleAgentRetire(context.Background(), paths, []string{"acl-test-agent", "--force"}, &stdout, &stderr)
 
 	// 19. Agent doctor command
 	code = Run([]string{"agent", "doctor"}, &stdout, &stderr)
