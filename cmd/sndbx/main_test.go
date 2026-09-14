@@ -218,35 +218,36 @@ func TestSndbxWithLiveValkey(t *testing.T) {
 	}
 }
 
-func TestSndbxRepoAndGUIDomains(t *testing.T) {
-	// Repo help
+func TestSndbxUpdateAndGUIDomains(t *testing.T) {
+	// Update help
 	for _, h := range []string{"help", "-h", "--help"} {
-		code, out, _ := runSndbx([]string{"repo", h})
-		if code != 0 || !strings.Contains(out, "Usage: sndbx repo") {
-			t.Errorf("repo %s failed", h)
+		code, out, _ := runSndbx([]string{"update", h})
+		if code != 0 || !strings.Contains(out, "Usage: sndbx update") {
+			t.Errorf("update %s failed", h)
 		}
 	}
 
-	// Repo path
-	code, out, _ := runSndbx([]string{"repo", "path"})
-	if code != 0 || len(strings.TrimSpace(out)) == 0 {
-		t.Errorf("repo path failed")
+	// Update command execution with invalid git/repo or dry behavior
+	t.Setenv("AGENT_SANDBOX_REPO", t.TempDir())
+	code, _, errOut := runSndbx([]string{"update"})
+	// TempDir has no go.mod or Makefile, but handleUpdate will attempt git pull, compile, and image build
+	// We expect either error or execution failure
+	if code == 0 {
+		t.Logf("update in temp dir succeeded: %v", code)
+	} else {
+		if !strings.Contains(errOut, "failed") && !strings.Contains(errOut, "warning") {
+			t.Errorf("unexpected error output for update: %s", errOut)
+		}
 	}
 
-	// Repo empty
-	code, _, _ = runSndbx([]string{"repo"})
-	if code != 1 {
-		t.Errorf("repo empty should return 1")
-	}
-
-	// Repo unknown
-	code, _, _ = runSndbx([]string{"repo", "unknown"})
-	if code != 1 {
-		t.Errorf("repo unknown should fail")
+	// Unknown domain: repo should now fail as unknown command
+	code, _, errOut = runSndbx([]string{"repo"})
+	if code != 1 || !strings.Contains(errOut, "unknown command \"repo\"") {
+		t.Errorf("repo should be unknown command: %s", errOut)
 	}
 
 	// GUI
-	code, out, _ = runSndbx([]string{"gui"})
+	code, out, _ := runSndbx([]string{"gui"})
 	if code != 0 || !strings.Contains(out, "Launching Backplane GUI") {
 		t.Errorf("gui command failed: %s", out)
 	}

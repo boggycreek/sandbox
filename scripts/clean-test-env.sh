@@ -49,7 +49,7 @@ pkill -9 -u "${UID_NUM}" -f "(conmon|slirp4netns|rootlessport).*(test-valkey|tes
 NETNS_DIR="/run/user/${UID_NUM}/netns"
 if [ -d "${NETNS_DIR}" ]; then
   echo "Clearing stale test netns entries in ${NETNS_DIR}..."
-  find "${NETNS_DIR}" -maxdepth 1 -name "netns-*" -type f -delete 2>/dev/null || true
+  find "${NETNS_DIR}" -maxdepth 1 \( -name "netns-*" -o -name "rootless-netns-*" \) -type f -delete 2>/dev/null || true
 fi
 
 LIBPOD_TMP="/run/user/${UID_NUM}/libpod/tmp"

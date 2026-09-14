@@ -32,7 +32,7 @@ agent-sandbox/
 │   ├── harness/            # Embedded Valkey test server harness
 │   └── integration/        # End-to-end integration tests (bp, sndbx, infra lifecycle)
 ├── doc/
-│   ├── adr/                # Architecture Decision Records (00001 - 00029)
+│   ├── adr/                # Architecture Decision Records (00001 - 00030)
 │   └── ai/                 # Progressive disclosure knowledge base optimized for AI agents
 ├── install.sh              # Host installation & bootstrap script
 ├── dev-setup.sh            # Developer environment setup & verification script
@@ -72,10 +72,8 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
   - `sndbx infra list`: Inspects runtime status and ports.
   - `sndbx infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Gitea repos, and auto-heals defects.
   - `sndbx infra down`: Halts infrastructure containers.
-- **Repository Operations**:
-  - `sndbx repo path`: Prints installation root path.
-  - `sndbx repo build`: Compiles native CLI binaries.
-  - `sndbx repo build-images`: Builds base and derivative OCI container images.
+- **Update & Synchronization**:
+  - `sndbx update`: Orchestrates complete host update (synchronizes git repository, rebuilds and installs native CLI binaries, and builds all native OCI images).
 
 ### 2. Backplane Messaging CLI & Protocol (`bp`, `pkg/libbp`)
 Cross-agent communication bus built on Valkey/Redis Streams:
