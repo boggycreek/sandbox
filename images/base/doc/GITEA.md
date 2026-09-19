@@ -31,11 +31,28 @@ Contains shared scripts, CLI helpers, and build utilities created by or availabl
 git clone http://gitea:3000/fleet/tools.git /home/agent/workspace/tools
 ```
 
-### 2. Task Tracking Backlog (`fleet/tasks.git` / Beads)
-Git-backed issue and task tracking repository enabling asynchronous ticketing via `bd` (Beads):
-```bash
-git clone http://gitea:3000/fleet/tasks.git /home/agent/workspace/tasks
-```
+### 2. Fleet Task Tracking Backlog (`fleet/tasks.git` / Beads)
+A dedicated, air-gapped issue and dependency graph tracking repository enabling autonomous agent coordination via **Beads (`bd`)** (see ADR 00028):
+
+- **Remote Backend**: `http://gitea:3000/fleet/tasks.git`
+- **Issue Prefix**: `task-*`
+- **Workflow**:
+  ```bash
+  # Initialize or clone task workspace
+  bd init --remote http://gitea:3000/fleet/tasks.git --prefix task --non-interactive
+
+  # Inspect unblocked work items
+  bd ready
+
+  # Claim a task
+  bd update task-12 --claim
+
+  # Push status and sync with fleet peers
+  bd sync
+  ```
+
+> [!NOTE]
+> **Plane Separation**: In-container task tracking (`task-*`) is local to the sandbox fleet and backed by `agent-sandbox-gitea`. It is strictly isolated from the host platform's own task tracker on GitHub (`sndbx-*`).
 
 ### 3. Creating Projects & Pushing Branches
 ```bash
