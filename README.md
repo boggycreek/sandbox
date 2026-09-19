@@ -77,8 +77,8 @@ sndbx agent clean <name>                                 # Remove container (pre
 sndbx agent retire <name> [--force]                       # Fully deprovision agent (container, volume, Valkey, Gitea)
 
 # IDE Plugins & Remote Runtimes
-sndbx plugin add <toolbox|vscode>                        # Install & configure IDE plugin (JetBrains Gateway/Toolbox, VS Code)
-sndbx plugin remove <toolbox|vscode>                     # Uninstall & unlink IDE plugin configuration
+sndbx plugin add <gateway|toolbox|vscode>                # Install & configure IDE plugin (Gateway, Toolbox, VS Code)
+sndbx plugin remove <gateway|toolbox|vscode>             # Uninstall & unlink IDE plugin configuration
 sndbx plugin list                                        # List supported and installed IDE plugins
 
 # Installation & Workspace Updates

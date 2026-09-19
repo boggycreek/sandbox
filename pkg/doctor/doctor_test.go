@@ -485,4 +485,3 @@ func getFreeTestPort() (int, error) {
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
-

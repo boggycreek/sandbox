@@ -44,30 +44,30 @@ func SetExecCommandContextForTesting(fn func(ctx context.Context, name string, a
 
 // ContainerInfo describes a container's runtime state
 type ContainerInfo struct {
-	ID      string `json:"Id"`
-	Names   []string `json:"Names"`
-	State   string `json:"State"`
-	Status  string `json:"Status"`
-	Created int64  `json:"Created"`
+	ID      string        `json:"Id"`
+	Names   []string      `json:"Names"`
+	State   string        `json:"State"`
+	Status  string        `json:"Status"`
+	Created int64         `json:"Created"`
 	Ports   []PortMapping `json:"Ports"`
 }
 
 // PortMapping port mapping information
 type PortMapping struct {
-	HostPort      int `json:"hostPort"`
-	ContainerPort int `json:"containerPort"`
+	HostPort      int    `json:"hostPort"`
+	ContainerPort int    `json:"containerPort"`
 	HostIP        string `json:"hostIP"`
 }
 
 // AgentStatus combines config and container state
 type AgentStatus struct {
-	Name          string `json:"name"`
-	Role          string `json:"role"`
-	Image         string `json:"image"`
-	ContainerName string `json:"container_name"`
+	Name           string `json:"name"`
+	Role           string `json:"role"`
+	Image          string `json:"image"`
+	ContainerName  string `json:"container_name"`
 	ContainerState string `json:"container_state"`
-	SSHPort       int    `json:"ssh_port"`
-	IDEConnect    string `json:"ide_connect"`
+	SSHPort        int    `json:"ssh_port"`
+	IDEConnect     string `json:"ide_connect"`
 }
 
 // EgressContainerName returns the companion egress filter container name for a container or agent name.

@@ -23,16 +23,16 @@ import (
 
 // ValkeyHarness manages an isolated, authentic Valkey instance for integration testing
 type ValkeyHarness struct {
-	Port         int
-	AdminPass    string
-	HumanPass    string
-	Agent1Pass   string
-	Agent2Pass   string
-	tempDir      string
-	containerID  string
-	engine       string
-	serverCmd    *exec.Cmd
-	t            *testing.T
+	Port        int
+	AdminPass   string
+	HumanPass   string
+	Agent1Pass  string
+	Agent2Pass  string
+	tempDir     string
+	containerID string
+	engine      string
+	serverCmd   *exec.Cmd
+	t           *testing.T
 }
 
 // StartValkeyHarness initializes and starts an isolated Valkey instance with ACLs

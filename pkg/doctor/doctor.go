@@ -358,7 +358,6 @@ func checkAndHealImage(ctx context.Context, cfg *config.AgentConfig, paths confi
 	}
 }
 
-
 func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
 	bpCfg := libbp.LoadClientFromEnv()
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")

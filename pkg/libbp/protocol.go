@@ -27,12 +27,12 @@ const (
 )
 
 // Key generation helper functions
-func OutKey(id string) string       { return fmt.Sprintf("%s:out", strings.ToLower(id)) }
-func InboxKey(id string) string     { return fmt.Sprintf("%s:inbox", strings.ToLower(id)) }
-func SeqKey(id string) string       { return fmt.Sprintf("%s:seq", strings.ToLower(id)) }
-func CursorKey(id string) string    { return fmt.Sprintf("%s:cursor", strings.ToLower(id)) }
-func StatusKey(id string) string    { return fmt.Sprintf("%s:status", strings.ToLower(id)) }
-func FingerKey(id string) string    { return fmt.Sprintf("%s:finger", strings.ToLower(id)) }
+func OutKey(id string) string    { return fmt.Sprintf("%s:out", strings.ToLower(id)) }
+func InboxKey(id string) string  { return fmt.Sprintf("%s:inbox", strings.ToLower(id)) }
+func SeqKey(id string) string    { return fmt.Sprintf("%s:seq", strings.ToLower(id)) }
+func CursorKey(id string) string { return fmt.Sprintf("%s:cursor", strings.ToLower(id)) }
+func StatusKey(id string) string { return fmt.Sprintf("%s:status", strings.ToLower(id)) }
+func FingerKey(id string) string { return fmt.Sprintf("%s:finger", strings.ToLower(id)) }
 func BlobKey(id string, ts int64) string {
 	return fmt.Sprintf("%s:blob:%d", strings.ToLower(id), ts)
 }

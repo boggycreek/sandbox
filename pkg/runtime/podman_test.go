@@ -38,13 +38,13 @@ func TestPodmanHelpers(t *testing.T) {
 	}
 
 	status := AgentStatus{
-		Name:          "agent-test",
-		Role:          "coder",
-		Image:         "agent-sandbox-base:latest",
-		ContainerName: "sndbx-agent-test",
+		Name:           "agent-test",
+		Role:           "coder",
+		Image:          "agent-sandbox-base:latest",
+		ContainerName:  "sndbx-agent-test",
 		ContainerState: "stopped",
-		SSHPort:       0,
-		IDEConnect:    "-",
+		SSHPort:        0,
+		IDEConnect:     "-",
 	}
 	if status.Name != "agent-test" {
 		t.Errorf("unexpected AgentStatus struct: %+v", status)

@@ -129,4 +129,3 @@ func (p Paths) ResolveRepoDir() string {
 	cwd, _ := os.Getwd()
 	return cwd
 }
-

@@ -395,6 +395,3 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("update failure at build-images should return 1")
 	}
 }
-
-
-

@@ -37,3 +37,4 @@ This directory documents the significant architectural decisions made during the
 - [00033 — One-Shot IDE Remote Development, Per-Alias Known Hosts, and Retiring the Connect Verb](00033-OneShotIdeRemoteDevelopmentAndRetiringConnect.md)
 - [00034 — Root-Owned Agent Settings and Marketplace Authorization vs Plugin Version Split](00034-RootOwnedSettingsAndMarketplaceTrustBoundary.md)
 - [00035 — JetBrains Gateway & Toolbox Plugin Architecture and Local Installation](00035-JetBrainsGatewayToolboxPluginInstallation.md)
+- [00036 — JetBrains Gateway vs. Toolbox Plugin Decoupling and Native SSH Synchronization](00036-JetBrainsGatewayVsToolboxPluginDecouplingAndNativeSshSync.md)

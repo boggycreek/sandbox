@@ -21,9 +21,9 @@ import (
 	"github.com/boggycreek/agent-sandbox/pkg/doctor"
 	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
-	"text/tabwriter"
 	"github.com/boggycreek/agent-sandbox/pkg/plugin"
 	"github.com/boggycreek/agent-sandbox/pkg/runtime"
+	"text/tabwriter"
 )
 
 var execCommandContext = exec.CommandContext
@@ -1003,14 +1003,14 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprintln(stderr, "Usage: sndbx plugin add <toolbox|vscode>")
+			fmt.Fprintln(stderr, "Usage: sndbx plugin add <gateway|toolbox|vscode>")
 			return 1
 		}
 		return handlePluginAdd(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
 
 	case "remove":
 		if len(args) < 2 {
-			fmt.Fprintln(stderr, "Usage: sndbx plugin remove <toolbox|vscode>")
+			fmt.Fprintln(stderr, "Usage: sndbx plugin remove <gateway|toolbox|vscode>")
 			return 1
 		}
 		return handlePluginRemove(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
@@ -1023,14 +1023,14 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 
 func handlePluginAdd(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
 	switch target {
-	case "toolbox":
-		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
+	case "gateway":
+		res, err := plugin.InstallGatewayPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error installing toolbox plugin: %v\n", err)
+			fmt.Fprintf(stderr, "sndbx error installing gateway plugin: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway / Toolbox Plugin")
-		fmt.Fprintln(stdout, "================================================")
+		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway Plugin")
+		fmt.Fprintln(stdout, "=====================================")
 		fmt.Fprintf(stdout, "Plugin:     %s (v%s)\n", res.PluginName, res.Version)
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
 		if res.SSHConfigLinked {
@@ -1043,9 +1043,33 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 			fmt.Fprintf(stdout, "  - %s\n", loc)
 		}
 		fmt.Fprintln(stdout, "\nNext Steps:")
-		fmt.Fprintln(stdout, "  1. Launch JetBrains Gateway or JetBrains Toolbox.")
-		fmt.Fprintln(stdout, "  2. Connect to your running agents directly via the 'Agent Sandbox' provider")
+		fmt.Fprintln(stdout, "  1. Launch JetBrains Gateway or your JetBrains IDE (GoLand, CLion, WebStorm, PyCharm).")
+		fmt.Fprintln(stdout, "  2. Connect to your running agents via the 'Agent Sandbox' provider")
 		fmt.Fprintln(stdout, "     or select any 'sndbx-<name>' host under SSH Connections.")
+		return 0
+
+	case "toolbox":
+		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error installing toolbox plugin: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Toolbox Plugin")
+		fmt.Fprintln(stdout, "=====================================")
+		fmt.Fprintf(stdout, "Plugin:     %s (v%s)\n", res.PluginName, res.Version)
+		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
+		if res.SSHConfigLinked {
+			fmt.Fprintln(stdout, "SSH Config: Linked managed config into ~/.ssh/config")
+		} else {
+			fmt.Fprintln(stdout, "SSH Config: Already linked in ~/.ssh/config")
+		}
+		fmt.Fprintln(stdout, "\nInstalled Locations:")
+		for _, loc := range res.InstalledPaths {
+			fmt.Fprintf(stdout, "  - %s\n", loc)
+		}
+		fmt.Fprintln(stdout, "\nNext Steps:")
+		fmt.Fprintln(stdout, "  1. Restart JetBrains Toolbox.")
+		fmt.Fprintln(stdout, "  2. Connect to running agents under 'SSH Connections' or the 'Agent Sandbox' provider.")
 		return 0
 
 	case "vscode":
@@ -1074,14 +1098,35 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 
 func handlePluginRemove(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
 	switch target {
+	case "gateway":
+		res, err := plugin.RemoveGatewayPlugin(ctx, paths, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error removing gateway plugin: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway Plugin")
+		fmt.Fprintln(stdout, "=====================================")
+		fmt.Fprintf(stdout, "Plugin:     %s\n", res.PluginName)
+		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
+		if res.SSHConfigUnlinked {
+			fmt.Fprintln(stdout, "SSH Config: Unlinked managed config from ~/.ssh/config")
+		}
+		if len(res.RemovedPaths) > 0 {
+			fmt.Fprintln(stdout, "\nRemoved Locations:")
+			for _, loc := range res.RemovedPaths {
+				fmt.Fprintf(stdout, "  - %s\n", loc)
+			}
+		}
+		return 0
+
 	case "toolbox":
 		res, err := plugin.RemoveToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
 			fmt.Fprintf(stderr, "sndbx error removing toolbox plugin: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway / Toolbox Plugin")
-		fmt.Fprintln(stdout, "================================================")
+		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Toolbox Plugin")
+		fmt.Fprintln(stdout, "=====================================")
 		fmt.Fprintf(stdout, "Plugin:     %s\n", res.PluginName)
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
 		if res.SSHConfigUnlinked {
@@ -1119,14 +1164,16 @@ func printPluginUsage(out io.Writer) {
 	fmt.Fprintln(out, `Agent Sandbox Plugin Manager
 
 Usage:
-  sndbx plugin <command> [args...]
+  sndbx plugin <command> [target]
 
 Commands:
   add <plugin>       Install and configure the specified IDE plugin
   remove <plugin>    Uninstall and remove the specified IDE plugin
   list               List supported and installed IDE plugins
+  help               Show this help message
 
-Plugins:
-  toolbox            JetBrains Gateway & Toolbox integration
+Supported Targets:
+  gateway            JetBrains Gateway and IntelliJ IDEs (GoLand, CLion, WebStorm, PyCharm)
+  toolbox            JetBrains Toolbox desktop app provider & native SSH sync
   vscode             VS Code Remote-SSH and Claude Code integration`)
 }

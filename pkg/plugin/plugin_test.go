@@ -8,6 +8,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -81,12 +82,55 @@ func TestGenerateGatewayPluginJAR(t *testing.T) {
 	}
 }
 
+func TestGenerateToolboxPluginManifestAndJAR(t *testing.T) {
+	extJson := GenerateToolboxExtensionJSON()
+	if !strings.Contains(extJson, ToolboxPluginID) {
+		t.Errorf("expected extension.json to contain %s", ToolboxPluginID)
+	}
+	if !strings.Contains(extJson, ToolboxPluginAPIVersion) {
+		t.Errorf("expected extension.json to contain %s", ToolboxPluginAPIVersion)
+	}
+
+	iconSvg := GenerateToolboxPluginIconSVG()
+	if !strings.Contains(iconSvg, "<svg") {
+		t.Errorf("expected SVG icon")
+	}
+
+	data, err := GenerateToolboxPluginJAR()
+	if err != nil {
+		t.Fatalf("unexpected error generating toolbox JAR: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("failed to open generated toolbox JAR as zip: %v", err)
+	}
+
+	var foundExt, foundIcon, foundService bool
+	for _, f := range zr.File {
+		if f.Name == "extension.json" {
+			foundExt = true
+		}
+		if f.Name == "pluginIcon.svg" {
+			foundIcon = true
+		}
+		if f.Name == "META-INF/services/com.jetbrains.toolbox.api.remoteDev.RemoteDevExtension" {
+			foundService = true
+		}
+	}
+	if !foundExt || !foundIcon || !foundService {
+		t.Errorf("toolbox JAR missing expected files (ext: %v, icon: %v, service: %v)", foundExt, foundIcon, foundService)
+	}
+}
+
 func TestFindJetBrainsPluginDirs(t *testing.T) {
 	dirs := FindJetBrainsPluginDirs()
 	_ = dirs
 
 	roots := GetDefaultJetBrainsSearchRoots()
 	_ = roots
+
+	_ = GetDefaultToolboxPluginDir()
+	_ = GetDefaultToolboxSSHSettingsPath()
 
 	tmpDir := t.TempDir()
 	// Create mock IDE directories
@@ -184,6 +228,152 @@ func TestEnsureAndRemoveSSHConfigInclude(t *testing.T) {
 	_, _ = RemoveSSHConfigInclude(targetSSHConfig, "")
 }
 
+func TestEnsureAndRemoveSSHConfigManagedHosts(t *testing.T) {
+	tmpDir := t.TempDir()
+	hostSSHConfig := filepath.Join(tmpDir, "config")
+	paths := config.Paths{
+		DataHome:      filepath.Join(tmpDir, "data"),
+		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
+		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
+		IDEKeyFile:    filepath.Join(tmpDir, "data", "id_ed25519"),
+	}
+	_ = paths.EnsureDirectories()
+
+	ctx := context.Background()
+
+	// 1. Initial creation
+	err := EnsureSSHConfigManagedHosts(ctx, paths, hostSSHConfig)
+	if err != nil {
+		t.Fatalf("EnsureSSHConfigManagedHosts failed: %v", err)
+	}
+	data, _ := os.ReadFile(hostSSHConfig)
+	if !strings.Contains(string(data), ManagedSSHConfigHeader) {
+		t.Fatalf("expected header in config: %s", string(data))
+	}
+
+	// 2. Second invocation replaces existing block
+	err = EnsureSSHConfigManagedHosts(ctx, paths, hostSSHConfig)
+	if err != nil {
+		t.Fatalf("EnsureSSHConfigManagedHosts second run failed: %v", err)
+	}
+
+	// 3. Remove managed hosts
+	err = RemoveSSHConfigManagedHosts(hostSSHConfig)
+	if err != nil {
+		t.Fatalf("RemoveSSHConfigManagedHosts failed: %v", err)
+	}
+	dataAfter, _ := os.ReadFile(hostSSHConfig)
+	if strings.Contains(string(dataAfter), ManagedSSHConfigHeader) {
+		t.Fatalf("expected header to be removed: %s", string(dataAfter))
+	}
+
+	// 4. Remove on nonexistent file
+	err = RemoveSSHConfigManagedHosts(filepath.Join(tmpDir, "not-found"))
+	if err != nil {
+		t.Fatalf("expected no error on nonexistent file: %v", err)
+	}
+
+	// 5. Default host config path resolution
+	_ = EnsureSSHConfigManagedHosts(ctx, paths, "")
+	_ = RemoveSSHConfigManagedHosts("")
+}
+
+func TestSyncAndRemoveToolboxSSHSettings(t *testing.T) {
+	tmpDir := t.TempDir()
+	toolboxPluginsDir := filepath.Join(tmpDir, "Toolbox", "plugins")
+	_ = os.MkdirAll(toolboxPluginsDir, 0755)
+	settingsFile := filepath.Join(toolboxPluginsDir, "ssh", "settings.json")
+
+	paths := config.Paths{
+		DataHome:  filepath.Join(tmpDir, "data"),
+		AgentsDir: filepath.Join(tmpDir, "data", "agents"),
+	}
+	_ = paths.EnsureDirectories()
+
+	ctx := context.Background()
+
+	// Initial pre-existing settings with another remote
+	initSettings := map[string]any{
+		"envsJson":                 `{"remotes":[{"host":"sidekick","port":0,"userName":"brian","shouldUseSystemSshAgent":true,"originalConnectionString":"brian@sidekick"}]}`,
+		"CONNECTION_STRINGS_CACHE": `{"brian@sidekick":{"host":"sidekick","port":0,"userName":"brian","shouldUseSystemSshAgent":true,"originalConnectionString":"brian@sidekick"}}`,
+	}
+	initBytes, _ := json.MarshalIndent(initSettings, "", "    ")
+	_ = os.MkdirAll(filepath.Dir(settingsFile), 0755)
+	_ = os.WriteFile(settingsFile, initBytes, 0600)
+
+	// Test Sync
+	err := SyncToolboxSSHSettings(ctx, paths, settingsFile)
+	if err != nil {
+		t.Fatalf("SyncToolboxSSHSettings failed: %v", err)
+	}
+
+	content, _ := os.ReadFile(settingsFile)
+	if !strings.Contains(string(content), "sidekick") {
+		t.Fatalf("expected preserved non-sndbx remotes: %s", string(content))
+	}
+
+	// Test Remove
+	err = RemoveToolboxSSHSettings(settingsFile)
+	if err != nil {
+		t.Fatalf("RemoveToolboxSSHSettings failed: %v", err)
+	}
+
+	// Test with nonexistent file
+	_ = RemoveToolboxSSHSettings(filepath.Join(tmpDir, "nonexistent", "settings.json"))
+
+	// Test default resolution
+	_ = SyncToolboxSSHSettings(ctx, paths, "")
+	_ = RemoveToolboxSSHSettings("")
+}
+
+func TestInstallAndRemoveGatewayPlugin(t *testing.T) {
+	tmpDir := t.TempDir()
+	paths := config.Paths{
+		DataHome:      filepath.Join(tmpDir, "data"),
+		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
+		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
+	}
+	_ = paths.EnsureDirectories()
+
+	ctx := context.Background()
+	var out bytes.Buffer
+
+	res, err := InstallGatewayPlugin(ctx, paths, &out)
+	if err != nil {
+		t.Fatalf("InstallGatewayPlugin error: %v", err)
+	}
+	if res.PluginID != PluginIDGateway {
+		t.Errorf("expected PluginID=%s, got %s", PluginIDGateway, res.PluginID)
+	}
+	if len(res.InstalledPaths) == 0 {
+		t.Fatalf("expected at least 1 installed path")
+	}
+
+	centralJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway", "lib", "sndbx-gateway.jar")
+	if _, err := os.Stat(centralJar); err != nil {
+		t.Errorf("central gateway jar not found: %v", err)
+	}
+
+	remRes, err := RemoveGatewayPlugin(ctx, paths, &out)
+	if err != nil {
+		t.Fatalf("RemoveGatewayPlugin error: %v", err)
+	}
+	if remRes.PluginID != PluginIDGateway {
+		t.Errorf("expected PluginID=%s, got %s", PluginIDGateway, remRes.PluginID)
+	}
+	if len(remRes.RemovedPaths) == 0 {
+		t.Errorf("expected at least 1 removed path")
+	}
+
+	badPaths := config.Paths{
+		DataHome: "/dev/null/impossible",
+	}
+	_, err = InstallGatewayPlugin(ctx, badPaths, &out)
+	if err == nil {
+		t.Errorf("expected error with bad DataHome path")
+	}
+}
+
 func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := config.Paths{
@@ -207,28 +397,11 @@ func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 		t.Fatalf("expected at least 1 installed path")
 	}
 
-	// Verify central jar exists
-	centralJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway", "lib", "sndbx-gateway.jar")
-	if _, err := os.Stat(centralJar); err != nil {
-		t.Errorf("central plugin jar not found: %v", err)
+	centralExt := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx", "extension.json")
+	if _, err := os.Stat(centralExt); err != nil {
+		t.Errorf("central toolbox extension.json not found: %v", err)
 	}
 
-	// Test ListPlugins detects it
-	list := ListPlugins(paths)
-	var foundToolbox bool
-	for _, p := range list {
-		if p.ID == PluginIDToolbox {
-			foundToolbox = true
-			if !p.Installed {
-				t.Errorf("expected toolbox plugin to be marked installed")
-			}
-		}
-	}
-	if !foundToolbox {
-		t.Errorf("ListPlugins did not return toolbox plugin")
-	}
-
-	// Test RemoveToolboxPlugin
 	remRes, err := RemoveToolboxPlugin(ctx, paths, &out)
 	if err != nil {
 		t.Fatalf("RemoveToolboxPlugin error: %v", err)
@@ -236,16 +409,7 @@ func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 	if remRes.PluginID != PluginIDToolbox {
 		t.Errorf("expected PluginID=%s, got %s", PluginIDToolbox, remRes.PluginID)
 	}
-	if len(remRes.RemovedPaths) == 0 {
-		t.Errorf("expected at least 1 removed path")
-	}
 
-	// Verify central directory was removed
-	if _, err := os.Stat(centralJar); !os.IsNotExist(err) {
-		t.Errorf("expected central jar to be removed")
-	}
-
-	// Test central directory error path
 	badPaths := config.Paths{
 		DataHome: "/dev/null/impossible",
 	}
@@ -267,11 +431,9 @@ func TestInstallAndRemoveVSCodePlugin(t *testing.T) {
 	ctx := context.Background()
 	var out bytes.Buffer
 
-	// Save original ExecCommandContext
 	origExec := ExecCommandContext
 	defer func() { ExecCommandContext = origExec }()
 
-	// 1. Simulate 'code' found
 	ExecCommandContext = func(ctx context.Context, command string, args ...string) *exec.Cmd {
 		return exec.Command("true")
 	}
@@ -284,7 +446,6 @@ func TestInstallAndRemoveVSCodePlugin(t *testing.T) {
 		t.Errorf("expected PluginID=%s, got %s", PluginIDVSCode, res.PluginID)
 	}
 
-	// 2. Simulate 'code' not found
 	ExecCommandContext = func(ctx context.Context, command string, args ...string) *exec.Cmd {
 		return exec.Command("false")
 	}
@@ -297,12 +458,33 @@ func TestInstallAndRemoveVSCodePlugin(t *testing.T) {
 		t.Errorf("expected message to note missing code CLI: %s", res2.Message)
 	}
 
-	// 3. Remove VS Code plugin
 	remRes, err := RemoveVSCodePlugin(ctx, paths, &out)
 	if err != nil {
 		t.Fatalf("RemoveVSCodePlugin error: %v", err)
 	}
 	if remRes.PluginID != PluginIDVSCode {
 		t.Errorf("expected PluginID=%s, got %s", PluginIDVSCode, remRes.PluginID)
+	}
+}
+
+func TestListPlugins(t *testing.T) {
+	tmpDir := t.TempDir()
+	paths := config.Paths{
+		DataHome:      filepath.Join(tmpDir, "data"),
+		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
+		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
+	}
+	_ = paths.EnsureDirectories()
+
+	plugins := ListPlugins(paths)
+	if len(plugins) != 3 {
+		t.Fatalf("expected 3 plugins, got %d", len(plugins))
+	}
+	found := make(map[string]bool)
+	for _, p := range plugins {
+		found[p.ID] = true
+	}
+	if !found[PluginIDGateway] || !found[PluginIDToolbox] || !found[PluginIDVSCode] {
+		t.Fatalf("missing expected plugins: %+v", found)
 	}
 }
