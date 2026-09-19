@@ -119,6 +119,8 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 		return
 	}
 
+	_ = runtime.EnsureRootlessNetNS(ctx)
+
 	for _, vol := range []string{"agent-sandbox-valkey-data", "agent-sandbox-gitea-data"} {
 		volCmd := exec.CommandContext(ctx, "podman", "volume", "exists", vol)
 		if err := volCmd.Run(); err != nil {

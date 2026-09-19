@@ -127,6 +127,26 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 	return resolved, checkCmd.Run() == nil
 }
 
+// EnsureRootlessNetNS reconciles and initializes Podman's rootless network namespace
+// runtime directory structure. In rootless mode, if the temporary runtime directory
+// desynchronizes from the kernel netns mount, running 'podman unshare --rootless-netns true'
+// forces Podman to recreate the internal mount namespace tree.
+func EnsureRootlessNetNS(ctx context.Context) error {
+	cmd := execCommandContext(ctx, "podman", "unshare", "--rootless-netns", "true")
+	return cmd.Run()
+}
+
+// isRootlessNetnsError checks if a container start or run error is due to a desynchronized
+// rootless network namespace mount directory.
+func isRootlessNetnsError(err error, out []byte) bool {
+	combined := string(out)
+	if err != nil {
+		combined += " " + err.Error()
+	}
+	return strings.Contains(combined, "failed to mount runtime directory for rootless netns") ||
+		strings.Contains(combined, "rootless netns")
+}
+
 // EnsureNetwork creates the bridge network if it does not already exist
 func EnsureNetwork(ctx context.Context, netName string) error {
 	cmd := execCommandContext(ctx, "podman", "network", "exists", netName)
@@ -134,7 +154,15 @@ func EnsureNetwork(ctx context.Context, netName string) error {
 		return nil
 	}
 	createCmd := execCommandContext(ctx, "podman", "network", "create", netName)
-	return createCmd.Run()
+	if out, err := createCmd.CombinedOutput(); err != nil {
+		if isRootlessNetnsError(err, out) {
+			_ = EnsureRootlessNetNS(ctx)
+			retryCmd := execCommandContext(ctx, "podman", "network", "create", netName)
+			return retryCmd.Run()
+		}
+		return err
+	}
+	return nil
 }
 
 // EnsureVolume creates a named volume if missing
@@ -169,6 +197,15 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 	if err := checkCmd.Run(); err == nil {
 		startCmd := execCommandContext(ctx, "podman", "start", egressName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
+			if isRootlessNetnsError(err, out) {
+				_ = EnsureRootlessNetNS(ctx)
+				retryCmd := execCommandContext(ctx, "podman", "start", egressName)
+				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
+					return nil
+				} else {
+					return fmt.Errorf("failed starting existing egress filter container %s: %v (%s)", egressName, retryErr, string(retryOut))
+				}
+			}
 			return fmt.Errorf("failed starting existing egress filter container %s: %v (%s)", egressName, err, string(out))
 		}
 		return nil
@@ -186,6 +223,15 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 
 	cmd := execCommandContext(ctx, "podman", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if isRootlessNetnsError(err, out) {
+			_ = EnsureRootlessNetNS(ctx)
+			retryCmd := execCommandContext(ctx, "podman", args...)
+			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
+				return nil
+			} else {
+				return fmt.Errorf("failed running egress filter container %s: %v (%s)", egressName, retryErr, string(retryOut))
+			}
+		}
 		return fmt.Errorf("failed running egress filter container %s: %v (%s)", egressName, err, string(out))
 	}
 	return nil
@@ -210,6 +256,15 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		// Container exists, start if stopped
 		startCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
+			if isRootlessNetnsError(err, out) {
+				_ = EnsureRootlessNetNS(ctx)
+				retryCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
+				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
+					return nil
+				} else {
+					return fmt.Errorf("failed starting existing container %s: %v (%s)", cfg.ContainerName, retryErr, string(retryOut))
+				}
+			}
 			return fmt.Errorf("failed starting existing container %s: %v (%s)", cfg.ContainerName, err, string(out))
 		}
 		return nil
@@ -278,6 +333,15 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 
 	cmd := execCommandContext(ctx, "podman", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if isRootlessNetnsError(err, out) {
+			_ = EnsureRootlessNetNS(ctx)
+			retryCmd := execCommandContext(ctx, "podman", args...)
+			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
+				return nil
+			} else {
+				return fmt.Errorf("failed running podman container %s with image %s: %v (%s)", cfg.ContainerName, cfg.Image, retryErr, string(retryOut))
+			}
+		}
 		return fmt.Errorf("failed running podman container %s with image %s: %v (%s)", cfg.ContainerName, cfg.Image, err, string(out))
 	}
 	return nil
@@ -436,12 +500,23 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	if err := checkValkey.Run(); err != nil {
 		cmd := execCommandContext(ctx, "podman", valkeyArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed starting valkey container: %v (%s)", err, string(out))
+			if isRootlessNetnsError(err, out) {
+				_ = EnsureRootlessNetNS(ctx)
+				retryCmd := execCommandContext(ctx, "podman", valkeyArgs...)
+				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
+					return fmt.Errorf("failed starting valkey container: %v (%s)", retryErr, string(retryOut))
+				}
+			} else {
+				return fmt.Errorf("failed starting valkey container: %v (%s)", err, string(out))
+			}
 		}
 	} else {
 		startCmd := execCommandContext(ctx, "podman", "start", valkeyContainer)
-		if err := startCmd.Run(); err != nil {
+		if startOut, err := startCmd.CombinedOutput(); err != nil {
 			_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+			if isRootlessNetnsError(err, startOut) {
+				_ = EnsureRootlessNetNS(ctx)
+			}
 			cmd := execCommandContext(ctx, "podman", valkeyArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
@@ -476,12 +551,23 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	if err := checkGitea.Run(); err != nil {
 		cmd := execCommandContext(ctx, "podman", giteaArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed starting gitea container: %v (%s)", err, string(out))
+			if isRootlessNetnsError(err, out) {
+				_ = EnsureRootlessNetNS(ctx)
+				retryCmd := execCommandContext(ctx, "podman", giteaArgs...)
+				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
+					return fmt.Errorf("failed starting gitea container: %v (%s)", retryErr, string(retryOut))
+				}
+			} else {
+				return fmt.Errorf("failed starting gitea container: %v (%s)", err, string(out))
+			}
 		}
 	} else {
 		startCmd := execCommandContext(ctx, "podman", "start", giteaContainer)
-		if err := startCmd.Run(); err != nil {
+		if startOut, err := startCmd.CombinedOutput(); err != nil {
 			_ = execCommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
+			if isRootlessNetnsError(err, startOut) {
+				_ = EnsureRootlessNetNS(ctx)
+			}
 			cmd := execCommandContext(ctx, "podman", giteaArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting gitea container: %v (%s)", err, string(out))
