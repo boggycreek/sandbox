@@ -59,4 +59,10 @@ if [ -d "${LIBPOD_TMP}" ]; then
   rm -f "${LIBPOD_TMP}"/rootless-netns*.pid 2>/dev/null || true
 fi
 
+# 4. Reconcile rootless network namespace state to ensure runtime directories are healthy
+if command -v podman >/dev/null 2>&1; then
+  echo "Reconciling rootless network namespace..."
+  podman unshare --rootless-netns true 2>/dev/null || true
+fi
+
 echo "==> Test environment clean."

@@ -260,3 +260,112 @@ func TestMockedEgressFilter(t *testing.T) {
 		t.Errorf("expected fallback port 43210, got %d (err: %v)", port, err)
 	}
 }
+
+func TestRootlessNetNSAutoHealing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 1. isRootlessNetnsError helper
+	if !isRootlessNetnsError(fmt.Errorf("failed to mount runtime directory for rootless netns: no such file"), []byte("")) {
+		t.Errorf("expected isRootlessNetnsError to return true on netns error")
+	}
+	if !isRootlessNetnsError(nil, []byte("Error: failed to mount runtime directory for rootless netns: no such file")) {
+		t.Errorf("expected isRootlessNetnsError to return true on stderr match")
+	}
+	if isRootlessNetnsError(fmt.Errorf("normal failure"), []byte("regular error")) {
+		t.Errorf("expected isRootlessNetnsError to return false on non-netns error")
+	}
+
+	// 2. EnsureRootlessNetNS mock
+	mockUnshareCalled := false
+	mockNetns := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "unshare" && args[1] == "--rootless-netns" {
+			mockUnshareCalled = true
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restore := SetExecCommandContextForTesting(mockNetns)
+	err := EnsureRootlessNetNS(ctx)
+	restore()
+	if err != nil || !mockUnshareCalled {
+		t.Errorf("EnsureRootlessNetNS failed or unshare not called: %v", err)
+	}
+
+	// 3. EnsureNetwork with rootless netns error and auto-heal
+	unshareHealed := false
+	mockNetHeal := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "network" && args[1] == "exists" {
+			return exec.Command("false")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "network" && args[1] == "create" {
+			if !unshareHealed {
+				return exec.Command("sh", "-c", "echo 'failed to mount runtime directory for rootless netns' >&2; exit 127")
+			}
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "unshare" {
+			unshareHealed = true
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restoreNet := SetExecCommandContextForTesting(mockNetHeal)
+	err = EnsureNetwork(ctx, "test-heal-net")
+	restoreNet()
+	if err != nil || !unshareHealed {
+		t.Errorf("EnsureNetwork failed to auto-heal rootless netns: %v", err)
+	}
+
+	// 4. StartAgentContainer: existing container start auto-heals
+	startRetried := false
+	mockStartExisting := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "start" {
+			if !startRetried {
+				return exec.Command("sh", "-c", "echo 'failed to mount runtime directory for rootless netns' >&2; exit 127")
+			}
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "unshare" {
+			startRetried = true
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restoreStart := SetExecCommandContextForTesting(mockStartExisting)
+	cfg := &config.AgentConfig{Name: "existing-agent", ContainerName: "sndbx-agent-existing", VolumeName: "sndbx-vol"}
+	err = StartAgentContainer(ctx, cfg, config.Paths{}, "127.0.0.1", 6379)
+	restoreStart()
+	if err != nil || !startRetried {
+		t.Errorf("StartAgentContainer existing failed to auto-heal: %v", err)
+	}
+
+	// 5. StartAgentContainer: new container run auto-heals
+	runRetried := false
+	mockRunNew := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("false")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" {
+			if !runRetried {
+				return exec.Command("sh", "-c", "echo 'failed to mount runtime directory for rootless netns' >&2; exit 127")
+			}
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "unshare" {
+			runRetried = true
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restoreRun := SetExecCommandContextForTesting(mockRunNew)
+	cfgNew := &config.AgentConfig{Name: "new-agent", ContainerName: "sndbx-agent-new", VolumeName: "sndbx-vol-new", Image: "alpine:latest"}
+	err = StartAgentContainer(ctx, cfgNew, config.Paths{}, "127.0.0.1", 6379)
+	restoreRun()
+	if err != nil || !runRetried {
+		t.Errorf("StartAgentContainer new failed to auto-heal: %v", err)
+	}
+}
