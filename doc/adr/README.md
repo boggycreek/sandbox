@@ -1,40 +1,93 @@
 # Architecture Decision Records (ADRs)
 
-This directory documents the significant architectural decisions made during the design and development of the Agent Sandbox project.
+This directory documents the foundational architectural decisions governing the **Agent Sandbox** system for the **v0.1.0-alpha** release.
 
-- [00001 — OCI Containerization with Podman for Agent Isolation](00001-OciContainerizationWithPodman.md)
-- [00002 — In-Memory Backplane using Valkey RESP Protocol](00002-ValkeyRespBackplane.md)
-- [00003 — Local Git Hosting with Gitea](00003-GiteaLocalGitHosting.md)
-- [00004 — Non-Root In-Container User for Security Hardening](00004-NonRootContainerUser.md)
-- [00005 — Interactive Agent Attachment via Tmux Multiplexer](00005-TmuxMultiplexerAttachment.md)
-- [00006 — Persistent Per-Agent State via Named Volumes](00006-NamedVolumesForPersistence.md)
-- [00007 — Pure Go RESP Protocol Implementation with Zero CGo](00007-PureGoRespProtocolImplementation.md)
-- [00008 — Standalone bp CLI for Backplane Operations](00008-StandaloneBpCliForBackplaneOperations.md)
-- [00009 — Single-Binary CLI Strategy for sndbx](00009-SingleBinaryCliStrategy.md)
-- [00010 — Structured Logging via JSON Lines](00010-StructuredLoggingViaJsonLines.md)
-- [00011 — Environment Variable Configuration via 12-Factor Pattern](00011-TwelveFactorEnvConfiguration.md)
-- [00012 — Dual-Distribution Strategy (Git Checkout + Releases)](00012-DualDistributionStrategy.md)
-- [00013 — Client-Side Safety Guardrails in libbp](00013-ClientSideSafetyGuardrailsInLibbp.md)
-- [00014 — Cryptographic Turn Signing via Ed25519 Keys](00014-CryptographicTurnSigningViaEd25519.md)
-- [00015 — Unified Agent Status Reporter in cmd/sndbx](00015-UnifiedAgentStatusReporter.md)
-- [00016 — Backplane ACLs and Agent Isolation Rules](00016-BackplaneAclsAndAgentIsolationRules.md)
-- [00017 — Automatic Gitea User Provisioning on Agent Creation](00017-AutomaticGiteaUserProvisioningOnAgentCreation.md)
-- [00018 — Pre-Configured SSH Keys for Agent-to-Gitea Commits](00018-PreConfiguredSshKeysForAgentGiteaCommits.md)
-- [00019 — Multi-Agent Image Hierarchy (Base, OpenCode, Claude, Agy)](00019-MultiAgentImageHierarchy.md)
-- [00020 — Dynamic Loopback SSH Port Allocation per Agent Container](00020-DynamicLoopbackSshPortAllocationPerAgent.md)
-- [00021 — Native Desktop GUI Client for Backplane Inspection](00021-NativeDesktopGuiClientForBackplaneInspection.md)
-- [00022 — Agent Deprovisioning and Full Infrastructure Retirement](00022-AgentDeprovisioningAndRetirement.md)
-- [00023 — In-Container Environment Documentation and Dedicated doc Directory](00023-InContainerEnvironmentDocumentationAndDocDirectory.md)
-- [00024 — In-Container Unprivileged SSH Daemon and IDE Ensembling Workflow](00024-InContainerSshdAndIdeEnsemblingWorkflow.md)
-- [00025 — Auto-Managed OpenSSH Include File for Agent Lifecycle Integration](00025-ManagedSshConfigIncludeForIdeEnsembling.md)
-- [00026 — Agent Diagnostic Doctor and Automated Self-Healing](00026-AgentDiagnosticDoctorAndAutoHealing.md)
-- [00027 — Shared Infrastructure Diagnostic Doctor and Automated Self-Healing](00027-InfrastructureDiagnosticDoctorAndAutoHealing.md)
-- [00028 — Ephemeral Integration Test Lifecycles and Podman Test Isolation](00028-EphemeralIntegrationTestLifecycleAndIsolation.md)
-- [00029 — Flexible Agent Image Resolution and Local Store Support](00029-FlexibleAgentImageResolutionAndLocalStoreSupport.md)
-- [00030 — Unified Update Command for CLI Tooling and Container Images](00030-UnifiedSndbxUpdateCommand.md)
-- [00031 — Backplane Daemon (bpd) Replaces Interactive Tmux Session as Default Operating Mode](00031-BackplaneDaemonReplacesInteractiveTmuxDefault.md)
-- [00032 — Default-Deny Network Egress via Dedicated Container Sidecar](00032-DefaultDenyNetworkEgressSidecar.md)
-- [00033 — One-Shot IDE Remote Development, Per-Alias Known Hosts, and Retiring the Connect Verb](00033-OneShotIdeRemoteDevelopmentAndRetiringConnect.md)
-- [00034 — Root-Owned Agent Settings and Marketplace Authorization vs Plugin Version Split](00034-RootOwnedSettingsAndMarketplaceTrustBoundary.md)
-- [00035 — JetBrains Gateway & Toolbox Plugin Architecture and Local Installation](00035-JetBrainsGatewayToolboxPluginInstallation.md)
-- [00036 — JetBrains Gateway vs. Toolbox Plugin Decoupling and Native SSH Synchronization](00036-JetBrainsGatewayVsToolboxPluginDecouplingAndNativeSshSync.md)
+Records are numbered serially (`00001` through `00025`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
+
+---
+
+## Thematic Groupings
+
+| Theme Code | Topic Domain | Scope |
+| :--- | :--- | :--- |
+| **`THEME-CORE`** | Foundations & Architecture | Monorepo structure, native static binaries, single host CLI, rootless engine requirement. |
+| **`THEME-RUNTIME`** | Container Runtime & Storage | Unprivileged user boundaries, persistent named volumes, layered image hierarchy. |
+| **`THEME-LIFECYCLE`** | Agent Lifecycle & Process Model | Phase separation, Backplane Daemon (`bpd`) as PID 1, non-destructive cleaning vs. retirement. |
+| **`THEME-SECURITY`** | Security, Backplane & Messaging | Valkey ACL isolation, Ed25519 digital signatures, `libbp` C ABI library. |
+| **`THEME-NETWORKING`** | Network Isolation & Perimeter | Dedicated rootless netns, default-deny egress filtering sidecar, netns self-healing. |
+| **`THEME-DEVEXP`** | Developer Experience & IDEs | One-shot IDE launching (`open`), managed OpenSSH config include, root-owned settings protection. |
+| **`THEME-PLUGINS`** | IDE Plugin Management | Strict three-verb plugin interface, JetBrains Gateway vs. Toolbox decoupling & native SSH sync. |
+| **`THEME-FLEET`** | Shared Fleet Services | Local Gitea git hosting & memory backup, standardized local OpenAI inference proxy. |
+| **`THEME-OPERATIONS`** | Operations, Diagnostics & Quality | Diagnostic doctor self-healing (`--fix`), unified update pipeline, >=90% test coverage gate. |
+
+---
+
+## Architectural Decision Records
+
+### Foundations & Architecture (`THEME-CORE`)
+- **[00001 — Go Monorepo and Native Static Binaries](00001-GoMonorepoAndNativeStaticBinaries.md)**  
+  *Executive Summary:* All Agent Sandbox host and in-container utilities are developed in a unified Go monorepo and compiled into statically linked, zero-dependency native binaries.
+- **[00002 — Unified Host CLI (sndbx)](00002-UnifiedHostCliSndbx.md)**  
+  *Executive Summary:* A single multi-command binary (`sndbx`) acts as the sole operator entry point for fleet management, diagnostics, plugin setup, and orchestration.
+- **[00003 — Podman as Required Container Engine](00003-PodmanAsRequiredContainerEngine.md)**  
+  *Executive Summary:* Rootless Podman is the mandatory container runtime dependency, eliminating root-owned daemon requirements and enforcing user-space privilege boundaries.
+
+### Container Runtime & Storage (`THEME-RUNTIME`)
+- **[00004 — Non-Root Container User and Permission Bounds](00004-NonRootContainerUserAndPermissionBounds.md)**  
+  *Executive Summary:* Sandboxes execute strictly as unprivileged user `agent` (UID/GID 1000) under restricted Linux capabilities and rootless subuid mappings.
+- **[00005 — Persisted Home Volume Across Container Recreation](00005-PersistedHomeVolumeAcrossRecreation.md)**  
+  *Executive Summary:* Agent persistent state and memory reside in a dedicated named volume mounted to `/home/agent` that survives container restarts, updates, and recreation.
+- **[00006 — Layered OCI Container Hierarchy and Resolution](00006-LayeredOciContainerHierarchy.md)**  
+  *Executive Summary:* Agent images follow a strict inheritance chain (`sndbx-base` -> preset variants) resolved from local storage before falling back to external registries.
+
+### Agent Lifecycle & Process Model (`THEME-LIFECYCLE`)
+- **[00007 — Agent Lifecycle Phase Separation](00007-AgentLifecyclePhaseSeparation.md)**  
+  *Executive Summary:* Decouples agent specification and credential generation (`create`) from container execution (`start`), halting (`stop`), and runtime status reporting.
+- **[00008 — Backplane Daemon (bpd) as Primary Entrypoint](00008-BackplaneDaemonAsPrimaryEntrypoint.md)**  
+  *Executive Summary:* Sandboxes run `bpd` as PID 1 entrypoint managing background workers; interactive `tmux` is an on-demand debug attachment tool rather than the container entrypoint.
+- **[00009 — Deprovisioning and Retirement Phases](00009-DeprovisioningAndRetirementPhases.md)**  
+  *Executive Summary:* Enforces clear teardown boundaries: `clean` destroys ephemeral container instances while preserving data; `retire` purges volumes, keys, Valkey credentials, and Gitea accounts.
+
+### Security, Backplane & Messaging (`THEME-SECURITY`)
+- **[00010 — Valkey PubSub Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)**  
+  *Executive Summary:* Inter-agent and telemetry communication utilizes a shared Valkey message bus governed by strict per-agent ACL rules and isolated channel prefixes.
+- **[00011 — Ed25519 Cryptographic Message Signing](00011-Ed25519CryptographicMessageSigning.md)**  
+  *Executive Summary:* All backplane events and commands require cryptographic Ed25519 signatures verified against the sending agent's public key to guarantee authenticity.
+- **[00012 — libbp Core Client Library and Shared C ABI](00012-LibbpCoreClientLibraryAndCAbi.md)**  
+  *Executive Summary:* Backplane IPC protocol logic is implemented in a native Go library (`libbp`) and exposed as a shared C ABI (`libbp.so`) for polyglot agent runtimes.
+
+### Network Isolation & Perimeter Defense (`THEME-NETWORKING`)
+- **[00013 — Per-Instance Network Isolation](00013-PerInstanceNetworkIsolation.md)**  
+  *Executive Summary:* Sandboxes run in isolated rootless network namespaces with independent bridge interfaces and dedicated localhost SSH port allocations.
+- **[00014 — Default-Deny Network Egress Filtering](00014-DefaultDenyNetworkEgressFiltering.md)**  
+  *Executive Summary:* Outbound container network traffic is restricted by default via a sidecar filter, permitting only approved LLM API endpoints and package repositories.
+- **[00015 — Rootless Netns Runtime Directory Auto-Healing](00015-RootlessNetnsRuntimeDirectoryAutoHealing.md)**  
+  *Executive Summary:* Runtime preflight hooks automatically validate and repair rootless network namespace directory permissions (`/run/user/$UID/netns`) prior to container launch.
+
+### Developer Experience & IDE Ensembling (`THEME-DEVEXP`)
+- **[00016 — One-Shot IDE Remote Development and Host Ensembling](00016-OneShotIdeRemoteDevelopmentAndHostEnsembling.md)**  
+  *Executive Summary:* A unified command (`sndbx agent open`) launches host thin-client IDEs against in-container `sshd`, supporting simultaneous multi-IDE attachment to a single agent.
+- **[00017 — Managed OpenSSH Configuration Include](00017-ManagedOpenSshConfigurationInclude.md)**  
+  *Executive Summary:* `sndbx` maintains a dedicated managed `ssh_config` file and idempotently links it into `~/.ssh/config` via an `Include` directive for zero-configuration host SSH access.
+- **[00018 — Root-Owned IDE Settings Protection](00018-RootOwnedIdeSettingsProtection.md)**  
+  *Executive Summary:* In-container IDE configuration directories (`.vscode`, `.cursor`) are root-owned and read-only to agent UID 1000, preventing unauthorized extensions or policy tampering.
+
+### IDE Plugin Management (`THEME-PLUGINS`)
+- **[00019 — Explicit Plugin Manager Interface](00019-ExplicitPluginManagerInterface.md)**  
+  *Executive Summary:* IDE plugin lifecycles are governed strictly through `sndbx plugin <add|remove|list> <target>` without aliases or shorthand commands.
+- **[00020 — JetBrains Gateway vs. Toolbox Decoupling and Native SSH Sync](00020-JetBrainsGatewayVsToolboxDecouplingAndNativeSshSync.md)**  
+  *Executive Summary:* Decouples IntelliJ Gateway plugins (`gateway`) from JetBrains Toolbox App integration (`toolbox`), synchronizing running sandboxes directly to Toolbox's native `ssh/settings.json` and inlined host blocks.
+
+### Shared Fleet Services (`THEME-FLEET`)
+- **[00021 — Local Gitea Fleet Collaboration and Memory Backup](00021-LocalGiteaFleetCollaborationAndBackup.md)**  
+  *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, and automated synchronization of agent dotfiles and memory.
+- **[00022 — Local OpenAI-Compatible Inference Proxy](00022-LocalOpenAiCompatibleInferenceProxy.md)**  
+  *Executive Summary:* Sandboxes access LLM inference through a standardized local OpenAI-compatible HTTP gateway, shielding agents from direct external API credentials.
+
+### Operations, Diagnostics & Quality (`THEME-OPERATIONS`)
+- **[00023 — Comprehensive Diagnostic Doctor and Self-Healing](00023-ComprehensiveDoctorAndSelfHealing.md)**  
+  *Executive Summary:* A unified diagnostic engine (`sndbx doctor [--infra] [--fix]`) audits permissions, container states, network bridges, and shared daemons with automated remediation.
+- **[00024 — Unified Update Pipeline (sndbx update)](00024-UnifiedUpdatePipeline.md)**  
+  *Executive Summary:* The `sndbx update` command executes an atomic three-stage local deployment: git repository synchronization, native CLI compilation to `~/.local/bin`, and OCI image rebuilding.
+- **[00025 — Quality Gates and Coverage Enforcement](00025-QualityGatesAndCoverageEnforcement.md)**  
+  *Executive Summary:* Enforces continuous quality gates requiring >=90% statement test coverage (`make test-coverage`), static analysis (`golangci-lint`), and isolated ephemeral integration test fixtures.
