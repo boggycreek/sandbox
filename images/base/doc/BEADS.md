@@ -7,19 +7,7 @@ Use of this source code is governed by an MIT-style
 license that can be found in the LICENSE file.
 -->
 
-The **Agent Sandbox** environment equips every containerized agent with **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker designed for multi-agent software engineering coordination (see ADR 00028).
-
----
-
-> [!IMPORTANT]
-> **Strict Two-Plane Architectural Separation**
->
-> In-container task tracking operates in the **Fleet / Workload Plane**:
-> - **Issue Prefix**: `task-*` (e.g., `task-12`, `task-3a4f`)
-> - **Remote Repository**: Local Gitea server at `http://gitea:3000/fleet/tasks.git`
-> - **Network Perimeter**: Local container bridge (`agent-sandbox-infra`) with zero internet egress
->
-> This is completely distinct and isolated from the **Operator / Platform Plane** used on the host workstation to develop the sandbox platform itself (which uses `sndbx-*` prefixes and synchronizes with GitHub). **Never synchronize in-container tasks with external GitHub repositories.**
+The **Agent Sandbox** environment equips every containerized agent with **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker designed for multi-agent software engineering coordination. Tasks are managed locally and synchronized through the local Git forge at `http://gitea:3000/fleet/tasks.git`.
 
 ---
 
