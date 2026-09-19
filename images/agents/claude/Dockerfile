@@ -4,7 +4,7 @@ FROM agent-sandbox-base:latest
 
 USER root
 
-# Install Python and build dependencies (Node.js 22.x LTS provided by base)
+# Install Python and build dependencies (Deno provided by base)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Anthropic Claude Code CLI globally in npm-global
-RUN npm install -g @anthropic-ai/claude-code
+# Install Anthropic Claude Code CLI via Deno npm compatibility layer
+RUN deno install --global --allow-scripts=npm:@anthropic-ai/claude-code -n claude npm:@anthropic-ai/claude-code
 
 # Copy default settings with broad permissions (acceptEdits)
 RUN mkdir -p /etc/claude
