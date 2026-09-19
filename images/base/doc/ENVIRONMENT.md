@@ -11,6 +11,7 @@ Welcome to the **Agent Sandbox** environment. This guide details the container t
 
 For specific topics, see the **[`INDEX.md`](INDEX.md)** hub or the following specialized guides:
 - **[BACKPLANE.md](BACKPLANE.md)**: Cross-agent messaging (`bp`) and protocol syntax.
+- **[BEADS.md](BEADS.md)**: Fleet task graph, dependency scheduling (`bd ready`), and atomic claiming.
 - **[GITEA.md](GITEA.md)**: Local Git forge (`http://gitea:3000`), `fleet` organization, and task tracking via `bd`.
 - **[LLM_GATEWAY.md](LLM_GATEWAY.md)**: Host inference routing via `http://llm-gateway:<port>/v1`.
 - **[MEMORY.md](MEMORY.md)**: Git-backed memory and dotfiles backup.
@@ -31,6 +32,7 @@ For specific topics, see the **[`INDEX.md`](INDEX.md)** hub or the following spe
 | Path | Description | Persistence |
 |:---|:---|:---|
 | `/home/agent/workspace/` | Primary directory for cloning and editing project codebases | Persisted in home volume |
+| `/home/agent/tasks/` | Fleet task graph and backlog (`bd`) backed by local Gitea | Persisted in home volume / synced to Gitea |
 | `/home/agent/doc/` | In-container platform and tooling reference documentation | Synchronized by entrypoint |
 | `/home/agent/.ssh/` | SSH keys, authorized host IDE keys, and host identity | Persisted in home volume |
 | `/home/agent/.local/bin/` | User-installed CLI binaries and tools | Persisted in home volume |

@@ -58,6 +58,21 @@ if command -v bp >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
   bp status set "ready" 2>/dev/null || true
 fi
 
+# Configure default git author identity if not configured
+if [ ! -f "/home/agent/.gitconfig" ]; then
+  git config --global user.name "${AGENT_NAME:-agent}"
+  git config --global user.email "${AGENT_NAME:-agent}@local.sndbx"
+  git config --global init.defaultBranch main
+fi
+
+# Bootstrap fleet tasks repository at ~/tasks if fleet-tasks is available
+if command -v fleet-tasks >/dev/null 2>&1; then
+  (
+    sleep 1
+    fleet-tasks init >/dev/null 2>&1 || true
+  ) &
+fi
+
 # Set default prompt
 export PS1='[\u@\h:\w]\$ '
 
@@ -68,5 +83,6 @@ fi
 
 echo "Agent Sandbox container ready [$(hostname)]."
 echo "Documentation available at: ~/doc/INDEX.md"
+echo "Fleet task backlog: ~/tasks (or run 'fleet-tasks ready')"
 # Keep container foreground process alive
 exec tail -f /dev/null
