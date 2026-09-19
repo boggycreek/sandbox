@@ -1,4 +1,4 @@
-# Local SonarQube Server & Mechanical Analysis Platform
+# Local SonarQube Server & Deterministic Mechanical Analysis Platform
 
 <!--
 Copyright (c) 2026 Boggy Creek Software LLC
@@ -7,7 +7,9 @@ Use of this source code is governed by an MIT-style
 license that can be found in the LICENSE file.
 -->
 
-Welcome to the **Local SonarQube Mechanical Analysis Platform**. The sandbox fleet provides a dedicated SonarQube Server Community Edition instance for continuous mechanical inspection, bug detection, vulnerability scanning, and automated Quality Gate enforcement.
+Welcome to the **Local SonarQube Deterministic Mechanical Analysis Platform**. The sandbox fleet provides a dedicated SonarQube Server Community Edition instance for continuous deterministic mechanical inspection, bug detection, vulnerability scanning, and automated Quality Gate enforcement.
+
+Unlike probabilistic, non-deterministic LLM-based code reviews, deterministic mechanical analysis provides mathematically reproducible, rule-based ground truth (AST parsing, control-flow taint analysis, CVE vulnerability verification).
 
 For other platform capabilities, see the **[`INDEX.md`](INDEX.md)** hub.
 
@@ -50,7 +52,7 @@ flowchart TD
 ```
 
 1. **Tier 1 — Fast In-Container Local Verification**: Agents run language-native linters, unit tests with coverage, and deadcode checks before staging changes.
-2. **Tier 2 — Interactive Agent Self-Correction via MCP**: Agents invoke `sonar-mcp` tools directly from their LLM reasoning loop to inspect detected bugs, code smells, and security hotspots on their working branches.
+2. **Tier 2 — Interactive Agent Self-Correction via MCP**: Agents invoke `sonar-mcp` tools directly from their LLM reasoning loop to inspect detected bugs, code smells, and security hotspots on their working branches, using deterministic feedback to guide their repairs.
 3. **Tier 3 — Git Backplane Quality Gate**: Gitea pull requests enforce that SonarQube Quality Gates pass (e.g. 0 blocker/critical bugs, >= 80% coverage on new code, 0 unreviewed security hotspots) before merges to `main`.
 4. **Tier 4 — Centralized Fleet Observability**: Operators inspect debt trends, architectural hot spots, and quality telemetry across all agent workspaces in the SonarQube web UI.
 
