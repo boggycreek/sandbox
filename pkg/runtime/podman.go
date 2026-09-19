@@ -22,12 +22,25 @@ import (
 	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 )
 
+// EgressImage is the default OCI image for the network egress filter sidecar.
+const EgressImage = "agent-sandbox-egress:latest"
+
 // infraValkeyContainer and infraGiteaContainer are the expected shared infra container names.
 // These are package-level vars so tests can override them with ephemeral container names.
 var (
 	infraValkeyContainer = "agent-sandbox-valkey"
 	infraGiteaContainer  = "agent-sandbox-gitea"
+	execCommandContext   = exec.CommandContext
 )
+
+// SetExecCommandContextForTesting configures command execution mocking for unit tests.
+func SetExecCommandContextForTesting(fn func(ctx context.Context, name string, args ...string) *exec.Cmd) func() {
+	orig := execCommandContext
+	execCommandContext = fn
+	return func() {
+		execCommandContext = orig
+	}
+}
 
 // ContainerInfo describes a container's runtime state
 type ContainerInfo struct {
@@ -57,20 +70,32 @@ type AgentStatus struct {
 	IDEConnect    string `json:"ide_connect"`
 }
 
+// EgressContainerName returns the companion egress filter container name for a container or agent name.
+func EgressContainerName(name string) string {
+	clean := strings.TrimSpace(name)
+	if strings.HasSuffix(clean, "-egress") {
+		return clean
+	}
+	if strings.HasPrefix(clean, "sndbx-agent-") || strings.HasPrefix(clean, "sndbx-") {
+		return clean + "-egress"
+	}
+	return fmt.Sprintf("sndbx-agent-%s-egress", clean)
+}
+
 // ResolveAgentImage resolves an image input according to ADR 00029:
-// 1. Well-known presets (base, opencode, claude, agy)
+// 1. Well-known presets (base, opencode, claude, agy, egress)
 // 2. Local Podman store images (matching local tags or localhost/ prefix)
 // 3. Remote OCI image references
 func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal bool) {
 	lower := strings.ToLower(strings.TrimSpace(input))
 	if preset, ok := config.WellKnownImages[lower]; ok {
 		// Check if the preset image exists locally
-		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", preset)
+		checkCmd := execCommandContext(ctx, "podman", "image", "exists", preset)
 		return preset, checkCmd.Run() == nil
 	}
 	if lower == "" {
 		preset := config.WellKnownImages["base"]
-		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", preset)
+		checkCmd := execCommandContext(ctx, "podman", "image", "exists", preset)
 		return preset, checkCmd.Run() == nil
 	}
 
@@ -87,7 +112,7 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 	}
 
 	for _, cand := range candidates {
-		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", cand)
+		checkCmd := execCommandContext(ctx, "podman", "image", "exists", cand)
 		if err := checkCmd.Run(); err == nil {
 			return cand, true
 		}
@@ -98,41 +123,92 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 	if !strings.Contains(resolved, ":") && !strings.Contains(resolved, "@") {
 		resolved = resolved + ":latest"
 	}
-	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", resolved)
+	checkCmd := execCommandContext(ctx, "podman", "image", "exists", resolved)
 	return resolved, checkCmd.Run() == nil
 }
 
 // EnsureNetwork creates the bridge network if it does not already exist
 func EnsureNetwork(ctx context.Context, netName string) error {
-	cmd := exec.CommandContext(ctx, "podman", "network", "exists", netName)
+	cmd := execCommandContext(ctx, "podman", "network", "exists", netName)
 	if err := cmd.Run(); err == nil {
 		return nil
 	}
-	createCmd := exec.CommandContext(ctx, "podman", "network", "create", netName)
+	createCmd := execCommandContext(ctx, "podman", "network", "create", netName)
 	return createCmd.Run()
 }
 
 // EnsureVolume creates a named volume if missing
 func EnsureVolume(ctx context.Context, volName string) error {
-	cmd := exec.CommandContext(ctx, "podman", "volume", "exists", volName)
+	cmd := execCommandContext(ctx, "podman", "volume", "exists", volName)
 	if err := cmd.Run(); err == nil {
 		return nil
 	}
-	createCmd := exec.CommandContext(ctx, "podman", "volume", "create", volName)
+	createCmd := execCommandContext(ctx, "podman", "volume", "create", volName)
 	return createCmd.Run()
+}
+
+// ClearAgentKnownHosts removes any stale per-agent known hosts file
+func ClearAgentKnownHosts(name string, paths config.Paths) {
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		_ = os.Remove(filepath.Join(home, ".ssh", fmt.Sprintf("known_hosts.sndbx-%s", name)))
+	}
+	if paths.SSHDir != "" {
+		_ = os.Remove(filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.sndbx-%s", name)))
+	}
+}
+
+// StartEgressFilterContainer starts or creates the companion egress filter sidecar container for an agent.
+func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string) error {
+	egressName := EgressContainerName(agentOrContainerName)
+	netName := "agent-sandbox-infra"
+	_ = EnsureNetwork(ctx, netName)
+
+	// Check if container already exists
+	checkCmd := execCommandContext(ctx, "podman", "container", "exists", egressName)
+	if err := checkCmd.Run(); err == nil {
+		startCmd := execCommandContext(ctx, "podman", "start", egressName)
+		if out, err := startCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed starting existing egress filter container %s: %v (%s)", egressName, err, string(out))
+		}
+		return nil
+	}
+
+	args := []string{
+		"run", "-d",
+		"--name", egressName,
+		"--hostname", egressName,
+		"--network", netName,
+		"--cap-add", "NET_ADMIN",
+		"-p", "127.0.0.1::2222",
+		EgressImage,
+	}
+
+	cmd := execCommandContext(ctx, "podman", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed running egress filter container %s: %v (%s)", egressName, err, string(out))
+	}
+	return nil
+}
+
+// StopEgressFilterContainer stops the companion egress filter sidecar container if running.
+func StopEgressFilterContainer(ctx context.Context, agentOrContainerName string) error {
+	egressName := EgressContainerName(agentOrContainerName)
+	return StopAgentContainer(ctx, egressName)
 }
 
 // StartAgentContainer runs or starts an agent container with Podman
 func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, bpHost string, bpPort int) error {
+	ClearAgentKnownHosts(cfg.Name, paths)
 	netName := "agent-sandbox-infra"
 	_ = EnsureNetwork(ctx, netName)
 	_ = EnsureVolume(ctx, cfg.VolumeName)
 
 	// Check if container already exists
-	checkCmd := exec.CommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
+	checkCmd := execCommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
 	if err := checkCmd.Run(); err == nil {
 		// Container exists, start if stopped
-		startCmd := exec.CommandContext(ctx, "podman", "start", cfg.ContainerName)
+		startCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed starting existing container %s: %v (%s)", cfg.ContainerName, err, string(out))
 		}
@@ -200,7 +276,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
-	cmd := exec.CommandContext(ctx, "podman", args...)
+	cmd := execCommandContext(ctx, "podman", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed running podman container %s with image %s: %v (%s)", cfg.ContainerName, cfg.Image, err, string(out))
 	}
@@ -209,28 +285,48 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 
 // StopAgentContainer stops a running container
 func StopAgentContainer(ctx context.Context, containerName string) error {
-	cmd := exec.CommandContext(ctx, "podman", "stop", containerName)
+	cmd := execCommandContext(ctx, "podman", "stop", containerName)
 	return cmd.Run()
 }
 
 // CleanAgentContainer removes a container while keeping the named volume
 func CleanAgentContainer(ctx context.Context, containerName string) error {
 	_ = StopAgentContainer(ctx, containerName)
-	cmd := exec.CommandContext(ctx, "podman", "rm", "-f", containerName)
-	return cmd.Run()
+	cmd := execCommandContext(ctx, "podman", "rm", "-f", containerName)
+	err := cmd.Run()
+
+	// Clean companion egress filter container if present
+	egressName := EgressContainerName(containerName)
+	_ = StopAgentContainer(ctx, egressName)
+	_ = execCommandContext(ctx, "podman", "rm", "-f", egressName).Run()
+
+	agentName := strings.TrimPrefix(containerName, "sndbx-agent-")
+	agentName = strings.TrimPrefix(agentName, "sndbx-")
+	ClearAgentKnownHosts(agentName, config.GetPaths())
+	return err
 }
 
 // DestroyAgentContainer removes container and persistent volume
 func DestroyAgentContainer(ctx context.Context, containerName, volumeName string) error {
 	_ = CleanAgentContainer(ctx, containerName)
-	cmd := exec.CommandContext(ctx, "podman", "volume", "rm", "-f", volumeName)
+	cmd := execCommandContext(ctx, "podman", "volume", "rm", "-f", volumeName)
 	return cmd.Run()
 }
 
 // GetAgentSSHPort discovers the dynamically assigned host port mapping for port 2222
 func GetAgentSSHPort(ctx context.Context, containerName string) (int, error) {
-	cmd := exec.CommandContext(ctx, "podman", "port", containerName, "2222")
+	cmd := execCommandContext(ctx, "podman", "port", containerName, "2222")
 	out, err := cmd.Output()
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		egressName := EgressContainerName(containerName)
+		if egressName != containerName {
+			cmdEgress := execCommandContext(ctx, "podman", "port", egressName, "2222")
+			if outEgress, errEgress := cmdEgress.Output(); errEgress == nil && len(strings.TrimSpace(string(outEgress))) > 0 {
+				out = outEgress
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -246,7 +342,7 @@ func GetAgentSSHPort(ctx context.Context, containerName string) (int, error) {
 
 // InspectAgentContainer returns state summary for a container
 func InspectAgentContainer(ctx context.Context, containerName string) (*ContainerInfo, error) {
-	cmd := exec.CommandContext(ctx, "podman", "inspect", "--type", "container", containerName)
+	cmd := execCommandContext(ctx, "podman", "inspect", "--type", "container", containerName)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -316,7 +412,7 @@ func StartInfraStack(ctx context.Context, paths config.Paths, adminPass, humanPa
 
 	aclContent := fmt.Sprintf(`user default off
 user admin on >%s ~* &* +@all
-user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (+xadd ~*:inbox)
+user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R~*:* &* +@all (+xadd ~*:inbox)
 `, adminPass, humanName, humanPass, humanName)
 	_ = os.WriteFile(aclFile, []byte(aclContent), 0644)
 	_ = os.Chmod(aclFile, 0644)
@@ -336,17 +432,17 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (
 		"valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379",
 	}
 
-	checkValkey := exec.CommandContext(ctx, "podman", "container", "exists", valkeyContainer)
+	checkValkey := execCommandContext(ctx, "podman", "container", "exists", valkeyContainer)
 	if err := checkValkey.Run(); err != nil {
-		cmd := exec.CommandContext(ctx, "podman", valkeyArgs...)
+		cmd := execCommandContext(ctx, "podman", valkeyArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed starting valkey container: %v (%s)", err, string(out))
 		}
 	} else {
-		startCmd := exec.CommandContext(ctx, "podman", "start", valkeyContainer)
+		startCmd := execCommandContext(ctx, "podman", "start", valkeyContainer)
 		if err := startCmd.Run(); err != nil {
-			_ = exec.CommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
-			cmd := exec.CommandContext(ctx, "podman", valkeyArgs...)
+			_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+			cmd := execCommandContext(ctx, "podman", valkeyArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
 			}
@@ -376,17 +472,17 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (
 		"docker.io/gitea/gitea:1.22-rootless",
 	}
 
-	checkGitea := exec.CommandContext(ctx, "podman", "container", "exists", giteaContainer)
+	checkGitea := execCommandContext(ctx, "podman", "container", "exists", giteaContainer)
 	if err := checkGitea.Run(); err != nil {
-		cmd := exec.CommandContext(ctx, "podman", giteaArgs...)
+		cmd := execCommandContext(ctx, "podman", giteaArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed starting gitea container: %v (%s)", err, string(out))
 		}
 	} else {
-		startCmd := exec.CommandContext(ctx, "podman", "start", giteaContainer)
+		startCmd := execCommandContext(ctx, "podman", "start", giteaContainer)
 		if err := startCmd.Run(); err != nil {
-			_ = exec.CommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
-			cmd := exec.CommandContext(ctx, "podman", giteaArgs...)
+			_ = execCommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
+			cmd := execCommandContext(ctx, "podman", giteaArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting gitea container: %v (%s)", err, string(out))
 			}
@@ -436,7 +532,7 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 	}
 
 	// Ensure admin user via container CLI
-	createAdminCmd := exec.CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
+	createAdminCmd := execCommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
 		"gitea", "admin", "user", "create",
 		"--admin",
 		"--username", "giteaadmin",
@@ -447,7 +543,7 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 	_ = createAdminCmd.Run()
 
 	// Ensure password is sync'd in case user already existed with different password
-	changePassCmd := exec.CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
+	changePassCmd := execCommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
 		"gitea", "admin", "user", "change-password",
 		"--username", "giteaadmin",
 		"--password", adminPass,
@@ -472,8 +568,8 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 
 // StopInfraStack halts shared infrastructure containers
 func StopInfraStack(ctx context.Context) error {
-	_ = exec.CommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
-	_ = exec.CommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
+	_ = execCommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
+	_ = execCommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
 	return nil
 }
 
@@ -497,7 +593,12 @@ func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
 
 // FormatSSHConfigBlock returns a standard OpenSSH host block string.
 func FormatSSHConfigBlock(name string, port int, keyFile string) string {
-	return fmt.Sprintf("Host sndbx-%s\n    HostName 127.0.0.1\n    Port %d\n    User agent\n    IdentityFile %s\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n", name, port, keyFile)
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/tmp"
+	}
+	knownHostsFile := filepath.Join(home, ".ssh", fmt.Sprintf("known_hosts.sndbx-%s", name))
+	return fmt.Sprintf("Host sndbx-%s\n    HostName 127.0.0.1\n    Port %d\n    User agent\n    IdentityFile %s\n    IdentitiesOnly yes\n    UserKnownHostsFile %s\n    StrictHostKeyChecking accept-new\n", name, port, keyFile, knownHostsFile)
 }
 
 // SyncSSHConfigFile updates the managed SSH config file with Host blocks for all currently running agents.

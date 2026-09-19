@@ -24,6 +24,7 @@ var WellKnownImages = map[string]string{
 	"opencode": "agent-sandbox-opencode:latest",
 	"claude":   "agent-sandbox-claude:latest",
 	"agy":      "agent-sandbox-agy:latest",
+	"egress":   "agent-sandbox-egress:latest",
 }
 
 // AgentConfig holds persistent configuration for a single named agent

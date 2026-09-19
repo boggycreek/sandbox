@@ -32,6 +32,11 @@ func AssertAllowed(callerID string, cmd string, args ...string) error {
 		return fmt.Errorf("%w: command %s is disabled in agent backplane", ErrForbiddenCommand, upperCmd)
 	}
 
+	// Ensure GET poll-interval and SET poll-interval are allowed for any caller
+	if (upperCmd == "GET" || upperCmd == "SET") && len(args) > 0 && strings.EqualFold(args[0], KeyPollInterval) {
+		return nil
+	}
+
 	// Defense-in-depth: Inspect XADD calls
 	if upperCmd == "XADD" {
 		if len(args) < 1 {

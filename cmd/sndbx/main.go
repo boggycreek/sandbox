@@ -87,7 +87,8 @@ Commands:
 Agent Commands:
   sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
   sndbx agent start <name>
-  sndbx agent connect <name>
+  sndbx agent tmux <name>
+  sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]
   sndbx agent ssh <name>
   sndbx agent ssh-config [name] [--all]
   sndbx agent doctor <name>
@@ -110,7 +111,7 @@ Run 'sndbx <domain> help' for more details on each command.`)
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|connect|ssh|ssh-config|doctor|stop|list|clean|retire>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|tmux|open|ssh|ssh-config|doctor|stop|list|clean|retire>")
 		return 1
 	}
 
@@ -128,8 +129,11 @@ Commands:
   start <name>
     Start the agent's daemon container with Podman.
 
-  connect <name>
+  tmux <name>
     Attach interactively to the agent container's tmux supervisor.
+
+  open <name> [in <ide>] [--ide <ide>] [--no-launch]
+    Launch desktop IDE remote development environment (VS Code or JetBrains WebStorm).
 
   ssh <name>
     Connect directly via SSH to the agent's unprivileged environment.
@@ -156,8 +160,12 @@ Commands:
 		return handleAgentCreate(ctx, paths, subArgs, stdout, stderr)
 	case "start":
 		return handleAgentStart(ctx, paths, subArgs, stdout, stderr)
+	case "tmux":
+		return handleAgentTmux(ctx, paths, subArgs, stdout, stderr)
 	case "connect":
 		return handleAgentConnect(ctx, paths, subArgs, stdout, stderr)
+	case "open":
+		return handleAgentOpen(ctx, paths, subArgs, stdout, stderr)
 	case "ssh":
 		return handleAgentSSH(ctx, paths, subArgs, stdout, stderr)
 	case "ssh-config", "sshconfig":
@@ -343,13 +351,15 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 	_ = runtime.SyncSSHConfigFile(ctx, paths)
 
 	fmt.Fprintf(stdout, "Agent %q started (%s).\n", cfg.Name, cfg.ContainerName)
-	fmt.Fprintf(stdout, "Connect via: sndbx agent connect %s\n", cfg.Name)
+	fmt.Fprintf(stdout, "SSH:   sndbx agent ssh %s\n", cfg.Name)
+	fmt.Fprintf(stdout, "IDE:   sndbx agent open %s\n", cfg.Name)
+	fmt.Fprintf(stdout, "Tmux:  sndbx agent tmux %s\n", cfg.Name)
 	return 0
 }
 
-func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent connect <name>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent tmux <name>")
 		return 1
 	}
 	name := args[0]
@@ -359,14 +369,125 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 		return 1
 	}
 
-	cmd := exec.Command("podman", "exec", "-it", cfg.ContainerName, "tmux", "attach")
+	cmd := execCommandContext(ctx, "podman", "exec", "-it", cfg.ContainerName, "tmux", "attach")
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(stderr, "sndbx connect error: %v\n", err)
+		fmt.Fprintf(stderr, "sndbx tmux error: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Notice: 'sndbx agent connect' is deprecated. Please use 'sndbx agent tmux <name>' instead.")
+		fmt.Fprintln(stderr, "Usage: sndbx agent connect <name>")
+		return 1
+	}
+	fmt.Fprintf(stderr, "Notice: 'sndbx agent connect' is deprecated. Please use 'sndbx agent tmux %s' instead.\n", args[0])
+	return handleAgentTmux(ctx, paths, args, stdout, stderr)
+}
+
+func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Usage: sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]")
+		return 1
+	}
+
+	name := args[0]
+	ide := "code"
+	noLaunch := false
+
+	flagArgs := args[1:]
+	if len(args) >= 3 && strings.ToLower(args[1]) == "in" {
+		ide = args[2]
+		flagArgs = args[3:]
+	} else if len(args) == 2 && strings.ToLower(args[1]) == "in" {
+		fmt.Fprintln(stderr, "Usage: sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]")
+		return 1
+	}
+
+	fs := flag.NewFlagSet("agent open", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&ide, "ide", ide, "Target IDE (code, webstorm)")
+	fs.BoolVar(&noLaunch, "no-launch", noLaunch, "Prepare SSH configuration without launching IDE")
+	if err := fs.Parse(flagArgs); err != nil {
+		return 1
+	}
+
+	ide = strings.ToLower(strings.TrimSpace(ide))
+	if ide != "code" && ide != "webstorm" {
+		fmt.Fprintf(stderr, "sndbx error: unsupported IDE %q (supported: code, webstorm)\n", ide)
+		return 1
+	}
+
+	cfg, err := config.LoadAgentConfig(name, paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
+	if err != nil || port <= 0 {
+		bpCfg := libbp.LoadClientFromEnv()
+		if err := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); err != nil {
+			fmt.Fprintf(stderr, "sndbx error starting agent container %s: %v\n", cfg.ContainerName, err)
+			return 1
+		}
+		port, err = runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
+		if err != nil || port <= 0 {
+			fmt.Fprintf(stderr, "sndbx error discovering SSH port for %s: %v\n", cfg.Name, err)
+			return 1
+		}
+	}
+
+	if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
+		fmt.Fprintf(stderr, "sndbx error syncing SSH config: %v\n", err)
+		return 1
+	}
+
+	hostAlias := fmt.Sprintf("sndbx-%s", name)
+	remoteURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)
+
+	if noLaunch {
+		fmt.Fprintf(stdout, "SSH host alias prepared: %s (Port: %d)\n", hostAlias, port)
+		if ide == "code" {
+			fmt.Fprintf(stdout, "VS Code Remote URI: %s\n", remoteURI)
+			fmt.Fprintf(stdout, "Launch command: code --file-uri %s\n", remoteURI)
+		} else if ide == "webstorm" {
+			fmt.Fprintf(stdout, "Connect via JetBrains Gateway with Host %q (Port: %d).\n", hostAlias, port)
+			fmt.Fprintln(stdout, "Note: Full JetBrains Dev Containers is not used due to container lifecycle management.")
+		}
+		return 0
+	}
+
+	switch ide {
+	case "code":
+		fmt.Fprintf(stdout, "Opening %s in VS Code (Host: %s)...\n", name, hostAlias)
+		cmd := execCommandContext(ctx, "code", "--file-uri", remoteURI)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(stderr, "sndbx error launching VS Code: %v\n", err)
+			return 1
+		}
+
+		checkServer := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c", "test -d /home/agent/.vscode-server")
+		if err := checkServer.Run(); err == nil {
+			installCmd := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c",
+				`find /home/agent/.vscode-server/bin -name "code-server" -o -name "code" 2>/dev/null | head -n 1 | xargs -r -I {} {} --install-extension anthropic.claude-code`)
+			_ = installCmd.Run()
+		}
+		return 0
+
+	case "webstorm":
+		fmt.Fprintf(stdout, "Connect to %s via JetBrains Gateway with Host %q.\n", name, hostAlias)
+		fmt.Fprintln(stdout, "Note: Full JetBrains Dev Containers is not used due to container lifecycle management.")
+		return 0
+	}
+
 	return 0
 }
 
@@ -396,10 +517,10 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 		"agent@localhost",
 	}
 
-	cmd := exec.Command("ssh", sshArgs...)
+	cmd := execCommandContext(ctx, "ssh", sshArgs...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return 1
 	}
@@ -560,6 +681,9 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 
 	// 2. Delete local config and secrets
 	_ = config.DeleteAgentConfig(name, paths)
+
+	// 2b. Clear per-agent known hosts file
+	runtime.ClearAgentKnownHosts(name, paths)
 
 	// 3. Deprovision Valkey ACL user & streams
 	deprovisionValkeyUser(ctx, name)

@@ -11,6 +11,7 @@
   --accent-cyan: #00d2ff;
   --accent-blue: #3a7bd5;
   --accent-green: #00e676;
+  --accent-amber: #ffab00;
   --text-main: #e6edf3;
   --text-muted: #8b949e;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -29,6 +30,43 @@ body {
   font-family: var(--font-sans);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Alpha Announcement Banner */
+.alpha-banner {
+  background: rgba(255, 171, 0, 0.08);
+  border-bottom: 1px solid rgba(255, 171, 0, 0.25);
+  color: #e3b341;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.65rem;
+  z-index: 101;
+}
+
+.alpha-tag {
+  background: var(--accent-amber);
+  color: #0a0e14;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.alpha-banner a {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.alpha-banner a:hover {
+  color: var(--accent-cyan);
 }
 
 header {
@@ -67,6 +105,19 @@ header {
   font-weight: 800;
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
+}
+
+.badge-alpha {
+  background: rgba(255, 171, 0, 0.12);
+  color: var(--accent-amber);
+  border: 1px solid rgba(255, 171, 0, 0.35);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .nav-links {
@@ -108,7 +159,7 @@ header {
 .hero {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 5rem 2rem 4rem;
+  padding: 4.5rem 2rem 4rem;
   text-align: center;
 }
 
@@ -116,9 +167,9 @@ header {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(0, 210, 255, 0.1);
-  border: 1px solid rgba(0, 210, 255, 0.3);
-  color: var(--accent-cyan);
+  background: rgba(255, 171, 0, 0.1);
+  border: 1px solid rgba(255, 171, 0, 0.3);
+  color: var(--accent-amber);
   font-size: 0.85rem;
   padding: 0.3rem 0.8rem;
   border-radius: 100px;
@@ -293,6 +344,28 @@ header {
 .feature-card p {
   color: var(--text-muted);
   font-size: 0.95rem;
+}
+
+.alpha-note {
+  max-width: 800px;
+  margin: 1.5rem auto 0;
+  padding: 0.85rem 1.2rem;
+  background: rgba(255, 171, 0, 0.06);
+  border: 1px solid rgba(255, 171, 0, 0.25);
+  border-radius: 8px;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.alpha-note strong {
+  color: var(--accent-amber);
+}
+
+.alpha-note a {
+  color: var(--accent-cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 footer {
