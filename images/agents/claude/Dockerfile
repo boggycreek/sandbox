@@ -4,19 +4,13 @@ FROM agent-sandbox-base:latest
 
 USER root
 
-# Install Node.js (v20/current LTS) and build dependencies
+# Install Python and build dependencies (Node.js 22.x LTS provided by base)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nodejs \
-    npm \
     python3 \
     python3-pip \
     python3-venv \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
-
-# Configure npm prefix for non-root user
-ENV NPM_CONFIG_PREFIX=/home/agent/.npm-global
-ENV PATH="/home/agent/.npm-global/bin:${PATH}"
 
 # Install Anthropic Claude Code CLI globally in npm-global
 RUN npm install -g @anthropic-ai/claude-code

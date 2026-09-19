@@ -11,12 +11,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./cmd/bp && 
 # Stage 2: Clean, neutral Base OCI Image
 FROM docker.io/library/debian:bookworm-slim
 
-# Install core CLI tools, unprivileged OpenSSH, tmux, git, and system dependencies
+# Install core CLI tools, unprivileged OpenSSH, tmux, git, system dependencies, and Node.js 22.x LTS
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
     curl \
     git \
+    gnupg \
     openssh-server \
     openssh-client \
     openssl \
@@ -29,6 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar \
     gzip \
     unzip \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get purge -y --auto-remove gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Symlink fdfind to fd
@@ -42,7 +46,7 @@ ENV LANG=en_US.UTF-8 \
 # Create unprivileged agent user (UID 1000, GID 1000)
 RUN groupadd -g 1000 agent && \
     useradd -u 1000 -g agent -m -s /bin/bash agent && \
-    mkdir -p /home/agent/workspace /home/agent/.ssh /home/agent/.local/bin /home/agent/.config /home/agent/doc && \
+    mkdir -p /home/agent/workspace /home/agent/.ssh /home/agent/.local/bin /home/agent/.config /home/agent/doc /home/agent/.npm-global && \
     chown -R agent:agent /home/agent
 
 # Configure OpenSSH daemon for unprivileged execution
@@ -68,7 +72,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh && \
 USER agent
 WORKDIR /home/agent/workspace
 
-ENV PATH="/home/agent/.local/bin:/usr/local/bin:${PATH}" \
+ENV NPM_CONFIG_PREFIX=/home/agent/.npm-global \
+    PATH="/home/agent/.npm-global/bin:/home/agent/.local/bin:/usr/local/bin:${PATH}" \
     HOME="/home/agent" \
     TERM=xterm-256color
 

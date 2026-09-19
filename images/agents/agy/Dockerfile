@@ -4,13 +4,11 @@ FROM agent-sandbox-base:latest
 
 USER root
 
-# Install Python3, Node.js, and build tooling for agy plugins/MCP servers
+# Install Python3 and build tooling for agy plugins/MCP servers (Node.js 22.x LTS provided by base)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
-    nodejs \
-    npm \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
