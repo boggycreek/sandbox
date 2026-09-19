@@ -2,7 +2,7 @@
 
 This directory documents the foundational architectural decisions governing the **Agent Sandbox** system for the **v0.1.0-alpha** release.
 
-Records are numbered serially (`00001` through `00025`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
+Records are numbered serially (`00001` through `00026`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
 
 ---
 
@@ -39,6 +39,8 @@ Records are numbered serially (`00001` through `00025`) and organized by topic d
   *Executive Summary:* Agent persistent state and memory reside in a dedicated named volume mounted to `/home/agent` that survives container restarts, updates, and recreation.
 - **[00006 — Layered OCI Container Hierarchy and Resolution](00006-LayeredOciContainerHierarchy.md)**  
   *Executive Summary:* Agent images follow a strict inheritance chain (`sndbx-base` -> preset variants) resolved from local storage before falling back to external registries.
+- **[00026 — Deno as Standard JavaScript Runtime for OCI Container Agents](00026-DenoAsStandardJsRuntimeForOciContainerAgents.md)**  
+  *Executive Summary:* Deno 2.x replaces Node.js as the standard JavaScript/TypeScript runtime in all agent OCI images, providing native TypeScript execution, granular capability sandboxing, and a leaner container footprint without compromising npm ecosystem compatibility.
 
 ### Agent Lifecycle & Process Model (`THEME-LIFECYCLE`)
 - **[00007 — Agent Lifecycle Phase Separation](00007-AgentLifecyclePhaseSeparation.md)**  

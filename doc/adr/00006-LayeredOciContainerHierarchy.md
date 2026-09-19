@@ -23,10 +23,10 @@ Different AI agents require distinct toolchains (e.g. Claude Code requires Node 
 ## Decision (What)
 Agent container images adhere to a strict, layered inheritance hierarchy rooted in a standardized base image:
 
-1. **`sndbx-base`**: Minimal Debian/Ubuntu rootless foundation containing `agent` user UID 1000, `bpd` entrypoint daemon, `bp` CLI, rootless OpenSSH server, git, Node.js 22.x LTS runtime, and foundational build utilities.
+1. **`sndbx-base`**: Minimal Debian/Ubuntu rootless foundation containing `agent` user UID 1000, `bpd` entrypoint daemon, `bp` CLI, rootless OpenSSH server, git, Deno 2.x runtime, and foundational build utilities.
 2. **Preset Images**: Specialize `sndbx-base` by layering domain-specific runtimes:
-   - `sndbx-opencode`: Polyglot developer toolchains (Python, Go, Node, Rust).
-   - `sndbx-claude`: Node.js LTS runtime and Claude Code CLI wrapper ensembling.
+   - `sndbx-opencode`: Polyglot developer toolchains (Python, Go, Rust) and the opencode static binary.
+   - `sndbx-claude`: Python build tooling and Claude Code CLI installed via Deno's npm compatibility layer.
    - `sndbx-agy`: Antigravity autonomous development environment and language servers.
 
 Image resolution in `sndbx` checks the local Podman image store (`localhost/<image>:latest`) first before attempting to pull from external container registries.
