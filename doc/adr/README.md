@@ -87,6 +87,8 @@ Records are numbered serially (`00001` through `00026`) and organized by topic d
   *Executive Summary:* Sandboxes access LLM inference through a standardized local OpenAI-compatible HTTP gateway, shielding agents from direct external API credentials.
 - **[00027 — Local SonarQube Deterministic Mechanical Analysis and Quality Gate Infrastructure](00027-LocalSonarQubeDeterministicMechanicalAnalysisAndQualityGateInfra.md)**  
   *Executive Summary:* Integrates SonarQube Server Community Edition into the shared sandbox infrastructure alongside Valkey and Gitea. Agents utilize SonarQube for multi-tiered deterministic mechanical analysis — contrasting with probabilistic LLM code review — through automated defect discovery via a native Model Context Protocol (MCP) server and strict Quality Gate verification across fleet repositories.
+- **[00028 — In-Container Fleet Task Coordination via Local Gitea-Backed Beads](00028-InContainerFleetTaskCoordinationViaLocalGiteaBackedBeads.md)**  
+  *Executive Summary:* Establishes an air-gapped, distributed task and dependency tracking architecture for autonomous in-container agents using Beads (`bd`) backed by the local Gitea server (`http://gitea:3000/fleet/tasks.git`), maintaining strict architectural separation from host-level platform development on GitHub.
 
 ### Operations, Diagnostics & Quality (`THEME-OPERATIONS`)
 - **[00023 — Comprehensive Diagnostic Doctor and Self-Healing](00023-ComprehensiveDoctorAndSelfHealing.md)**  

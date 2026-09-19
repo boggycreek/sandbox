@@ -18,6 +18,16 @@ description: >-
 - Format follows `NNNNN-TitleInCamelCase.md` with sections: Context, Decision, Status, Consequences.
 - Add new ADR entries to `doc/adr/README.md`.
 
+## Task Tracking for Repository Contributors (`bd`)
+Contributors and agents developing the `agent-sandbox` platform track work using **Beads (`bd`)**:
+- **Query Ready Work**: `bd ready` surfaces tasks with zero blocking dependencies.
+- **Inspect Backlog**: `bd list` shows hierarchical epics and subtasks.
+- **Claim Work**: `bd update <id> --claim` claims an issue.
+- **Record & Close**: `bd close <id> --reason "Resolved in <commit>"` closes finished work.
+- **Synchronize Remote**: `bd sync` reconciles local Dolt issue commits with `origin` on GitHub.
+
+> **Isolation Rule**: Platform issues use prefix `sndbx-*` on GitHub. This is completely separate from in-container fleet task tracking (which uses local Gitea at `http://gitea:3000/fleet/tasks.git` per ADR 00028).
+
 ## Quality Gates Checklist Before PR
 Every branch must satisfy all quality gates before submission:
 1. `make format`: Auto-format all Go source files.
