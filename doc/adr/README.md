@@ -85,6 +85,8 @@ Records are numbered serially (`00001` through `00026`) and organized by topic d
   *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, and automated synchronization of agent dotfiles and memory.
 - **[00022 — Local OpenAI-Compatible Inference Proxy](00022-LocalOpenAiCompatibleInferenceProxy.md)**  
   *Executive Summary:* Sandboxes access LLM inference through a standardized local OpenAI-compatible HTTP gateway, shielding agents from direct external API credentials.
+- **[00027 — Local SonarQube Mechanical Analysis and Quality Gate Infrastructure](00027-LocalSonarQubeMechanicalAnalysisAndQualityGateInfra.md)**  
+  *Executive Summary:* Integrates SonarQube Server Community Edition into the shared sandbox infrastructure alongside Valkey and Gitea. Agents utilize SonarQube for multi-tiered mechanical analysis, automated defect discovery via a native Model Context Protocol (MCP) server, and strict Quality Gate verification across fleet repositories.
 
 ### Operations, Diagnostics & Quality (`THEME-OPERATIONS`)
 - **[00023 — Comprehensive Diagnostic Doctor and Self-Healing](00023-ComprehensiveDoctorAndSelfHealing.md)**  

@@ -328,6 +328,19 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 	os.Setenv("GITEA_URL", "http://127.0.0.1:65502")
 	checkAndHealGiteaContainer(ctx, paths, reportOffline)
 
+	// 7b. Test SonarQube mock server for infra check
+	sonarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"UP"}`))
+	}))
+	defer sonarServer.Close()
+	os.Setenv("SONAR_HOST_URL", sonarServer.URL)
+	checkAndHealSonarContainer(ctx, report2)
+
+	// 7c. Test unreachable SonarQube in infra check
+	os.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65503")
+	checkAndHealSonarContainer(ctx, reportOffline)
+
 	// 8. Test FormatDoctorReport with unrepairable counts and warning counts
 	reportUnrep := &DoctorReport{
 		AgentName:         "unrep-agent",

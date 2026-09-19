@@ -14,6 +14,7 @@ For specific topics, see the **[`INDEX.md`](INDEX.md)** hub or the following spe
 - **[GITEA.md](GITEA.md)**: Local Git forge (`http://gitea:3000`), `fleet` organization, and task tracking via `bd`.
 - **[LLM_GATEWAY.md](LLM_GATEWAY.md)**: Host inference routing via `http://llm-gateway:<port>/v1`.
 - **[MEMORY.md](MEMORY.md)**: Git-backed memory and dotfiles backup.
+- **[SONARQUBE.md](SONARQUBE.md)**: Local SonarQube server, MCP tools, and mechanical analysis Quality Gates.
 
 ---
 

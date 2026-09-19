@@ -1,0 +1,247 @@
+// Copyright (c) 2026 Boggy Creek Software LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file.
+
+package sonar
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+func TestNewClientDefaults(t *testing.T) {
+	client := NewClient(ClientConfig{})
+	if client.baseURL != "http://127.0.0.1:9000" {
+		t.Errorf("expected default baseURL http://127.0.0.1:9000, got %s", client.baseURL)
+	}
+	if client.httpClient.Timeout != 5*time.Second {
+		t.Errorf("expected default timeout 5s, got %v", client.httpClient.Timeout)
+	}
+}
+
+func TestGetSystemStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/system/status" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"test-id","version":"26.9.0","status":"UP"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL, Token: "mock-token"})
+	status, err := client.GetSystemStatus(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.Status != "UP" || status.Version != "26.9.0" {
+		t.Errorf("unexpected status struct: %+v", status)
+	}
+}
+
+func TestGetSystemStatusErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	_, err := client.GetSystemStatus(context.Background())
+	if err == nil {
+		t.Fatal("expected error on 500 response, got nil")
+	}
+
+	// Invalid URL
+	badClient := NewClient(ClientConfig{BaseURL: "http://127.0.0.1:1"})
+	_, err = badClient.GetSystemStatus(context.Background())
+	if err == nil {
+		t.Fatal("expected connection error, got nil")
+	}
+
+	// Bad JSON
+	badJSONServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`invalid json`))
+	}))
+	defer badJSONServer.Close()
+	badJSONClient := NewClient(ClientConfig{BaseURL: badJSONServer.URL})
+	_, err = badJSONClient.GetSystemStatus(context.Background())
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+}
+
+func TestGetProjectQualityGate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/qualitygates/project_status" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"projectStatus":{"status":"OK","conditions":[{"metricKey":"new_coverage","status":"OK","actualValue":"91.2","errorThreshold":"80.0"}]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	qg, err := client.GetProjectQualityGate(context.Background(), "my-proj")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if qg.Status != "OK" || len(qg.Conditions) != 1 {
+		t.Errorf("unexpected quality gate status: %+v", qg)
+	}
+}
+
+func TestGetProjectQualityGateErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	_, err := client.GetProjectQualityGate(context.Background(), "missing")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Bad JSON
+	badJSONServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not-json`))
+	}))
+	defer badJSONServer.Close()
+	badJSONClient := NewClient(ClientConfig{BaseURL: badJSONServer.URL})
+	_, err = badJSONClient.GetProjectQualityGate(context.Background(), "bad")
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+}
+
+func TestGetIssues(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/issues/search" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"total":1,"issues":[{"key":"iss-1","rule":"go:S100","severity":"MAJOR","component":"pkg/foo.go","line":42,"message":"Simplify code","type":"CODE_SMELL","status":"OPEN"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	resp, err := client.GetIssues(context.Background(), "my-proj", "MAJOR", "CODE_SMELL")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Total != 1 || len(resp.Issues) != 1 || resp.Issues[0].Line != 42 {
+		t.Errorf("unexpected issues response: %+v", resp)
+	}
+}
+
+func TestGetIssuesErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	_, err := client.GetIssues(context.Background(), "my-proj", "", "")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	badJSONServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`corrupted`))
+	}))
+	defer badJSONServer.Close()
+	badJSONClient := NewClient(ClientConfig{BaseURL: badJSONServer.URL})
+	_, err = badJSONClient.GetIssues(context.Background(), "my-proj", "", "")
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+}
+
+func TestCreateProject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/create" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"project":{"key":"fleet-tools","name":"Fleet Tools"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	err := client.CreateProject(context.Background(), "fleet-tools", "Fleet Tools")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Test 400 Bad Request (already exists) is treated as success
+	server400 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Already exists", http.StatusBadRequest)
+	}))
+	defer server400.Close()
+	client400 := NewClient(ClientConfig{BaseURL: server400.URL})
+	if err := client400.CreateProject(context.Background(), "fleet-tools", "Fleet Tools"); err != nil {
+		t.Fatalf("expected 400 to be tolerated, got error: %v", err)
+	}
+
+	// Test 500 error
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Failed", http.StatusInternalServerError)
+	}))
+	defer server500.Close()
+	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
+	if err := client500.CreateProject(context.Background(), "fleet-tools", "Fleet Tools"); err == nil {
+		t.Fatal("expected error on 500, got nil")
+	}
+}
+
+func TestGetComponentMeasures(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/measures/component" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"component":{"key":"my-proj","name":"My Project","measures":[{"metric":"coverage","value":"92.4"},{"metric":"duplicated_lines_density","value":"0.5"}]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	measures, err := client.GetComponentMeasures(context.Background(), "my-proj", []string{"coverage", "duplicated_lines_density"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(measures) != 2 || measures[0].Metric != "coverage" || measures[0].Value != "92.4" {
+		t.Errorf("unexpected measures: %+v", measures)
+	}
+}
+
+func TestGetComponentMeasuresErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "failed", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	_, err := client.GetComponentMeasures(context.Background(), "my-proj", []string{"coverage"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	badJSONServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`bad json`))
+	}))
+	defer badJSONServer.Close()
+	badJSONClient := NewClient(ClientConfig{BaseURL: badJSONServer.URL})
+	_, err = badJSONClient.GetComponentMeasures(context.Background(), "my-proj", []string{"coverage"})
+	if err == nil {
+		t.Fatal("expected decode error, got nil")
+	}
+}

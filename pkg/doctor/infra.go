@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,6 +27,7 @@ import (
 var (
 	infraValkeyContainer = "agent-sandbox-valkey"
 	infraGiteaContainer  = "agent-sandbox-gitea"
+	infraSonarContainer  = "agent-sandbox-sonarqube"
 )
 
 // DiagnoseAndHealInfra performs a comprehensive health check and auto-healing on shared infrastructure
@@ -48,6 +50,9 @@ func DiagnoseAndHealInfra(ctx context.Context, paths config.Paths) (*DoctorRepor
 
 	// 5. Gitea Git Forge Container & Service
 	checkAndHealGiteaContainer(ctx, paths, report)
+
+	// 6. SonarQube Mechanical Analysis Container & Service
+	checkAndHealSonarContainer(ctx, report)
 
 	return report, nil
 }
@@ -121,7 +126,13 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 
 	_ = runtime.EnsureRootlessNetNS(ctx)
 
-	for _, vol := range []string{"agent-sandbox-valkey-data", "agent-sandbox-gitea-data"} {
+	for _, vol := range []string{
+		"agent-sandbox-valkey-data",
+		"agent-sandbox-gitea-data",
+		"agent-sandbox-sonarqube-data",
+		"agent-sandbox-sonarqube-extensions",
+		"agent-sandbox-sonarqube-logs",
+	} {
 		volCmd := exec.CommandContext(ctx, "podman", "volume", "exists", vol)
 		if err := volCmd.Run(); err != nil {
 			if err := runtime.EnsureVolume(ctx, vol); err == nil {
@@ -142,7 +153,7 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Infrastructure Storage",
 			Status:  StatusOK,
-			Message: "Bridge network and data volumes (valkey-data, gitea-data) present",
+			Message: "Bridge network and data volumes (valkey-data, gitea-data, sonarqube-data) present",
 		})
 	}
 }
@@ -285,5 +296,50 @@ func checkAndHealGiteaContainer(ctx context.Context, paths config.Paths, report 
 		Name:    "Gitea Service",
 		Status:  StatusOK,
 		Message: fmt.Sprintf("Container %s, HTTP %s responsive, admin account & fleet repositories verified", state, giteaURL),
+	})
+}
+
+func checkAndHealSonarContainer(ctx context.Context, report *DoctorReport) {
+	containerName := infraSonarContainer
+	info, err := runtime.InspectAgentContainer(ctx, containerName)
+	state := "stopped"
+	if err == nil && info != nil {
+		state = info.State
+	}
+
+	sonarURL := os.Getenv("SONAR_HOST_URL")
+	if sonarURL == "" {
+		sonarURL = os.Getenv("SONARQUBE_URL")
+	}
+	if sonarURL == "" {
+		sonarURL = "http://127.0.0.1:9000"
+	}
+
+	httpClient := &http.Client{Timeout: 1 * time.Second}
+	req, _ := http.NewRequestWithContext(ctx, "GET", sonarURL+"/api/system/status", nil)
+	resp, err := httpClient.Do(req)
+	if err != nil || (resp != nil && resp.StatusCode >= 500) {
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "SonarQube Service",
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("SonarQube container is %s (start via `sndbx infra up`)", state),
+		})
+		report.WarningCount++
+		return
+	}
+	defer resp.Body.Close()
+
+	var status struct {
+		Status string `json:"status"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&status)
+
+	report.Checks = append(report.Checks, CheckItem{
+		Name:    "SonarQube Service",
+		Status:  StatusOK,
+		Message: fmt.Sprintf("Container %s, HTTP %s responsive (status: %s)", state, sonarURL, status.Status),
 	})
 }
