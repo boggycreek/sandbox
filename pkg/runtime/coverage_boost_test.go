@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,7 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	paths := config.Paths{
 		DataHome:   tmpDir,
 		IDEKeyFile: keyFile,
+		SSHDir:     sshDir,
 	}
 
 	cfg := &config.AgentConfig{
@@ -79,6 +81,22 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	_ = EnsureVolume(ctx, cfg.VolumeName)
 	_ = CleanAgentContainer(ctx, cfg.ContainerName)
 	_ = paths.EnsureDirectories()
+
+	// Test ClearAgentKnownHosts
+	testAgentName := "test-known-hosts-agent"
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		homeSSH := filepath.Join(home, ".ssh")
+		_ = os.MkdirAll(homeSSH, 0700)
+		homeHostFile := filepath.Join(homeSSH, fmt.Sprintf("known_hosts.sndbx-%s", testAgentName))
+		_ = os.WriteFile(homeHostFile, []byte("dummy host entry"), 0600)
+	}
+	customHostFile := filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.sndbx-%s", testAgentName))
+	_ = os.WriteFile(customHostFile, []byte("dummy host entry"), 0600)
+	ClearAgentKnownHosts(testAgentName, paths)
+	if _, err := os.Stat(customHostFile); !os.IsNotExist(err) {
+		t.Errorf("expected custom known hosts file to be removed")
+	}
 
 	// Start agent container when podman exists
 	_ = StartAgentContainer(ctx, cfg, paths, "127.0.0.1", 6379)
@@ -117,6 +135,9 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	// Call a second time to exercise the "container already exists, podman start" path
 	_ = StartInfraStack(ctx, infraPaths, "test_admin_pass2", "test_human_pass2", "test_human_name2")
 
+	// Call with empty credentials to exercise default fallback credentials
+	_ = StartInfraStack(ctx, infraPaths, "", "", "")
+
 	giteaMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -126,6 +147,12 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 
 	_ = BootstrapGitea(ctx, "")
 	_ = BootstrapGitea(ctx, "custom_pass")
+
+	// BootstrapGitea timeout / context cancel branch
+	canceledCtx, cancelNow := context.WithCancel(context.Background())
+	cancelNow()
+	_ = BootstrapGitea(canceledCtx, "")
+
 	infraList, err := InspectInfraStack(ctx)
 	if err != nil || len(infraList) == 0 {
 		t.Errorf("InspectInfraStack failed: %v", err)
@@ -139,8 +166,14 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 
 	// Test FormatSSHConfigBlock
 	block := FormatSSHConfigBlock("alpha", 34567, "/home/test/.ssh/agent-sandbox")
-	if !bytes.Contains([]byte(block), []byte("Host sndbx-alpha")) || !bytes.Contains([]byte(block), []byte("Port 34567")) {
+	if !strings.Contains(block, "Host sndbx-alpha") || !strings.Contains(block, "Port 34567") {
 		t.Errorf("unexpected FormatSSHConfigBlock output: %s", block)
+	}
+	if !strings.Contains(block, "IdentitiesOnly yes") || !strings.Contains(block, "StrictHostKeyChecking accept-new") {
+		t.Errorf("expected IdentitiesOnly and accept-new in FormatSSHConfigBlock: %s", block)
+	}
+	if !strings.Contains(block, "known_hosts.sndbx-alpha") {
+		t.Errorf("expected known_hosts.sndbx-alpha in UserKnownHostsFile: %s", block)
 	}
 
 	// Test SyncSSHConfigFile
@@ -174,6 +207,103 @@ func TestRuntimeCoverageBoost(t *testing.T) {
 	_ = StopAgentContainer(ctx, "nonexistent-container-stop-test")
 }
 
+// TestMockedRuntimeUnits tests runtime functions with command mocking for edge cases
+func TestMockedRuntimeUnits(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. InspectAgentContainer fallback branches
+	mockInspect := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 0 && args[0] == "inspect" {
+			// Return json with name without slash, stopped state
+			jsonPayload := `[{"Id":"c1","Name":"agent-container","State":{"Status":"","Running":false}}]`
+			return exec.Command("echo", jsonPayload)
+		}
+		return exec.Command("true")
+	}
+	restore := SetExecCommandContextForTesting(mockInspect)
+	defer restore()
+
+	info, err := InspectAgentContainer(ctx, "agent-container")
+	if err != nil || info == nil {
+		t.Fatalf("InspectAgentContainer failed: %v", err)
+	}
+	if info.State != "stopped" {
+		t.Errorf("expected stopped state, got %s", info.State)
+	}
+	if len(info.Names) == 0 || info.Names[0] != "agent-container" {
+		t.Errorf("expected name agent-container, got %v", info.Names)
+	}
+
+	// 2. StartAgentContainer container already exists branch
+	mockExisting := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true") // container exists
+		}
+		return exec.Command("true")
+	}
+	restore2 := SetExecCommandContextForTesting(mockExisting)
+	defer restore2()
+
+	cfg := &config.AgentConfig{
+		Name:          "exists-agent",
+		ContainerName: "sndbx-exists-agent",
+		VolumeName:    "sndbx-exists-vol",
+		Image:         "base",
+	}
+	err = StartAgentContainer(ctx, cfg, config.Paths{}, "127.0.0.1", 6379)
+	if err != nil {
+		t.Errorf("StartAgentContainer existing failed: %v", err)
+	}
+
+	// 3. StartAgentContainer existing container start failure
+	mockExistingFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true") // container exists
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "start" {
+			return exec.Command("false") // start fails
+		}
+		return exec.Command("true")
+	}
+	restore3 := SetExecCommandContextForTesting(mockExistingFail)
+	defer restore3()
+	err = StartAgentContainer(ctx, cfg, config.Paths{}, "127.0.0.1", 6379)
+	if err == nil {
+		t.Errorf("expected error when starting existing container fails")
+	}
+
+	// 4. SyncSSHConfigFile with running agent mapping
+	mockPort := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "port" {
+			return exec.Command("echo", "127.0.0.1:22222")
+		}
+		return exec.Command("true")
+	}
+	restore4 := SetExecCommandContextForTesting(mockPort)
+	defer restore4()
+
+	tmpDir := t.TempDir()
+	paths := config.Paths{
+		DataHome:      tmpDir,
+		AgentsDir:     filepath.Join(tmpDir, "agents"),
+		SecretsDir:    filepath.Join(tmpDir, "secrets"),
+		SSHConfigFile: filepath.Join(tmpDir, "ssh_config"),
+	}
+	_ = paths.EnsureDirectories()
+	_ = config.SaveAgentConfig(cfg, paths)
+	cfg2 := &config.AgentConfig{Name: "agent2", ContainerName: "sndbx-agent2"}
+	_ = config.SaveAgentConfig(cfg2, paths)
+
+	err = SyncSSHConfigFile(ctx, paths)
+	if err != nil {
+		t.Errorf("SyncSSHConfigFile with mock ports failed: %v", err)
+	}
+	data, _ := os.ReadFile(paths.SSHConfigFile)
+	if !strings.Contains(string(data), "Host sndbx-exists-agent") || !strings.Contains(string(data), "Host sndbx-agent2") {
+		t.Errorf("expected both host blocks in sync'd ssh config, got: %s", string(data))
+	}
+}
+
 // TestStopInfraStackCoverage exercises StopInfraStack with ephemeral container names.
 // It overrides the package-level infra container name vars so the real production containers are not affected.
 func TestStopInfraStackCoverage(t *testing.T) {
@@ -196,7 +326,7 @@ func TestStopInfraStackCoverage(t *testing.T) {
 	}()
 
 	// Start a minimal ephemeral Valkey container for the stop test
-	startOut, err := exec.CommandContext(ctx, "podman", "run", "-d", "--name", testValkeyName,
+	startOut, err := execCommandContext(ctx, "podman", "run", "-d", "--name", testValkeyName,
 		"docker.io/valkey/valkey:8-alpine",
 	).CombinedOutput()
 	if err != nil {
@@ -220,5 +350,103 @@ func TestStopInfraStackCoverage(t *testing.T) {
 	}
 	if len(list) == 0 {
 		t.Errorf("InspectInfraStack returned empty list")
+	}
+}
+
+func TestMockedInfraStack(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	paths := config.Paths{DataHome: tmpDir}
+
+	// 1. EnsureNetwork error
+	mockFailNet := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "network" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore1 := SetExecCommandContextForTesting(mockFailNet)
+	err := StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore1()
+	if err == nil {
+		t.Errorf("expected error when network fails")
+	}
+
+	// 2. Valkey doesn't exist, run fails
+	mockValkeyRunFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("false") // doesn't exist
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "valkey") {
+			return exec.Command("false") // run fails
+		}
+		return exec.Command("true")
+	}
+	restore2 := SetExecCommandContextForTesting(mockValkeyRunFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore2()
+	if err == nil {
+		t.Errorf("expected error when valkey run fails")
+	}
+
+	// 3. Valkey exists, start fails, restart fails
+	mockValkeyRestartFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true") // exists
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "start" {
+			return exec.Command("false") // start fails
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" {
+			return exec.Command("false") // restart fails
+		}
+		return exec.Command("true")
+	}
+	restore3 := SetExecCommandContextForTesting(mockValkeyRestartFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore3()
+	if err == nil {
+		t.Errorf("expected error when valkey restart fails")
+	}
+
+	// 4. Gitea doesn't exist, run fails
+	mockGiteaRunFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			// Valkey exists, Gitea does not
+			if strings.Contains(args[2], "gitea") {
+				return exec.Command("false")
+			}
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "gitea") {
+			return exec.Command("false") // gitea run fails
+		}
+		return exec.Command("true")
+	}
+	restore4 := SetExecCommandContextForTesting(mockGiteaRunFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore4()
+	if err == nil {
+		t.Errorf("expected error when gitea run fails")
+	}
+
+	// 5. Gitea exists, start fails, restart fails
+	mockGiteaRestartFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true") // both exist
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "start" && strings.Contains(args[1], "gitea") {
+			return exec.Command("false") // gitea start fails
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "gitea") {
+			return exec.Command("false") // gitea restart fails
+		}
+		return exec.Command("true")
+	}
+	restore5 := SetExecCommandContextForTesting(mockGiteaRestartFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore5()
+	if err == nil {
+		t.Errorf("expected error when gitea restart fails")
 	}
 }

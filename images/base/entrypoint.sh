@@ -10,8 +10,9 @@
 # Handles:
 #   1. Initializing unprivileged SSH host keys and authorized keys.
 #   2. Starting background unprivileged sshd on port 2222.
-#   3. Announcing container online presence via bp say (if Valkey configured).
-#   4. Spawning or attaching to the main tmux session.
+#   3. Starting background backplane daemon (bpd) if configured.
+#   4. Announcing container online presence via bp say (if Valkey configured).
+#   5. Executing arguments or idling with tail -f /dev/null.
 
 set -euo pipefail
 
@@ -46,6 +47,11 @@ if [ -d "/usr/local/share/doc/agent-sandbox" ]; then
   cp -ru /usr/local/share/doc/agent-sandbox/* "${DOC_DIR}/" 2>/dev/null || cp -r /usr/local/share/doc/agent-sandbox/* "${DOC_DIR}/" 2>/dev/null || true
 fi
 
+# Start backplane daemon (bpd) in background if available and configured
+if command -v bpd >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
+  bpd &
+fi
+
 # Announce online presence to Valkey backplane if bp is available and configured
 if command -v bp >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
   bp say "online (container started)" 2>/dev/null || true
@@ -60,13 +66,7 @@ if [ $# -gt 0 ]; then
   exec "$@"
 fi
 
-TMUX_SESSION="${AGENT_NAME:-sandbox}"
-if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
-  tmux new-session -d -s "${TMUX_SESSION}" -c "/home/agent/workspace" bash
-  tmux send-keys -t "${TMUX_SESSION}" "echo 'Agent Sandbox environment ready. Refer to ~/doc/INDEX.md for guides.'" C-m
-fi
-
-echo "Agent Sandbox container ready [$(hostname)]. Session: ${TMUX_SESSION}"
+echo "Agent Sandbox container ready [$(hostname)]."
 echo "Documentation available at: ~/doc/INDEX.md"
 # Keep container foreground process alive
 exec tail -f /dev/null

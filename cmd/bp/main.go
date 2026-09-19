@@ -74,6 +74,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "liaison":
 		return handleLiaison(ctx, cfg, cmdArgs, stdout, stderr)
 
+	case "interval":
+		return handleInterval(ctx, cfg, cmdArgs, stdout, stderr)
+
 	default:
 		fmt.Fprintf(stderr, "bp: unknown command %q (see 'bp help')\n", cmd)
 		return 1
@@ -94,6 +97,8 @@ Commands:
   finger [agent]                   Show profile and capability metadata
   liaison get                      Show current fleet liaison
   liaison set <agent>              Appoint an agent as fleet liaison (operator only)
+  interval [get]                   Show current backplane poll interval in seconds
+  interval set <seconds>           Set shared poll interval in seconds (5-3600)
   help                             Show this help message`)
 }
 
@@ -252,7 +257,7 @@ func handleRecv(ctx context.Context, cfg libbp.ClientConfig, args []string, stdo
 			m.Content,
 		)
 		if m.BlobPath != "" {
-			fmt.Fprintf(stdout, "  └─ Payload attached: %s\n", m.BlobPath)
+			fmt.Fprintf(stdout, "  └── Payload attached: %s\n", m.BlobPath)
 		}
 	}
 	return 0
@@ -429,4 +434,48 @@ func handleLiaison(ctx context.Context, cfg libbp.ClientConfig, args []string, s
 	return 1
 }
 
-var _ = strconv.Itoa
+func handleInterval(ctx context.Context, cfg libbp.ClientConfig, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || strings.ToLower(args[0]) == "get" {
+		client, err := getClient(ctx, cfg, stderr)
+		if err != nil {
+			return 1
+		}
+		defer client.Close()
+
+		interval, err := client.GetPollInterval(ctx)
+		if err != nil {
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "%d\n", interval)
+		return 0
+	}
+
+	if strings.ToLower(args[0]) == "set" {
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "Usage: bp interval set <seconds>")
+			return 1
+		}
+		secs, err := strconv.Atoi(args[1])
+		if err != nil || secs < 5 || secs > 3600 {
+			fmt.Fprintln(stderr, "bp: interval must be an integer between 5 and 3600")
+			return 1
+		}
+
+		client, err := getClient(ctx, cfg, stderr)
+		if err != nil {
+			return 1
+		}
+		defer client.Close()
+
+		if err := client.SetPollInterval(ctx, secs); err != nil {
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Poll interval set to %d seconds\n", secs)
+		return 0
+	}
+
+	fmt.Fprintln(stderr, "Usage: bp interval [get|set <seconds>]")
+	return 1
+}

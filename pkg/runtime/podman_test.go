@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,6 +134,10 @@ func TestResolveAgentImage(t *testing.T) {
 	if img != "agent-sandbox-agy:latest" {
 		t.Errorf("expected agy preset, got %s", img)
 	}
+	img, _ = ResolveAgentImage(ctx, "egress")
+	if img != "agent-sandbox-egress:latest" {
+		t.Errorf("expected egress preset, got %s", img)
+	}
 
 	// 2. Remote OCI references
 	img, isLocal := ResolveAgentImage(ctx, "quay.io/boggycreek/custom-bot:v1")
@@ -147,3 +152,111 @@ func TestResolveAgentImage(t *testing.T) {
 	}
 }
 
+func TestEgressFilterHelpers(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 1. EgressContainerName testing
+	if name := EgressContainerName("alice"); name != "sndbx-agent-alice-egress" {
+		t.Errorf("expected sndbx-agent-alice-egress, got %s", name)
+	}
+	if name := EgressContainerName("sndbx-agent-bob"); name != "sndbx-agent-bob-egress" {
+		t.Errorf("expected sndbx-agent-bob-egress, got %s", name)
+	}
+	if name := EgressContainerName("sndbx-charlie"); name != "sndbx-charlie-egress" {
+		t.Errorf("expected sndbx-charlie-egress, got %s", name)
+	}
+	if name := EgressContainerName("sndbx-agent-david-egress"); name != "sndbx-agent-david-egress" {
+		t.Errorf("expected sndbx-agent-david-egress, got %s", name)
+	}
+
+	// 2. StopEgressFilterContainer on nonexistent container
+	_ = StopEgressFilterContainer(ctx, "nonexistent-egress-container")
+
+	// 3. StartEgressFilterContainer failure on nonexistent image
+	_ = StartEgressFilterContainer(ctx, "nonexistent-egress-target")
+}
+
+func TestMockedEgressFilter(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. StartEgressFilterContainer: existing container starts successfully
+	mockExisting := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restore1 := SetExecCommandContextForTesting(mockExisting)
+	err := StartEgressFilterContainer(ctx, "agent-test")
+	restore1()
+	if err != nil {
+		t.Errorf("StartEgressFilterContainer existing failed: %v", err)
+	}
+
+	// 2. StartEgressFilterContainer: existing container fails to start
+	mockExistingFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "start" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore2 := SetExecCommandContextForTesting(mockExistingFail)
+	err = StartEgressFilterContainer(ctx, "agent-test")
+	restore2()
+	if err == nil {
+		t.Errorf("expected error when starting existing egress container fails")
+	}
+
+	// 3. StartEgressFilterContainer: new container creation succeeds
+	mockNewSuccess := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("false") // container doesn't exist
+		}
+		return exec.Command("true")
+	}
+	restore3 := SetExecCommandContextForTesting(mockNewSuccess)
+	err = StartEgressFilterContainer(ctx, "agent-new")
+	restore3()
+	if err != nil {
+		t.Errorf("StartEgressFilterContainer new failed: %v", err)
+	}
+
+	// 4. StartEgressFilterContainer: new container creation fails
+	mockNewFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("false") // container doesn't exist
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore4 := SetExecCommandContextForTesting(mockNewFail)
+	err = StartEgressFilterContainer(ctx, "agent-new-fail")
+	restore4()
+	if err == nil {
+		t.Errorf("expected error when running new egress container fails")
+	}
+
+	// 5. GetAgentSSHPort fallback to egress container
+	mockPortFallback := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "port" {
+			// Fail for primary container, succeed for egress sidecar
+			if strings.HasSuffix(args[1], "-egress") {
+				return exec.Command("echo", "127.0.0.1:43210")
+			}
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore5 := SetExecCommandContextForTesting(mockPortFallback)
+	port, err := GetAgentSSHPort(ctx, "sndbx-agent-alice")
+	restore5()
+	if err != nil || port != 43210 {
+		t.Errorf("expected fallback port 43210, got %d (err: %v)", port, err)
+	}
+}

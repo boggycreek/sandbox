@@ -14,7 +14,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all format clean clean-test-env clean-all build build-cli build-libbp
+.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress
 
 all: check build
 
@@ -124,12 +124,13 @@ check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) +
 
 build: build-cli build-libbp ## Build all CLI binaries and libraries
 
-build-cli: ## Build native Go CLI binaries (sndbx, bp, retention-sweep)
+build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, retention-sweep)
 	@echo "==> Building CLI binaries..."
 	@mkdir -p $(BIN_DIR)
 	@if [ -f go.mod ]; then \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./cmd/sndbx; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./cmd/bpd; \
 		if [ -d ./cmd/retention-sweep ]; then \
 			$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
 		fi; \
@@ -149,7 +150,7 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 # --- OCI Image Build Targets (Podman) ---
 
-build-images: build-image-base build-image-opencode build-image-claude build-image-agy ## Build all OCI images (base + derivatives)
+build-images: build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress ## Build all OCI images (base + derivatives + egress filter)
 
 build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
 	@echo "==> Building agent-sandbox-base OCI image..."
@@ -166,6 +167,10 @@ build-image-claude: build-image-base ## Build Claude Code derivative agent OCI i
 build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OCI image with Podman
 	@echo "==> Building agent-sandbox-agy OCI image..."
 	podman build -t agent-sandbox-agy:latest -f images/agents/agy/Dockerfile .
+
+build-image-egress: ## Build agent-sandbox-egress OCI image with Podman
+	@echo "==> Building agent-sandbox-egress OCI image..."
+	podman build -t agent-sandbox-egress:latest -f images/egress-filter/Dockerfile .
 
 clean: ## Clean build and test coverage artifacts
 	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)

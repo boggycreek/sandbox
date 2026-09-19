@@ -1,11 +1,12 @@
 # Multi-stage build: 
-# Stage 1: Build static bp CLI binary
+# Stage 1: Build static bp and bpd CLI binaries
 FROM docker.io/library/golang:1.25-bookworm AS builder
 WORKDIR /src
 COPY go.mod ./
 COPY pkg/ ./pkg/
 COPY cmd/ ./cmd/
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./cmd/bp
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./cmd/bp && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bpd ./cmd/bpd
 
 # Stage 2: Clean, neutral Base OCI Image
 FROM docker.io/library/debian:bookworm-slim
@@ -48,9 +49,10 @@ RUN groupadd -g 1000 agent && \
 COPY images/base/sshd_config /etc/ssh/sshd_config
 RUN mkdir -p /var/run/sshd && chmod 755 /var/run/sshd
 
-# Install static bp CLI binary from builder
+# Install static bp and bpd CLI binaries from builder
 COPY --from=builder /build/bp /usr/local/bin/bp
-RUN chmod +x /usr/local/bin/bp
+COPY --from=builder /build/bpd /usr/local/bin/bpd
+RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd
 
 # Install in-container documentation
 COPY images/base/doc/ /usr/local/share/doc/agent-sandbox/

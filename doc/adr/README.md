@@ -36,4 +36,7 @@ Each ADR follows the Context, Decision, Status, and Consequences format and is n
 - [00028 — Ephemeral Integration Test Lifecycles and Podman Test Isolation](00028-EphemeralIntegrationTestLifecycleAndIsolation.md)
 - [00029 — Flexible Agent Image Resolution and Local Store Support](00029-FlexibleAgentImageResolutionAndLocalStoreSupport.md)
 - [00030 — Unified Update Command for CLI Tooling and Container Images](00030-UnifiedSndbxUpdateCommand.md)
-
+- [00031 — Backplane Daemon (bpd) Replaces Interactive Tmux Session as Default Operating Mode](00031-BackplaneDaemonReplacesInteractiveTmuxDefault.md)
+- [00032 — Default-Deny Network Egress via Dedicated Container Sidecar](00032-DefaultDenyNetworkEgressSidecar.md)
+- [00033 — One-Shot IDE Remote Development, Per-Alias Known Hosts, and Retiring the Connect Verb](00033-OneShotIdeRemoteDevelopmentAndRetiringConnect.md)
+- [00034 — Root-Owned Agent Settings and Marketplace Authorization vs Plugin Version Split](00034-RootOwnedSettingsAndMarketplaceTrustBoundary.md)

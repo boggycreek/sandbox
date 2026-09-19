@@ -513,6 +513,35 @@ func (c *Client) GetLiaison(ctx context.Context) (string, error) {
 	return val.AsString()
 }
 
+// GetPollInterval reads poll-interval key from Valkey, returns default 60 if unset or invalid (valid range: 5 to 3600)
+func (c *Client) GetPollInterval(ctx context.Context) (int, error) {
+	val, err := c.Exec(ctx, "GET", KeyPollInterval)
+	if err != nil {
+		return DefaultPollInterval, err
+	}
+	if val.IsNull {
+		return DefaultPollInterval, nil
+	}
+	str, err := val.AsString()
+	if err != nil {
+		return DefaultPollInterval, nil
+	}
+	secs, err := strconv.Atoi(strings.TrimSpace(str))
+	if err != nil || secs < MinPollInterval || secs > MaxPollInterval {
+		return DefaultPollInterval, nil
+	}
+	return secs, nil
+}
+
+// SetPollInterval sets the shared poll interval in Valkey (valid range: 5 to 3600)
+func (c *Client) SetPollInterval(ctx context.Context, seconds int) error {
+	if seconds < MinPollInterval || seconds > MaxPollInterval {
+		return fmt.Errorf("poll interval must be between %d and %d seconds, got %d", MinPollInterval, MaxPollInterval, seconds)
+	}
+	_, err := c.Exec(ctx, "SET", KeyPollInterval, strconv.Itoa(seconds))
+	return err
+}
+
 // RegisterIdentity publishes an identity attestation and public key
 func (c *Client) RegisterIdentity(ctx context.Context, rec IdentityRecord) error {
 	data, err := json.Marshal(rec)

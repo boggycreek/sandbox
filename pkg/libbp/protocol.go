@@ -17,8 +17,13 @@ import (
 const (
 	KeyHumanName      = "human:name"
 	KeyLiaisonCurrent = "liaison:current"
+	KeyPollInterval   = "poll-interval"
 	StatusTTLSeconds  = 300   // 5 minutes
 	BlobTTLSeconds    = 86400 // 24 hours
+
+	DefaultPollInterval = 60
+	MinPollInterval     = 5
+	MaxPollInterval     = 3600
 )
 
 // Key generation helper functions
