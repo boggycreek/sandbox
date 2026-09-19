@@ -132,6 +132,9 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 // desynchronizes from the kernel netns mount, running 'podman unshare --rootless-netns true'
 // forces Podman to recreate the internal mount namespace tree.
 func EnsureRootlessNetNS(ctx context.Context) error {
+	uid := os.Getuid()
+	_ = os.MkdirAll(fmt.Sprintf("/run/user/%d/netns", uid), 0700)
+
 	cmd := execCommandContext(ctx, "podman", "unshare", "--rootless-netns", "true")
 	return cmd.Run()
 }

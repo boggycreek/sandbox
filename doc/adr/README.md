@@ -62,7 +62,7 @@ Records are numbered serially (`00001` through `00025`) and organized by topic d
 - **[00014 — Default-Deny Network Egress Filtering](00014-DefaultDenyNetworkEgressFiltering.md)**  
   *Executive Summary:* Outbound container network traffic is restricted by default via a sidecar filter, permitting only approved LLM API endpoints and package repositories.
 - **[00015 — Rootless Netns Runtime Directory Auto-Healing](00015-RootlessNetnsRuntimeDirectoryAutoHealing.md)**  
-  *Executive Summary:* Runtime preflight hooks automatically validate and repair rootless network namespace directory permissions (`/run/user/$UID/netns`) prior to container launch.
+  *Executive Summary:* Runtime preflight hooks, transparent failure interception, and test cleanup routines validate directory permissions and reconcile desynchronized rootless network namespace mounts.
 
 ### Developer Experience & IDE Ensembling (`THEME-DEVEXP`)
 - **[00016 — One-Shot IDE Remote Development and Host Ensembling](00016-OneShotIdeRemoteDevelopmentAndHostEnsembling.md)**  
