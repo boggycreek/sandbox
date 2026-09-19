@@ -9,20 +9,26 @@ JetBrains Gateway connects thin clients to headless IDE backends running inside 
 2. Provide a first-class "Agent Sandbox" provider tab inside the JetBrains Gateway and JetBrains Toolbox launcher.
 3. Handle deep linking via `jetbrains-gateway://connect#type=sndbx&name=<agent>`.
 
-## Fast Installation via `sndbx` CLI
+## Fast Installation & Removal via `sndbx` CLI
 
-Rather than manually downloading or building from source, you can install the plugin directly into all local JetBrains IDE and Gateway installations with one command:
+Rather than manually downloading or building from source, you can install or remove the plugin directly across all local JetBrains IDE and Gateway installations with one command:
 
 ```bash
-sndbx plugin toolbox
-# Or:
-sndbx plugin install toolbox
+# Add / Install
+sndbx plugin add toolbox
+
+# Remove / Uninstall
+sndbx plugin remove toolbox
 ```
 
-This command:
+The `sndbx plugin add toolbox` command:
 - Generates the valid `sndbx-gateway.jar` plugin package.
 - Deploys it to `~/.local/share/agent-sandbox/plugins/jetbrains-gateway/` and discovered JetBrains IDE / Gateway directories (`WebStorm`, `GoLand`, `PyCharm`, `CLion`, etc.).
 - Verifies that `~/.ssh/config` includes the managed `~/.local/share/agent-sandbox/ssh_config` file.
+
+The `sndbx plugin remove toolbox` command:
+- Purges all deployed plugin JARs across IDE directories and the central repository.
+- Safely unlinks the managed configuration from `~/.ssh/config`.
 
 ## Manual Build with Gradle
 

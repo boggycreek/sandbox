@@ -110,8 +110,8 @@ Infra Commands:
   sndbx infra doctor
 
 Plugin Commands:
-  sndbx plugin <toolbox|vscode>
-  sndbx plugin install <toolbox|vscode>
+  sndbx plugin add <toolbox|vscode>
+  sndbx plugin remove <toolbox|vscode>
   sndbx plugin list
 
 Update Command:
@@ -981,13 +981,13 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 		return 1
 	}
 
-	target := strings.ToLower(args[0])
-	if target == "help" || target == "-h" || target == "--help" {
+	action := strings.ToLower(args[0])
+	if action == "help" || action == "-h" || action == "--help" {
 		printPluginUsage(stdout)
 		return 0
 	}
 
-	if target == "list" {
+	if action == "list" || action == "ls" {
 		plugins := plugin.ListPlugins(paths)
 		w := tabwriter.NewWriter(stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "PLUGIN\tTARGET\tSTATUS\tDESCRIPTION")
@@ -1002,14 +1002,32 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 		return 0
 	}
 
-	if target == "install" {
+	if action == "add" || action == "install" {
 		if len(args) < 2 {
-			fmt.Fprintln(stderr, "Usage: sndbx plugin install <toolbox|vscode>")
+			fmt.Fprintln(stderr, "Usage: sndbx plugin add <toolbox|vscode>")
 			return 1
 		}
-		target = strings.ToLower(args[1])
+		return handlePluginAdd(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
 	}
 
+	if action == "remove" || action == "rm" || action == "uninstall" || action == "delete" {
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "Usage: sndbx plugin remove <toolbox|vscode>")
+			return 1
+		}
+		return handlePluginRemove(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
+	}
+
+	switch action {
+	case "toolbox", "gateway", "jetbrains", "vscode", "code":
+		return handlePluginAdd(ctx, paths, action, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "sndbx plugin: unknown command or plugin %q (see 'sndbx plugin help')\n", action)
+		return 1
+	}
+}
+
+func handlePluginAdd(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
 	switch target {
 	case "toolbox", "gateway", "jetbrains":
 		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
@@ -1055,7 +1073,50 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin or command %q (see 'sndbx plugin help')\n", target)
+		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin %q (see 'sndbx plugin help')\n", target)
+		return 1
+	}
+}
+
+func handlePluginRemove(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
+	switch target {
+	case "toolbox", "gateway", "jetbrains":
+		res, err := plugin.RemoveToolboxPlugin(ctx, paths, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error removing toolbox plugin: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway / Toolbox Plugin")
+		fmt.Fprintln(stdout, "================================================")
+		fmt.Fprintf(stdout, "Plugin:     %s\n", res.PluginName)
+		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
+		if res.SSHConfigUnlinked {
+			fmt.Fprintln(stdout, "SSH Config: Unlinked managed config from ~/.ssh/config")
+		}
+		if len(res.RemovedPaths) > 0 {
+			fmt.Fprintln(stdout, "\nRemoved Locations:")
+			for _, loc := range res.RemovedPaths {
+				fmt.Fprintf(stdout, "  - %s\n", loc)
+			}
+		}
+		return 0
+
+	case "vscode", "code":
+		res, err := plugin.RemoveVSCodePlugin(ctx, paths, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error removing VS Code integration: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Agent Sandbox VS Code Integration")
+		fmt.Fprintln(stdout, "==================================")
+		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
+		if res.SSHConfigUnlinked {
+			fmt.Fprintln(stdout, "SSH Config: Unlinked managed config from ~/.ssh/config")
+		}
+		return 0
+
+	default:
+		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin %q (see 'sndbx plugin help')\n", target)
 		return 1
 	}
 }
@@ -1064,15 +1125,16 @@ func printPluginUsage(out io.Writer) {
 	fmt.Fprintln(out, `Agent Sandbox Plugin Manager
 
 Usage:
-  sndbx plugin <toolbox|vscode>
-  sndbx plugin install <toolbox|vscode>
+  sndbx plugin add <toolbox|vscode>
+  sndbx plugin remove <toolbox|vscode>
   sndbx plugin list
 
 Plugins:
-  toolbox (gateway, jetbrains)   Install and configure the Agent Sandbox JetBrains Gateway/Toolbox plugin
-  vscode (code)                  Configure VS Code remote development and Claude Code integration
+  toolbox (gateway, jetbrains)   JetBrains Gateway & Toolbox integration
+  vscode (code)                  VS Code Remote-SSH and Claude Code integration
 
 Commands:
-  install <plugin>               Install the specified plugin
-  list                           List supported and installed IDE plugins`)
+  add <plugin>                   Install and configure the specified plugin (alias: install)
+  remove <plugin>                Uninstall and remove the specified plugin (aliases: rm, uninstall)
+  list                           List supported and installed IDE plugins (alias: ls)`)
 }

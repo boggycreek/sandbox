@@ -54,6 +54,15 @@ type InstallResult struct {
 	Message         string   `json:"message"`
 }
 
+// RemoveResult details the outcome of a plugin removal operation.
+type RemoveResult struct {
+	PluginID          string   `json:"plugin_id"`
+	PluginName        string   `json:"plugin_name"`
+	RemovedPaths      []string `json:"removed_paths"`
+	SSHConfigUnlinked bool     `json:"ssh_config_unlinked"`
+	Message           string   `json:"message"`
+}
+
 // GenerateGatewayPluginXML produces the JetBrains Gateway plugin descriptor XML.
 func GenerateGatewayPluginXML() string {
 	return `<!-- Copyright (c) 2026 Boggy Creek Software LLC -->
@@ -205,6 +214,59 @@ func EnsureSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool
 	return true, nil
 }
 
+// RemoveSSHConfigInclude removes the Include directive for target config file from host SSH config.
+func RemoveSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool, error) {
+	if hostSSHConfigFile == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false, err
+		}
+		hostSSHConfigFile = filepath.Join(home, ".ssh", "config")
+	}
+
+	content, err := os.ReadFile(hostSSHConfigFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading host ssh config: %w", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	var newLines []string
+	removed := false
+	targetBase := filepath.Base(targetSSHConfigFile)
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Include") && strings.Contains(trimmed, targetBase) {
+			removed = true
+			if len(newLines) > 0 && strings.Contains(newLines[len(newLines)-1], "Agent Sandbox Auto-Include") {
+				newLines = newLines[:len(newLines)-1]
+			}
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	if !removed {
+		return false, nil
+	}
+
+	cleaned := strings.Join(newLines, "\n")
+	cleaned = strings.TrimLeft(cleaned, "\n")
+	if len(cleaned) > 0 && !strings.HasSuffix(cleaned, "\n") {
+		cleaned += "\n"
+	}
+
+	if err := os.WriteFile(hostSSHConfigFile, []byte(cleaned), 0600); err != nil {
+		return false, fmt.Errorf("writing host ssh config: %w", err)
+	}
+
+	return true, nil
+}
+
 // InstallToolboxPlugin packages and deploys the Agent Sandbox JetBrains Gateway / Toolbox plugin.
 func InstallToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*InstallResult, error) {
 	jarBytes, err := GenerateGatewayPluginJAR()
@@ -253,6 +315,38 @@ func InstallToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Wri
 	return res, nil
 }
 
+// RemoveToolboxPlugin uninstalls the Agent Sandbox JetBrains Gateway / Toolbox plugin.
+func RemoveToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*RemoveResult, error) {
+	var removedPaths []string
+
+	// 1. Remove central directory
+	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway")
+	if _, err := os.Stat(centralDir); err == nil {
+		_ = os.RemoveAll(centralDir)
+		removedPaths = append(removedPaths, centralDir)
+	}
+
+	// 2. Remove from discovered JetBrains plugin directories
+	jbDirs := FindJetBrainsPluginDirs()
+	for _, jbDir := range jbDirs {
+		targetDir := filepath.Join(jbDir, "sndbx-gateway")
+		if _, err := os.Stat(targetDir); err == nil {
+			_ = os.RemoveAll(targetDir)
+			removedPaths = append(removedPaths, targetDir)
+		}
+	}
+
+	unlinked, _ := RemoveSSHConfigInclude(paths.SSHConfigFile, "")
+
+	return &RemoveResult{
+		PluginID:          PluginIDToolbox,
+		PluginName:        JetBrainsPluginName,
+		RemovedPaths:      removedPaths,
+		SSHConfigUnlinked: unlinked,
+		Message:           "JetBrains Gateway / Toolbox plugin successfully removed.",
+	}, nil
+}
+
 // InstallVSCodePlugin configures the host environment for VS Code remote development.
 func InstallVSCodePlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*InstallResult, error) {
 	_ = sndbxRuntime.SyncSSHConfigFile(ctx, paths)
@@ -280,6 +374,23 @@ func InstallVSCodePlugin(ctx context.Context, paths config.Paths, stdout io.Writ
 		InstalledPaths:  installedPaths,
 		SSHConfigLinked: linked,
 		Message:         msg,
+	}, nil
+}
+
+// RemoveVSCodePlugin removes the VS Code SSH configuration link.
+func RemoveVSCodePlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*RemoveResult, error) {
+	unlinked, _ := RemoveSSHConfigInclude(paths.SSHConfigFile, "")
+	var removedPaths []string
+	if unlinked {
+		removedPaths = append(removedPaths, "Host ~/.ssh/config Include directive")
+	}
+
+	return &RemoveResult{
+		PluginID:          PluginIDVSCode,
+		PluginName:        "VS Code Remote-SSH Integration",
+		RemovedPaths:      removedPaths,
+		SSHConfigUnlinked: unlinked,
+		Message:           "VS Code Remote-SSH configuration unlinked.",
 	}, nil
 }
 

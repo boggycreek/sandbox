@@ -109,7 +109,7 @@ func TestFindJetBrainsPluginDirs(t *testing.T) {
 	}
 }
 
-func TestEnsureSSHConfigInclude(t *testing.T) {
+func TestEnsureAndRemoveSSHConfigInclude(t *testing.T) {
 	tmpDir := t.TempDir()
 	hostSSHConfig := filepath.Join(tmpDir, "config")
 	targetSSHConfig := filepath.Join(tmpDir, "agent-sandbox", "ssh_config")
@@ -148,17 +148,43 @@ func TestEnsureSSHConfigInclude(t *testing.T) {
 		t.Fatalf("expected linked=false when matching basename exists: %v", err)
 	}
 
-	// 4. Error creating directory (invalid path)
+	// 4. Remove include directive
+	unlinked, err := RemoveSSHConfigInclude(targetSSHConfig, hostSSHConfig)
+	if err != nil {
+		t.Fatalf("RemoveSSHConfigInclude failed: %v", err)
+	}
+	if !unlinked {
+		t.Fatalf("expected unlinked=true")
+	}
+	contentAfter, _ := os.ReadFile(hostSSHConfig)
+	if strings.Contains(string(contentAfter), "Include "+targetSSHConfig) {
+		t.Errorf("expected Include directive to be removed: %s", string(contentAfter))
+	}
+
+	// 5. Remove again when not present
+	unlinked2, err := RemoveSSHConfigInclude(targetSSHConfig, hostSSHConfig)
+	if err != nil || unlinked2 {
+		t.Fatalf("expected unlinked=false when already removed")
+	}
+
+	// 6. Remove on nonexistent file
+	unlinkedNonexistent, err := RemoveSSHConfigInclude(targetSSHConfig, filepath.Join(tmpDir, "does-not-exist"))
+	if err != nil || unlinkedNonexistent {
+		t.Fatalf("expected no error and unlinked=false on nonexistent file")
+	}
+
+	// 7. Error creating directory (invalid path)
 	_, err = EnsureSSHConfigInclude(targetSSHConfig, "/dev/null/impossible/config")
 	if err == nil {
 		t.Fatalf("expected error on invalid host config path")
 	}
 
-	// 5. Default hostSSHConfigFile resolution
+	// 8. Default hostSSHConfigFile resolution
 	_, _ = EnsureSSHConfigInclude(targetSSHConfig, "")
+	_, _ = RemoveSSHConfigInclude(targetSSHConfig, "")
 }
 
-func TestInstallToolboxPlugin(t *testing.T) {
+func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
@@ -202,6 +228,23 @@ func TestInstallToolboxPlugin(t *testing.T) {
 		t.Errorf("ListPlugins did not return toolbox plugin")
 	}
 
+	// Test RemoveToolboxPlugin
+	remRes, err := RemoveToolboxPlugin(ctx, paths, &out)
+	if err != nil {
+		t.Fatalf("RemoveToolboxPlugin error: %v", err)
+	}
+	if remRes.PluginID != PluginIDToolbox {
+		t.Errorf("expected PluginID=%s, got %s", PluginIDToolbox, remRes.PluginID)
+	}
+	if len(remRes.RemovedPaths) == 0 {
+		t.Errorf("expected at least 1 removed path")
+	}
+
+	// Verify central directory was removed
+	if _, err := os.Stat(centralJar); !os.IsNotExist(err) {
+		t.Errorf("expected central jar to be removed")
+	}
+
 	// Test central directory error path
 	badPaths := config.Paths{
 		DataHome: "/dev/null/impossible",
@@ -212,7 +255,7 @@ func TestInstallToolboxPlugin(t *testing.T) {
 	}
 }
 
-func TestInstallVSCodePlugin(t *testing.T) {
+func TestInstallAndRemoveVSCodePlugin(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
@@ -252,5 +295,14 @@ func TestInstallVSCodePlugin(t *testing.T) {
 	}
 	if !strings.Contains(res2.Message, "not found in PATH") {
 		t.Errorf("expected message to note missing code CLI: %s", res2.Message)
+	}
+
+	// 3. Remove VS Code plugin
+	remRes, err := RemoveVSCodePlugin(ctx, paths, &out)
+	if err != nil {
+		t.Fatalf("RemoveVSCodePlugin error: %v", err)
+	}
+	if remRes.PluginID != PluginIDVSCode {
+		t.Errorf("expected PluginID=%s, got %s", PluginIDVSCode, remRes.PluginID)
 	}
 }

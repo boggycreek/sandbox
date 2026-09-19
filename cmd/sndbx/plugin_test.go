@@ -52,52 +52,65 @@ func TestHandlePluginCommands(t *testing.T) {
 		}
 	}
 
-	// 3. List
-	{
+	// 3. List & ls
+	for _, cmd := range []string{"list", "ls"} {
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"list"}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{cmd}, &stdout, &stderr)
 		if code != 0 {
-			t.Errorf("expected exit code 0 for list, got %d", code)
+			t.Errorf("expected exit code 0 for %s, got %d", cmd, code)
 		}
 		if !strings.Contains(stdout.String(), "PLUGIN") || !strings.Contains(stdout.String(), "toolbox") {
 			t.Errorf("expected plugins list in stdout, got: %s", stdout.String())
 		}
 	}
 
-	// 4. Install without target
-	{
+	// 4. Add & Remove without target
+	for _, cmd := range []string{"add", "install", "remove", "rm", "uninstall", "delete"} {
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"install"}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{cmd}, &stdout, &stderr)
 		if code != 1 {
-			t.Errorf("expected exit code 1 for install without args, got %d", code)
+			t.Errorf("expected exit code 1 for %s without args, got %d", cmd, code)
 		}
 	}
 
-	// 5. Toolbox direct install
+	// 5. Add Toolbox & Remove Toolbox
 	{
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"toolbox"}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{"add", "toolbox"}, &stdout, &stderr)
 		if code != 0 {
-			t.Errorf("expected exit code 0 for toolbox install, got %d (stderr: %s)", code, stderr.String())
+			t.Errorf("expected exit code 0 for add toolbox, got %d (stderr: %s)", code, stderr.String())
 		}
 		if !strings.Contains(stdout.String(), "Agent Sandbox JetBrains Gateway / Toolbox Plugin") {
 			t.Errorf("expected toolbox plugin success text, got: %s", stdout.String())
 		}
+
+		// Remove Toolbox
+		var remOut, remErr bytes.Buffer
+		remCode := handlePlugin(ctx, paths, []string{"remove", "toolbox"}, &remOut, &remErr)
+		if remCode != 0 {
+			t.Errorf("expected exit code 0 for remove toolbox, got %d (stderr: %s)", remCode, remErr.String())
+		}
+		if !strings.Contains(remOut.String(), "successfully removed") {
+			t.Errorf("expected remove text in stdout, got: %s", remOut.String())
+		}
 	}
 
-	// 6. Gateway alias via `install gateway`
+	// 6. Shorthand & aliases: `sndbx plugin gateway` and `sndbx plugin rm gateway`
 	{
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"install", "gateway"}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{"gateway"}, &stdout, &stderr)
 		if code != 0 {
-			t.Errorf("expected exit code 0 for install gateway, got %d", code)
+			t.Errorf("expected exit code 0 for shorthand gateway, got %d", code)
 		}
-		if !strings.Contains(stdout.String(), "JetBrains Gateway") {
-			t.Errorf("expected gateway output, got: %s", stdout.String())
+
+		var remOut, remErr bytes.Buffer
+		remCode := handlePlugin(ctx, paths, []string{"rm", "gateway"}, &remOut, &remErr)
+		if remCode != 0 {
+			t.Errorf("expected exit code 0 for rm gateway, got %d", remCode)
 		}
 	}
 
-	// 7. VS Code install
+	// 7. Add VS Code & Remove VS Code
 	{
 		origExec := plugin.ExecCommandContext
 		defer func() { plugin.ExecCommandContext = origExec }()
@@ -106,31 +119,41 @@ func TestHandlePluginCommands(t *testing.T) {
 		}
 
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"vscode"}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{"add", "vscode"}, &stdout, &stderr)
 		if code != 0 {
-			t.Errorf("expected exit code 0 for vscode, got %d", code)
+			t.Errorf("expected exit code 0 for add vscode, got %d", code)
 		}
 		if !strings.Contains(stdout.String(), "Agent Sandbox VS Code Integration") {
 			t.Errorf("expected vscode output, got: %s", stdout.String())
 		}
 
-		// Alias `install code`
-		var stdout2, stderr2 bytes.Buffer
-		code2 := handlePlugin(ctx, paths, []string{"install", "code"}, &stdout2, &stderr2)
-		if code2 != 0 {
-			t.Errorf("expected exit code 0 for install code, got %d", code2)
+		// Remove VS Code
+		var remOut, remErr bytes.Buffer
+		remCode := handlePlugin(ctx, paths, []string{"remove", "vscode"}, &remOut, &remErr)
+		if remCode != 0 {
+			t.Errorf("expected exit code 0 for remove vscode, got %d", remCode)
+		}
+		if !strings.Contains(remOut.String(), "VS Code Remote-SSH configuration unlinked") {
+			t.Errorf("expected unlinked text in stdout, got: %s", remOut.String())
 		}
 	}
 
-	// 8. Unknown plugin
+	// 8. Unknown command or plugin targets
 	{
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"unknown-plugin"}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{"unknown-cmd"}, &stdout, &stderr)
 		if code != 1 {
-			t.Errorf("expected exit code 1 for unknown plugin, got %d", code)
+			t.Errorf("expected exit code 1 for unknown-cmd, got %d", code)
 		}
-		if !strings.Contains(stderr.String(), "unknown plugin") {
-			t.Errorf("expected error message for unknown plugin, got: %s", stderr.String())
+
+		codeAddUnknown := handlePlugin(ctx, paths, []string{"add", "unknown-target"}, &stdout, &stderr)
+		if codeAddUnknown != 1 {
+			t.Errorf("expected exit code 1 for add unknown-target, got %d", codeAddUnknown)
+		}
+
+		codeRemUnknown := handlePlugin(ctx, paths, []string{"remove", "unknown-target"}, &stdout, &stderr)
+		if codeRemUnknown != 1 {
+			t.Errorf("expected exit code 1 for remove unknown-target, got %d", codeRemUnknown)
 		}
 	}
 
@@ -140,7 +163,7 @@ func TestHandlePluginCommands(t *testing.T) {
 			DataHome: "/dev/null/impossible",
 		}
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, badPaths, []string{"toolbox"}, &stdout, &stderr)
+		code := handlePlugin(ctx, badPaths, []string{"add", "toolbox"}, &stdout, &stderr)
 		if code != 1 {
 			t.Errorf("expected exit code 1 on toolbox error, got %d", code)
 		}
@@ -149,7 +172,6 @@ func TestHandlePluginCommands(t *testing.T) {
 
 func TestSndbxPluginDomainDispatch(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	// Test dispatching through Run()
 	code := Run([]string{"plugin", "help"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected Run('plugin', 'help') to exit 0, got %d", code)
