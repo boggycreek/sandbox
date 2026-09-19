@@ -36,14 +36,14 @@ type ClientConfig struct {
 
 // Client represents an authenticated connection to the Valkey Backplane
 type Client struct {
-	cfg        ClientConfig
-	conn       net.Conn
-	reader     *resp.Reader
-	writer     *resp.Writer
-	mu         sync.Mutex
-	closed     bool
-	pubKeys    map[string]ed25519.PublicKey
-	pubKeysMu  sync.RWMutex
+	cfg       ClientConfig
+	conn      net.Conn
+	reader    *resp.Reader
+	writer    *resp.Writer
+	mu        sync.Mutex
+	closed    bool
+	pubKeys   map[string]ed25519.PublicKey
+	pubKeysMu sync.RWMutex
 }
 
 // Dial connects and authenticates to the Valkey Backplane

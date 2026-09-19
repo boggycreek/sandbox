@@ -23,22 +23,22 @@ import (
 
 // EphemeralInfraHarness manages isolated Valkey and Gitea containers for end-to-end integration tests.
 type EphemeralInfraHarness struct {
-	ValkeyPort     int
-	GiteaHTTPPort  int
-	GiteaSSHPort   int
-	AdminPassword  string
-	HumanPassword  string
-	HumanName      string
-	NetworkName    string
-	ValkeyName     string
-	GiteaName      string
-	ValkeyVolName  string
-	GiteaVolName   string
-	DataHome       string
-	BinPath        string
-	engine         string
-	t              *testing.T
-	teardownOnce   sync.Once
+	ValkeyPort    int
+	GiteaHTTPPort int
+	GiteaSSHPort  int
+	AdminPassword string
+	HumanPassword string
+	HumanName     string
+	NetworkName   string
+	ValkeyName    string
+	GiteaName     string
+	ValkeyVolName string
+	GiteaVolName  string
+	DataHome      string
+	BinPath       string
+	engine        string
+	t             *testing.T
+	teardownOnce  sync.Once
 }
 
 // StartEphemeralInfraHarness starts an isolated Valkey and Gitea stack with unique ephemeral names and dynamic ports.

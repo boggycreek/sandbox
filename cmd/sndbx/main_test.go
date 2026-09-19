@@ -252,4 +252,3 @@ func TestSndbxUpdateAndGUIDomains(t *testing.T) {
 		t.Errorf("gui command failed: %s", out)
 	}
 }
-

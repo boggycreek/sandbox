@@ -1,0 +1,25 @@
+<!-- Copyright (c) 2026 Boggy Creek Software LLC -->
+<!-- Use of this source code is governed by an MIT-style -->
+<!-- license that can be found in the LICENSE file. -->
+<idea-plugin>
+    <id>com.boggycreek.sndbx.gateway</id>
+    <name>Agent Sandbox Gateway</name>
+    <version>0.1.0-alpha</version>
+    <vendor email="support@boggycreek.com" url="https://github.com/boggycreek/agent-sandbox">Boggy Creek Software LLC</vendor>
+
+    <description><![CDATA[
+      Direct JetBrains Gateway and Toolbox integration for Agent Sandbox.<br>
+      Discovers local running agent containers and bridges seamless remote development sessions
+      with zero host secret leakage.
+    ]]></description>
+
+    <category>Remote Development</category>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends optional="true">com.jetbrains.gateway</depends>
+
+    <extensions defaultExtensionNs="com.jetbrains">
+        <gatewayConnector implementation="com.boggycreek.sndbx.gateway.SndbxGatewayConnector" />
+        <gatewayConnectionProvider implementation="com.boggycreek.sndbx.gateway.SndbxGatewayConnectionProvider" />
+    </extensions>
+</idea-plugin>

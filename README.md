@@ -66,7 +66,8 @@ sndbx infra down                                         # Stop shared services 
 # Agent Instance Lifecycle
 sndbx agent create <name> [as <type>] [--role <role>]    # Provision a new named agent
 sndbx agent start <name>                                 # Start the agent daemon container
-sndbx agent connect <name>                               # Attach directly to running tmux supervisor
+sndbx agent tmux <name>                                  # Attach directly to running diagnostic tmux session
+sndbx agent open <name> [in <ide>] [--no-launch]          # Launch desktop IDE remote development (VS Code, JetBrains)
 sndbx agent ssh <name>                                   # SSH directly into unprivileged environment
 sndbx agent ssh-config [name] [--all]                    # Generate OpenSSH config stanzas for IDE Remote-SSH
 sndbx agent doctor <name>                                # Host-side diagnostic check and auto-heal for human operator
@@ -74,6 +75,11 @@ sndbx agent list [--json]                                # List configured insta
 sndbx agent stop [name] [--all]                          # Stop agent container(s)
 sndbx agent clean <name>                                 # Remove container (preserves persistent home volume)
 sndbx agent retire <name> [--force]                       # Fully deprovision agent (container, volume, Valkey, Gitea)
+
+# IDE Plugins & Remote Runtimes
+sndbx plugin add <gateway|toolbox|vscode>                # Install & configure IDE plugin (Gateway, Toolbox, VS Code)
+sndbx plugin remove <gateway|toolbox|vscode>             # Uninstall & unlink IDE plugin configuration
+sndbx plugin list                                        # List supported and installed IDE plugins
 
 # Installation & Workspace Updates
 sndbx update                                             # Comprehensive update: sync git repo, compile CLIs, and build OCI images
