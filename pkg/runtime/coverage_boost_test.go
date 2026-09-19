@@ -318,11 +318,14 @@ func TestStopInfraStackCoverage(t *testing.T) {
 	// Override package-level vars so StopInfraStack targets our ephemeral containers
 	origValkey := infraValkeyContainer
 	origGitea := infraGiteaContainer
+	origSonar := infraSonarContainer
 	infraValkeyContainer = testValkeyName
 	infraGiteaContainer = testGiteaName
+	infraSonarContainer = fmt.Sprintf("unit-test-sonar-stop-%d", pid)
 	defer func() {
 		infraValkeyContainer = origValkey
 		infraGiteaContainer = origGitea
+		infraSonarContainer = origSonar
 	}()
 
 	// Start a minimal ephemeral Valkey container for the stop test
@@ -449,4 +452,71 @@ func TestMockedInfraStack(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error when gitea restart fails")
 	}
+
+	// 6. Sonarqube image exists, container doesn't exist, run succeeds
+	mockSonarRunSuccess := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "image" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			if strings.Contains(args[2], "sonar") {
+				return exec.Command("false")
+			}
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restore6 := SetExecCommandContextForTesting(mockSonarRunSuccess)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore6()
+	if err != nil {
+		t.Errorf("unexpected error in sonar run success: %v", err)
+	}
+
+	// 7. Sonarqube image exists, container exists, start fails, restart fails
+	mockSonarRestartFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "image" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "start" && strings.Contains(args[1], "sonar") {
+			return exec.Command("false")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "sonar") {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore7 := SetExecCommandContextForTesting(mockSonarRestartFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore7()
+	if err == nil {
+		t.Errorf("expected error when sonarqube restart fails")
+	}
+
+	// 8. Sonarqube run fails directly
+	mockSonarRunFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "image" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			if strings.Contains(args[2], "sonar") {
+				return exec.Command("false")
+			}
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "sonar") {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore8 := SetExecCommandContextForTesting(mockSonarRunFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore8()
+	if err == nil {
+		t.Errorf("expected error when sonarqube run fails")
+	}
 }
+

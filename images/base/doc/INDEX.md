@@ -18,6 +18,7 @@ To avoid token bloat and maintain clean separation of concerns, documentation is
 | **[`GITEA.md`](GITEA.md)** | Local Git forge (`http://gitea:3000`), `fleet` organization, shared tools repository, and task backlog (`bd`). |
 | **[`LLM_GATEWAY.md`](LLM_GATEWAY.md)** | Host-local OpenAI-compatible model routing (`http://llm-gateway:<port>/v1`) for Ollama, llama.cpp, and vLLM. |
 | **[`MEMORY.md`](MEMORY.md)** | Git-backed dotfiles and reflection notes backup (`fleet/agent-<name>-memory.git`). |
+| **[`SONARQUBE.md`](SONARQUBE.md)** | SonarQube deterministic mechanical analysis server (`http://sonarqube:9000`), MCP tools, and Quality Gates. |
 
 ---
 
@@ -31,3 +32,4 @@ To avoid token bloat and maintain clean separation of concerns, documentation is
 - **Operator Communication**: `bp human`
 - **Git Forge**: `http://gitea:3000` (org: `fleet`)
 - **Model Gateway**: `http://llm-gateway:<port>/v1`
+- **SonarQube Server**: `http://sonarqube:9000` (`sonar-mcp`)

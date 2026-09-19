@@ -43,7 +43,7 @@ lint-go: ## Run golangci-lint on Go code
 lint-shell: ## Run shellcheck on bash scripts
 	@echo "==> Running shellcheck..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck install.sh dev-setup.sh scripts/clean-test-env.sh scripts/deadcode-check.sh; \
+		shellcheck install.sh dev-setup.sh scripts/clean-test-env.sh scripts/deadcode-check.sh scripts/build-sonarqube-image.sh; \
 	else \
 		echo "Warning: shellcheck not installed. Run ./dev-setup.sh to install."; \
 	fi
@@ -131,6 +131,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, retention-sweep)
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./cmd/sndbx; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./cmd/bpd; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./cmd/sonar-mcp; \
 		if [ -d ./cmd/retention-sweep ]; then \
 			$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
 		fi; \
@@ -171,6 +172,10 @@ build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OC
 build-image-egress: ## Build agent-sandbox-egress OCI image with Podman
 	@echo "==> Building agent-sandbox-egress OCI image..."
 	podman build -t agent-sandbox-egress:latest -f images/egress-filter/Dockerfile .
+
+build-image-sonarqube: ## Build SonarQube Server Community Edition OCI image with Podman
+	@echo "==> Building agent-sandbox-sonarqube OCI image..."
+	@./scripts/build-sonarqube-image.sh
 
 clean: ## Clean build and test coverage artifacts
 	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)

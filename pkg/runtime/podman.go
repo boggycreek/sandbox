@@ -30,6 +30,7 @@ const EgressImage = "agent-sandbox-egress:latest"
 var (
 	infraValkeyContainer = "agent-sandbox-valkey"
 	infraGiteaContainer  = "agent-sandbox-gitea"
+	infraSonarContainer  = "agent-sandbox-sonarqube"
 	execCommandContext   = exec.CommandContext
 )
 
@@ -331,6 +332,10 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		args = append(args, "-e", "OPENAI_API_KEY=local-openai-key")
 	}
 
+	args = append(args,
+		"-e", "SONAR_HOST_URL=http://sonarqube:9000",
+		"-e", "SONARQUBE_URL=http://sonarqube:9000",
+	)
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
@@ -581,6 +586,51 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	// 3. Bootstrap Gitea admin user and default fleet organization
 	_ = BootstrapGitea(ctx, adminPass)
 
+	// 4. Start SonarQube container if image exists and not already running
+	sonarContainer := infraSonarContainer
+	sonarArgs := []string{
+		"run", "-d",
+		"--name", sonarContainer,
+		"--hostname", "sonarqube",
+		"--network", netName,
+		"-p", "127.0.0.1:9000:9000",
+		"-v", "agent-sandbox-sonarqube-data:/opt/sonarqube/data:z",
+		"-v", "agent-sandbox-sonarqube-extensions:/opt/sonarqube/extensions:z",
+		"-v", "agent-sandbox-sonarqube-logs:/opt/sonarqube/logs:z",
+		"agent-sandbox-sonarqube:latest",
+	}
+
+	checkSonarImg := execCommandContext(ctx, "podman", "image", "exists", "agent-sandbox-sonarqube:latest")
+	if checkSonarImg.Run() == nil {
+		checkSonar := execCommandContext(ctx, "podman", "container", "exists", sonarContainer)
+		if err := checkSonar.Run(); err != nil {
+			cmd := execCommandContext(ctx, "podman", sonarArgs...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				if isRootlessNetnsError(err, out) {
+					_ = EnsureRootlessNetNS(ctx)
+					retryCmd := execCommandContext(ctx, "podman", sonarArgs...)
+					if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
+						return fmt.Errorf("failed starting sonarqube container: %v (%s)", retryErr, string(retryOut))
+					}
+				} else {
+					return fmt.Errorf("failed starting sonarqube container: %v (%s)", err, string(out))
+				}
+			}
+		} else {
+			startCmd := execCommandContext(ctx, "podman", "start", sonarContainer)
+			if startOut, err := startCmd.CombinedOutput(); err != nil {
+				_ = execCommandContext(ctx, "podman", "rm", "-f", sonarContainer).Run()
+				if isRootlessNetnsError(err, startOut) {
+					_ = EnsureRootlessNetNS(ctx)
+				}
+				cmd := execCommandContext(ctx, "podman", sonarArgs...)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("failed restarting sonarqube container: %v (%s)", err, string(out))
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -659,12 +709,13 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 func StopInfraStack(ctx context.Context) error {
 	_ = execCommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
 	_ = execCommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
+	_ = execCommandContext(ctx, "podman", "stop", infraSonarContainer).Run()
 	return nil
 }
 
-// InspectInfraStack returns the runtime state of Valkey and Gitea containers
+// InspectInfraStack returns the runtime state of Valkey, Gitea, and SonarQube containers
 func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
-	containers := []string{infraValkeyContainer, infraGiteaContainer}
+	containers := []string{infraValkeyContainer, infraGiteaContainer, infraSonarContainer}
 	var results []ContainerInfo
 	for _, c := range containers {
 		info, err := InspectAgentContainer(ctx, c)
