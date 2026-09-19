@@ -9,14 +9,15 @@ While OpenSSH host stanzas (`Host sndbx-<name>`) enable operators to manually co
 3. **Marketplace Distribution Delay**: Publishing a connector plugin to the public JetBrains Marketplace requires formal review, signature verification, and vendor approval cycles. During early alpha development, operators require immediate, zero-friction local installation without waiting for marketplace distribution.
 
 ## Decision
-We introduce a first-class `sndbx plugin` command domain in the `sndbx` CLI and an accompanying JetBrains Gateway / Toolbox plugin architecture (`com.boggycreek.sndbx.gateway`) using an explicit `<add|remove|list>` verb model:
+We introduce a first-class `sndbx plugin` command domain in the `sndbx` CLI and an accompanying JetBrains Gateway / Toolbox plugin architecture (`com.boggycreek.sndbx.gateway`) with a minimal, explicit `<add|remove|list>` command interface:
 
-### 1. `sndbx plugin <add|remove|list> <toolbox|vscode>` CLI Syntax
-Operators can install, remove, and audit IDE integrations directly via the CLI:
+### 1. `sndbx plugin <add|remove|list>` Minimal CLI Interface
+Operators can install, remove, and audit IDE integrations directly via the CLI using three clean verbs:
 ```bash
 # Install and configure JetBrains Gateway & Toolbox plugin
 sndbx plugin add toolbox
-# Or:
+
+# Configure VS Code Remote-SSH and Claude extension ensembling
 sndbx plugin add vscode
 
 # Uninstall and purge plugin files & SSH config linkage
@@ -27,10 +28,7 @@ sndbx plugin remove vscode
 sndbx plugin list
 ```
 
-Aliases are supported for operator ergonomics:
-- `add`: `install`
-- `remove`: `rm`, `uninstall`, `delete`
-- `list`: `ls`
+To prevent cognitive overhead, unnecessary complexity, and ambiguous branching in script automation, no command aliases (e.g. `install`, `rm`, `ls`) or implicit shorthand syntax (e.g. `sndbx plugin toolbox`) are permitted. The interface adheres strictly to `sndbx plugin <add|remove|list> <target>`.
 
 ### 2. Autonomous Local Plugin Packaging and Deployment
 Rather than requiring a pre-installed JDK or Gradle build environment on the operator's machine, `sndbx plugin add toolbox` dynamically generates and deploys a valid plugin JAR archive:
@@ -59,7 +57,8 @@ Accepted.
 
 ## Consequences
 ### Positive
-- Consistent `<add|remove|list>` verb semantics matching other domain subcommands.
+- Predictable, explicit `<add|remove|list>` verb semantics matching standard package/plugin manager UX.
+- Rejection of aliases and shorthands eliminates ambiguity and simplifies test and maintenance surface.
 - One-command onboarding (`sndbx plugin add toolbox`) and clean removal (`sndbx plugin remove toolbox`).
 - Zero external build tool dependencies required to install and activate the plugin locally.
 - Instant visibility of running containers in JetBrains Gateway.

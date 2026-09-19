@@ -982,12 +982,12 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 	}
 
 	action := strings.ToLower(args[0])
-	if action == "help" || action == "-h" || action == "--help" {
+	switch action {
+	case "help", "-h", "--help":
 		printPluginUsage(stdout)
 		return 0
-	}
 
-	if action == "list" || action == "ls" {
+	case "list":
 		plugins := plugin.ListPlugins(paths)
 		w := tabwriter.NewWriter(stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "PLUGIN\tTARGET\tSTATUS\tDESCRIPTION")
@@ -1000,36 +1000,30 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 		}
 		_ = w.Flush()
 		return 0
-	}
 
-	if action == "add" || action == "install" {
+	case "add":
 		if len(args) < 2 {
 			fmt.Fprintln(stderr, "Usage: sndbx plugin add <toolbox|vscode>")
 			return 1
 		}
 		return handlePluginAdd(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
-	}
 
-	if action == "remove" || action == "rm" || action == "uninstall" || action == "delete" {
+	case "remove":
 		if len(args) < 2 {
 			fmt.Fprintln(stderr, "Usage: sndbx plugin remove <toolbox|vscode>")
 			return 1
 		}
 		return handlePluginRemove(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
-	}
 
-	switch action {
-	case "toolbox", "gateway", "jetbrains", "vscode", "code":
-		return handlePluginAdd(ctx, paths, action, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown command or plugin %q (see 'sndbx plugin help')\n", action)
+		fmt.Fprintf(stderr, "sndbx plugin: unknown command %q (see 'sndbx plugin help')\n", action)
 		return 1
 	}
 }
 
 func handlePluginAdd(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
 	switch target {
-	case "toolbox", "gateway", "jetbrains":
+	case "toolbox":
 		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
 			fmt.Fprintf(stderr, "sndbx error installing toolbox plugin: %v\n", err)
@@ -1054,7 +1048,7 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 		fmt.Fprintln(stdout, "     or select any 'sndbx-<name>' host under SSH Connections.")
 		return 0
 
-	case "vscode", "code":
+	case "vscode":
 		res, err := plugin.InstallVSCodePlugin(ctx, paths, stdout)
 		if err != nil {
 			fmt.Fprintf(stderr, "sndbx error configuring VS Code integration: %v\n", err)
@@ -1080,7 +1074,7 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 
 func handlePluginRemove(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
 	switch target {
-	case "toolbox", "gateway", "jetbrains":
+	case "toolbox":
 		res, err := plugin.RemoveToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
 			fmt.Fprintf(stderr, "sndbx error removing toolbox plugin: %v\n", err)
@@ -1101,7 +1095,7 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 		}
 		return 0
 
-	case "vscode", "code":
+	case "vscode":
 		res, err := plugin.RemoveVSCodePlugin(ctx, paths, stdout)
 		if err != nil {
 			fmt.Fprintf(stderr, "sndbx error removing VS Code integration: %v\n", err)
@@ -1125,16 +1119,14 @@ func printPluginUsage(out io.Writer) {
 	fmt.Fprintln(out, `Agent Sandbox Plugin Manager
 
 Usage:
-  sndbx plugin add <toolbox|vscode>
-  sndbx plugin remove <toolbox|vscode>
-  sndbx plugin list
-
-Plugins:
-  toolbox (gateway, jetbrains)   JetBrains Gateway & Toolbox integration
-  vscode (code)                  VS Code Remote-SSH and Claude Code integration
+  sndbx plugin <command> [args...]
 
 Commands:
-  add <plugin>                   Install and configure the specified plugin (alias: install)
-  remove <plugin>                Uninstall and remove the specified plugin (aliases: rm, uninstall)
-  list                           List supported and installed IDE plugins (alias: ls)`)
+  add <plugin>       Install and configure the specified IDE plugin
+  remove <plugin>    Uninstall and remove the specified IDE plugin
+  list               List supported and installed IDE plugins
+
+Plugins:
+  toolbox            JetBrains Gateway & Toolbox integration
+  vscode             VS Code Remote-SSH and Claude Code integration`)
 }

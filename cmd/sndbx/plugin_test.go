@@ -52,20 +52,20 @@ func TestHandlePluginCommands(t *testing.T) {
 		}
 	}
 
-	// 3. List & ls
-	for _, cmd := range []string{"list", "ls"} {
+	// 3. List command
+	{
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{cmd}, &stdout, &stderr)
+		code := handlePlugin(ctx, paths, []string{"list"}, &stdout, &stderr)
 		if code != 0 {
-			t.Errorf("expected exit code 0 for %s, got %d", cmd, code)
+			t.Errorf("expected exit code 0 for list, got %d", code)
 		}
 		if !strings.Contains(stdout.String(), "PLUGIN") || !strings.Contains(stdout.String(), "toolbox") {
 			t.Errorf("expected plugins list in stdout, got: %s", stdout.String())
 		}
 	}
 
-	// 4. Add & Remove without target
-	for _, cmd := range []string{"add", "install", "remove", "rm", "uninstall", "delete"} {
+	// 4. Add & Remove without target -> error
+	for _, cmd := range []string{"add", "remove"} {
 		var stdout, stderr bytes.Buffer
 		code := handlePlugin(ctx, paths, []string{cmd}, &stdout, &stderr)
 		if code != 1 {
@@ -95,18 +95,13 @@ func TestHandlePluginCommands(t *testing.T) {
 		}
 	}
 
-	// 6. Shorthand & aliases: `sndbx plugin gateway` and `sndbx plugin rm gateway`
-	{
+	// 6. Rejected aliases and shorthands (should fail with code 1)
+	unsupportedCommands := []string{"install", "rm", "uninstall", "delete", "ls", "toolbox", "vscode", "gateway"}
+	for _, cmd := range unsupportedCommands {
 		var stdout, stderr bytes.Buffer
-		code := handlePlugin(ctx, paths, []string{"gateway"}, &stdout, &stderr)
-		if code != 0 {
-			t.Errorf("expected exit code 0 for shorthand gateway, got %d", code)
-		}
-
-		var remOut, remErr bytes.Buffer
-		remCode := handlePlugin(ctx, paths, []string{"rm", "gateway"}, &remOut, &remErr)
-		if remCode != 0 {
-			t.Errorf("expected exit code 0 for rm gateway, got %d", remCode)
+		code := handlePlugin(ctx, paths, []string{cmd}, &stdout, &stderr)
+		if code != 1 {
+			t.Errorf("expected exit code 1 for unsupported command or shorthand %q, got %d", cmd, code)
 		}
 	}
 
