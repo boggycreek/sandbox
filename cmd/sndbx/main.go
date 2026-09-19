@@ -21,6 +21,8 @@ import (
 	"github.com/boggycreek/agent-sandbox/pkg/doctor"
 	"github.com/boggycreek/agent-sandbox/pkg/gitea"
 	"github.com/boggycreek/agent-sandbox/pkg/libbp"
+	"text/tabwriter"
+	"github.com/boggycreek/agent-sandbox/pkg/plugin"
 	"github.com/boggycreek/agent-sandbox/pkg/runtime"
 )
 
@@ -58,6 +60,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "infra":
 		return handleInfra(ctx, paths, domainArgs, stdout, stderr)
 
+	case "plugin":
+		return handlePlugin(ctx, paths, domainArgs, stdout, stderr)
+
 	case "update":
 		return handleUpdate(ctx, paths, domainArgs, stdout, stderr)
 
@@ -79,6 +84,7 @@ Usage:
 Domains:
   agent       Manage agent instance provisioning and container lifecycles
   infra       Manage shared Valkey backplane and Gitea Git infrastructure
+  plugin      Install and manage IDE plugins (JetBrains Gateway/Toolbox, VS Code)
   gui         Launch native desktop Backplane GUI client
 
 Commands:
@@ -102,6 +108,11 @@ Infra Commands:
   sndbx infra down
   sndbx infra list
   sndbx infra doctor
+
+Plugin Commands:
+  sndbx plugin <toolbox|vscode>
+  sndbx plugin install <toolbox|vscode>
+  sndbx plugin list
 
 Update Command:
   sndbx update
@@ -962,4 +973,106 @@ Comprehensive update of the Agent Sandbox local environment:
 func handleGUI(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Launching Backplane GUI client...")
 	return 0
+}
+
+func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		printPluginUsage(stderr)
+		return 1
+	}
+
+	target := strings.ToLower(args[0])
+	if target == "help" || target == "-h" || target == "--help" {
+		printPluginUsage(stdout)
+		return 0
+	}
+
+	if target == "list" {
+		plugins := plugin.ListPlugins(paths)
+		w := tabwriter.NewWriter(stdout, 0, 0, 3, ' ', 0)
+		fmt.Fprintln(w, "PLUGIN\tTARGET\tSTATUS\tDESCRIPTION")
+		for _, p := range plugins {
+			status := "Not Installed"
+			if p.Installed {
+				status = "Installed"
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.ID, p.Target, status, p.Description)
+		}
+		_ = w.Flush()
+		return 0
+	}
+
+	if target == "install" {
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "Usage: sndbx plugin install <toolbox|vscode>")
+			return 1
+		}
+		target = strings.ToLower(args[1])
+	}
+
+	switch target {
+	case "toolbox", "gateway", "jetbrains":
+		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error installing toolbox plugin: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway / Toolbox Plugin")
+		fmt.Fprintln(stdout, "================================================")
+		fmt.Fprintf(stdout, "Plugin:     %s (v%s)\n", res.PluginName, res.Version)
+		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
+		if res.SSHConfigLinked {
+			fmt.Fprintln(stdout, "SSH Config: Linked managed config into ~/.ssh/config")
+		} else {
+			fmt.Fprintln(stdout, "SSH Config: Already linked in ~/.ssh/config")
+		}
+		fmt.Fprintln(stdout, "\nInstalled Locations:")
+		for _, loc := range res.InstalledPaths {
+			fmt.Fprintf(stdout, "  - %s\n", loc)
+		}
+		fmt.Fprintln(stdout, "\nNext Steps:")
+		fmt.Fprintln(stdout, "  1. Launch JetBrains Gateway or JetBrains Toolbox.")
+		fmt.Fprintln(stdout, "  2. Connect to your running agents directly via the 'Agent Sandbox' provider")
+		fmt.Fprintln(stdout, "     or select any 'sndbx-<name>' host under SSH Connections.")
+		return 0
+
+	case "vscode", "code":
+		res, err := plugin.InstallVSCodePlugin(ctx, paths, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error configuring VS Code integration: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "Agent Sandbox VS Code Integration")
+		fmt.Fprintln(stdout, "==================================")
+		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
+		if res.SSHConfigLinked {
+			fmt.Fprintln(stdout, "SSH Config: Linked managed config into ~/.ssh/config")
+		} else {
+			fmt.Fprintln(stdout, "SSH Config: Already linked in ~/.ssh/config")
+		}
+		fmt.Fprintln(stdout, "\nNext Steps:")
+		fmt.Fprintln(stdout, "  Run 'sndbx agent open <name>' to launch an agent in VS Code.")
+		return 0
+
+	default:
+		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin or command %q (see 'sndbx plugin help')\n", target)
+		return 1
+	}
+}
+
+func printPluginUsage(out io.Writer) {
+	fmt.Fprintln(out, `Agent Sandbox Plugin Manager
+
+Usage:
+  sndbx plugin <toolbox|vscode>
+  sndbx plugin install <toolbox|vscode>
+  sndbx plugin list
+
+Plugins:
+  toolbox (gateway, jetbrains)   Install and configure the Agent Sandbox JetBrains Gateway/Toolbox plugin
+  vscode (code)                  Configure VS Code remote development and Claude Code integration
+
+Commands:
+  install <plugin>               Install the specified plugin
+  list                           List supported and installed IDE plugins`)
 }
