@@ -20,6 +20,7 @@ import (
 	"github.com/boggycreek/sandbox/pkg/config"
 	"github.com/boggycreek/sandbox/pkg/doctor"
 	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/ide"
 	"github.com/boggycreek/sandbox/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/plugin"
 	"github.com/boggycreek/sandbox/pkg/runtime"
@@ -408,12 +409,13 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	}
 
 	name := args[0]
-	ide := "code"
+	ideName := "code" // sensible default; overridden if not installed
 	noLaunch := false
 
+	// Parse the optional positional "in <ide>" syntax before flag parsing.
 	flagArgs := args[1:]
 	if len(args) >= 3 && strings.ToLower(args[1]) == "in" {
-		ide = args[2]
+		ideName = args[2]
 		flagArgs = args[3:]
 	} else if len(args) == 2 && strings.ToLower(args[1]) == "in" {
 		fmt.Fprintln(stderr, "Usage: sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]")
@@ -422,15 +424,38 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 
 	fs := flag.NewFlagSet("agent open", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&ide, "ide", ide, "Target IDE (code, webstorm)")
+
+	// Build a dynamic help string listing installed IDEs.
+	installedNames := ide.NamesInstalled()
+	ideHelp := "Target IDE"
+	if len(installedNames) > 0 {
+		ideHelp = "Target IDE (installed: " + strings.Join(installedNames, ", ") + ")"
+	}
+	fs.StringVar(&ideName, "ide", ideName, ideHelp)
 	fs.BoolVar(&noLaunch, "no-launch", noLaunch, "Prepare SSH configuration without launching IDE")
 	if err := fs.Parse(flagArgs); err != nil {
 		return 1
 	}
 
-	ide = strings.ToLower(strings.TrimSpace(ide))
-	if ide != "code" && ide != "webstorm" {
-		fmt.Fprintf(stderr, "sndbx error: unsupported IDE %q (supported: code, webstorm)\n", ide)
+	// Resolve the requested IDE against the installed catalogue.
+	ideName = strings.ToLower(strings.TrimSpace(ideName))
+	target, installed := ide.Lookup(ideName)
+	if target.Name == "" {
+		// Completely unknown — not even in the catalogue.
+		help := "(none detected)"
+		if len(installedNames) > 0 {
+			help = strings.Join(installedNames, ", ")
+		}
+		fmt.Fprintf(stderr, "sndbx error: unknown IDE %q. Installed IDEs: %s\n", ideName, help)
+		return 1
+	}
+	if !installed {
+		help := "(none detected)"
+		if len(installedNames) > 0 {
+			help = strings.Join(installedNames, ", ")
+		}
+		fmt.Fprintf(stderr, "sndbx error: %s (%s) is not installed on this host. Installed IDEs: %s\n",
+			target.DisplayName, target.BinaryName, help)
 		return 1
 	}
 
@@ -460,47 +485,56 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	}
 
 	hostAlias := fmt.Sprintf("sndbx-%s", name)
-	remoteURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)
+
+	// Build connection descriptors for each IDE family.
+	vsCodeURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)
+	jbSSHURI := fmt.Sprintf("ssh://agent@localhost:%d/home/agent/workspace", port)
 
 	if noLaunch {
 		fmt.Fprintf(stdout, "SSH host alias prepared: %s (Port: %d)\n", hostAlias, port)
-		if ide == "code" {
-			fmt.Fprintf(stdout, "VS Code Remote URI: %s\n", remoteURI)
-			fmt.Fprintf(stdout, "Launch command: code --file-uri %s\n", remoteURI)
-		} else if ide == "webstorm" {
-			fmt.Fprintf(stdout, "Connect via JetBrains Gateway with Host %q (Port: %d).\n", hostAlias, port)
-			fmt.Fprintln(stdout, "Note: Full JetBrains Dev Containers is not used due to container lifecycle management.")
+		switch target.Family {
+		case ide.FamilyVSCode:
+			fmt.Fprintf(stdout, "%s Remote URI: %s\n", target.DisplayName, vsCodeURI)
+			fmt.Fprintf(stdout, "Launch command: %s --file-uri %s\n", target.BinaryName, vsCodeURI)
+		case ide.FamilyJetBrains:
+			fmt.Fprintf(stdout, "Connect via %s with Host %q (Port: %d).\n", target.DisplayName, hostAlias, port)
+			fmt.Fprintf(stdout, "Launch command: %s --remote-dev %q\n", target.BinaryName, jbSSHURI)
 		}
 		return 0
 	}
 
-	switch ide {
-	case "code":
-		fmt.Fprintf(stdout, "Opening %s in VS Code (Host: %s)...\n", name, hostAlias)
-		cmd := execCommandContext(ctx, "code", "--file-uri", remoteURI)
+	switch target.Family {
+	case ide.FamilyVSCode:
+		fmt.Fprintf(stdout, "Opening %s in %s (Host: %s)...\n", name, target.DisplayName, hostAlias)
+		cmd := execCommandContext(ctx, target.Path, "--file-uri", vsCodeURI)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx error launching VS Code: %v\n", err)
+			fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, err)
 			return 1
 		}
-
+		// Best-effort: install the Claude Code extension if VS Code server is running.
 		checkServer := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c", "test -d /home/agent/.vscode-server")
 		if err := checkServer.Run(); err == nil {
 			installCmd := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c",
 				`find /home/agent/.vscode-server/bin -name "code-server" -o -name "code" 2>/dev/null | head -n 1 | xargs -r -I {} {} --install-extension anthropic.claude-code`)
 			_ = installCmd.Run()
 		}
-		return 0
 
-	case "webstorm":
-		fmt.Fprintf(stdout, "Connect to %s via JetBrains Gateway with Host %q.\n", name, hostAlias)
-		fmt.Fprintln(stdout, "Note: Full JetBrains Dev Containers is not used due to container lifecycle management.")
-		return 0
+	case ide.FamilyJetBrains:
+		fmt.Fprintf(stdout, "Opening %s in %s via Remote Development...\n", name, target.DisplayName)
+		cmd := execCommandContext(ctx, target.Path, "--remote-dev", jbSSHURI)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, err)
+			return 1
+		}
 	}
 
 	return 0
 }
+
 
 func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
