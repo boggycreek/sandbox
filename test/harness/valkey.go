@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
-	"github.com/boggycreek/agent-sandbox/pkg/libbp/resp"
+	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/libbp/resp"
 )
 
 // ValkeyHarness manages an isolated, authentic Valkey instance for integration testing

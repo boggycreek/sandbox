@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/libbp"
 )
 
 // Well-known image presets

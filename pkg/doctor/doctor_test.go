@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/runtime"
-	"github.com/boggycreek/agent-sandbox/test/harness"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/test/harness"
 )
 
 func TestDoctorDiagnosticsAndHealing(t *testing.T) {

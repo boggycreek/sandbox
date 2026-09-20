@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/libbp"
 )
 
 func main() {

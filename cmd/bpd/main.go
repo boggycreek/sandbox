@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/libbp"
 )
 
 // BackplaneClient defines the operations required by bpd from the backplane client.

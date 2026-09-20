@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp/resp"
+	"github.com/boggycreek/sandbox/pkg/libbp/resp"
 )
 
 func TestClientExtraCoverage(t *testing.T) {

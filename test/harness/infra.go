@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/gitea"
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
-	"github.com/boggycreek/agent-sandbox/pkg/libbp/resp"
+	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/libbp/resp"
 )
 
 // EphemeralInfraHarness manages isolated Valkey and Gitea containers for end-to-end integration tests.
@@ -92,7 +92,7 @@ func StartEphemeralInfraHarness(t *testing.T) *EphemeralInfraHarness {
 
 	// Build isolated sndbx binary in temp dir
 	h.BinPath = filepath.Join(dataHome, "sndbx")
-	buildCmd := exec.Command("go", "build", "-o", h.BinPath, "github.com/boggycreek/agent-sandbox/cmd/sndbx")
+	buildCmd := exec.Command("go", "build", "-o", h.BinPath, "github.com/boggycreek/sandbox/cmd/sndbx")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed building test sndbx binary: %v (%s)", err, string(out))
 	}

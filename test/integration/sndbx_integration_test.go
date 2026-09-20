@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/test/harness"
+	"github.com/boggycreek/sandbox/test/harness"
 )
 
 func TestSndbxCLIEndToEnd(t *testing.T) {
@@ -34,7 +34,7 @@ func TestSndbxCLIEndToEnd(t *testing.T) {
 
 	// Compile sndbx binary to a temporary path
 	binPath := filepath.Join(tmpDir, "sndbx")
-	cmd := exec.Command("go", "build", "-o", binPath, "github.com/boggycreek/agent-sandbox/cmd/sndbx")
+	cmd := exec.Command("go", "build", "-o", binPath, "github.com/boggycreek/sandbox/cmd/sndbx")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("failed building sndbx binary: %v (%s)", err, string(out))

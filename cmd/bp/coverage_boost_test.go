@@ -13,8 +13,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
-	"github.com/boggycreek/agent-sandbox/test/harness"
+	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/test/harness"
 )
 
 func TestBPExtraCoverage(t *testing.T) {

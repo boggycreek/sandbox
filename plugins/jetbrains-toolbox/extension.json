@@ -6,6 +6,6 @@
     "readableName": "Agent Sandbox",
     "description": "Direct JetBrains Toolbox integration for local agent sandboxes",
     "vendor": "Boggy Creek Software LLC",
-    "url": "https://github.com/boggycreek/agent-sandbox"
+    "url": "https://github.com/boggycreek/sandbox"
   }
 }

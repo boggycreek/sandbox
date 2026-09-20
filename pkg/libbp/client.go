@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp/resp"
+	"github.com/boggycreek/sandbox/pkg/libbp/resp"
 )
 
 // ClientConfig configuration parameters for connecting to the backplane

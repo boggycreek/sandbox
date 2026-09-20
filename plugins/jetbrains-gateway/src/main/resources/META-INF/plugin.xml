@@ -5,7 +5,7 @@
     <id>com.boggycreek.sndbx.gateway</id>
     <name>Agent Sandbox Gateway</name>
     <version>0.1.0-alpha</version>
-    <vendor email="support@boggycreek.com" url="https://github.com/boggycreek/agent-sandbox">Boggy Creek Software LLC</vendor>
+    <vendor email="support@boggycreek.com" url="https://github.com/boggycreek/sandbox">Boggy Creek Software LLC</vendor>
 
     <description><![CDATA[
       Direct JetBrains Gateway and Toolbox integration for Agent Sandbox.<br>
