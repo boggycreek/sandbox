@@ -41,6 +41,40 @@ services:
     networks:
       - agent-sandbox-infra
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-sandbox-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+      - POSTGRES_DB=sonar
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - agent-sandbox-infra
+
+  sonarqube:
+    image: agent-sandbox-sonarqube:latest
+    container_name: agent-sandbox-sonarqube
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonar
+      - SONAR_JDBC_USERNAME=sonar
+      - SONAR_JDBC_PASSWORD=sonar
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    networks:
+      - agent-sandbox-infra
+
 networks:
   agent-sandbox-infra:
     name: agent-sandbox-infra
@@ -52,3 +86,11 @@ volumes:
     name: agent-sandbox-valkey-config
   gitea-data:
     name: agent-sandbox-gitea-data
+  postgres-data:
+    name: agent-sandbox-postgres-data
+  sonarqube-data:
+    name: agent-sandbox-sonarqube-data
+  sonarqube-extensions:
+    name: agent-sandbox-sonarqube-extensions
+  sonarqube-logs:
+    name: agent-sandbox-sonarqube-logs

@@ -314,17 +314,21 @@ func TestStopInfraStackCoverage(t *testing.T) {
 	pid := os.Getpid()
 	testValkeyName := fmt.Sprintf("unit-test-valkey-stop-%d", pid)
 	testGiteaName := fmt.Sprintf("unit-test-gitea-stop-%d", pid)
+	testPostgresName := fmt.Sprintf("unit-test-postgres-stop-%d", pid)
 
 	// Override package-level vars so StopInfraStack targets our ephemeral containers
 	origValkey := infraValkeyContainer
 	origGitea := infraGiteaContainer
+	origPostgres := infraPostgresContainer
 	origSonar := infraSonarContainer
 	infraValkeyContainer = testValkeyName
 	infraGiteaContainer = testGiteaName
+	infraPostgresContainer = testPostgresName
 	infraSonarContainer = fmt.Sprintf("unit-test-sonar-stop-%d", pid)
 	defer func() {
 		infraValkeyContainer = origValkey
 		infraGiteaContainer = origGitea
+		infraPostgresContainer = origPostgres
 		infraSonarContainer = origSonar
 	}()
 
@@ -339,6 +343,7 @@ func TestStopInfraStackCoverage(t *testing.T) {
 	defer func() {
 		_ = exec.Command("podman", "rm", "-f", testValkeyName).Run()
 		_ = exec.Command("podman", "rm", "-f", testGiteaName).Run()
+		_ = exec.Command("podman", "rm", "-f", testPostgresName).Run()
 	}()
 
 	// Now exercise StopInfraStack — should stop our ephemeral containers
@@ -453,6 +458,46 @@ func TestMockedInfraStack(t *testing.T) {
 		t.Errorf("expected error when gitea restart fails")
 	}
 
+	// 5b. Postgres doesn't exist, run fails
+	mockPostgresRunFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			if strings.Contains(args[2], "postgres") {
+				return exec.Command("false")
+			}
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "postgres") {
+			return exec.Command("false") // postgres run fails
+		}
+		return exec.Command("true")
+	}
+	restore5b := SetExecCommandContextForTesting(mockPostgresRunFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore5b()
+	if err == nil {
+		t.Errorf("expected error when postgres run fails")
+	}
+
+	// 5c. Postgres exists, start fails, restart fails
+	mockPostgresRestartFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "start" && strings.Contains(args[1], "postgres") {
+			return exec.Command("false")
+		}
+		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "postgres") {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore5c := SetExecCommandContextForTesting(mockPostgresRestartFail)
+	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore5c()
+	if err == nil {
+		t.Errorf("expected error when postgres restart fails")
+	}
+
 	// 6. Sonarqube image exists, container doesn't exist, run succeeds
 	mockSonarRunSuccess := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "podman" && len(args) > 1 && args[0] == "image" && args[1] == "exists" {
@@ -518,5 +563,22 @@ func TestMockedInfraStack(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error when sonarqube run fails")
 	}
+
+	// 9. Rootless NetNS error branches on Valkey, Gitea, Postgres, Sonar
+	mockNetnsRetry := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 0 && args[0] == "run" {
+			return exec.Command("sh", "-c", "echo 'failed to mount runtime directory for rootless netns' >&2; exit 127")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("false")
+		}
+		if name == "podman" && len(args) > 1 && args[0] == "image" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	}
+	restore9 := SetExecCommandContextForTesting(mockNetnsRetry)
+	_ = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore9()
 }
 
