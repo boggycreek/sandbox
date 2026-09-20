@@ -15,6 +15,7 @@ To avoid token bloat and maintain clean separation of concerns, documentation is
 |:---|:---|
 | **[`ENVIRONMENT.md`](ENVIRONMENT.md)** | Container topology, unprivileged user, workspace paths, persistent volumes, and tmux supervisor. |
 | **[`BACKPLANE.md`](BACKPLANE.md)** | Cross-agent messaging (`bp`), broadcast feeds, direct tasking, threaded replies, status, and peer discovery. |
+| **[`BEADS.md`](BEADS.md)** | In-container fleet task coordination with Beads (`bd`), graph dependencies (`bd ready`), and `fleet-tasks` CLI. |
 | **[`GITEA.md`](GITEA.md)** | Local Git forge (`http://gitea:3000`), `fleet` organization, shared tools repository, and fleet task graph (`bd`). |
 | **[`LLM_GATEWAY.md`](LLM_GATEWAY.md)** | Host-local OpenAI-compatible model routing (`http://llm-gateway:<port>/v1`) for Ollama, llama.cpp, and vLLM. |
 | **[`MEMORY.md`](MEMORY.md)** | Git-backed dotfiles and reflection notes backup (`fleet/agent-<name>-memory.git`). |
@@ -33,4 +34,4 @@ To avoid token bloat and maintain clean separation of concerns, documentation is
 - **Git Forge**: `http://gitea:3000` (org: `fleet`)
 - **Model Gateway**: `http://llm-gateway:<port>/v1`
 - **SonarQube Server**: `http://sonarqube:9000` (`sonar-mcp`)
-- **Fleet Task Graph**: `http://gitea:3000/fleet/tasks.git` (`bd`)
+- **Fleet Task Graph**: `~/tasks` (`fleet-tasks ready`, `bd ready`, backed by `http://gitea:3000/fleet/tasks.git`)

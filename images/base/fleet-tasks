@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Boggy Creek Software LLC
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file.
+
+# Agent Sandbox Fleet Task Coordinator Helper
+#
+# Provides a turnkey interface for autonomous agents inside the sandbox
+# to manage, query, claim, and synchronize tasks via Beads (bd)
+# backed by the air-gapped local Gitea forge (http://gitea:3000/fleet/tasks.git).
+
+set -euo pipefail
+
+TASKS_DIR="${FLEET_TASKS_DIR:-${HOME}/tasks}"
+GITEA_URL="${GITEA_URL:-http://gitea:3000}"
+REPO_URL="${GITEA_URL}/fleet/tasks.git"
+
+ensure_initialized() {
+  if [ ! -d "${TASKS_DIR}" ]; then
+    mkdir -p "${TASKS_DIR}"
+  fi
+
+  if [ ! -d "${TASKS_DIR}/.git" ]; then
+    # Try cloning from Gitea if reachable
+    if git clone "${REPO_URL}" "${TASKS_DIR}" >/dev/null 2>&1; then
+      :
+    else
+      # Initialize local git repository pointing to Gitea remote
+      (
+        cd "${TASKS_DIR}"
+        git init -b main >/dev/null 2>&1 || git init >/dev/null 2>&1
+        git remote add origin "${REPO_URL}" >/dev/null 2>&1 || true
+        git config user.name "${AGENT_NAME:-agent}"
+        git config user.email "${AGENT_NAME:-agent}@local.sndbx"
+      )
+    fi
+  fi
+
+  if [ ! -d "${TASKS_DIR}/.beads" ]; then
+    (
+      cd "${TASKS_DIR}"
+      bd init --prefix task --skip-agents --non-interactive >/dev/null 2>&1 || true
+      # Attempt initial push to Gitea
+      bd dolt push >/dev/null 2>&1 || true
+    )
+  fi
+}
+
+case "${1:-}" in
+  init)
+    ensure_initialized
+    echo "Fleet task workspace initialized at ${TASKS_DIR} (remote: ${REPO_URL})"
+    ;;
+  ready)
+    ensure_initialized
+    shift || true
+    bd -C "${TASKS_DIR}" ready "$@"
+    ;;
+  list)
+    ensure_initialized
+    shift || true
+    bd -C "${TASKS_DIR}" list "$@"
+    ;;
+  show)
+    ensure_initialized
+    shift || true
+    bd -C "${TASKS_DIR}" show "$@"
+    ;;
+  claim)
+    ensure_initialized
+    shift || true
+    if [ $# -lt 1 ]; then
+      echo "Usage: fleet-tasks claim <task-id>" >&2
+      exit 1
+    fi
+    TASK_ID="$1"
+    bd -C "${TASKS_DIR}" update "${TASK_ID}" --claim
+    bd -C "${TASKS_DIR}" sync >/dev/null 2>&1 || true
+    echo "Claimed ${TASK_ID} and synchronized with fleet Gitea."
+    ;;
+  close)
+    ensure_initialized
+    shift || true
+    if [ $# -lt 1 ]; then
+      echo "Usage: fleet-tasks close <task-id> [--reason <reason>]" >&2
+      exit 1
+    fi
+    bd -C "${TASKS_DIR}" close "$@"
+    bd -C "${TASKS_DIR}" sync >/dev/null 2>&1 || true
+    echo "Closed task and synchronized with fleet Gitea."
+    ;;
+  create)
+    ensure_initialized
+    shift || true
+    bd -C "${TASKS_DIR}" create "$@"
+    bd -C "${TASKS_DIR}" sync >/dev/null 2>&1 || true
+    ;;
+  sync)
+    ensure_initialized
+    bd -C "${TASKS_DIR}" sync
+    ;;
+  help|--help|-h|"")
+    echo "Agent Sandbox Fleet Task Coordinator (bd wrapper)"
+    echo ""
+    echo "Usage: fleet-tasks <command> [arguments]"
+    echo ""
+    echo "Commands:"
+    echo "  init                 Bootstrap/clone the fleet task repository at ~/tasks"
+    echo "  ready [flags]        Surface unblocked tasks ready to be worked on (DAG aware)"
+    echo "  list [flags]         List all open and in-progress tasks"
+    echo "  show <task-id>       Inspect task details, dependencies, and acceptance criteria"
+    echo "  claim <task-id>      Atomically claim a task and sync with fleet peers"
+    echo "  create [args...]     Create a new task, epic, or subtask and sync"
+    echo "  close <task-id> ...  Close completed task with reason and sync"
+    echo "  sync                 Pull and push latest task updates with local Gitea"
+    echo ""
+    echo "Remote Forge: ${REPO_URL}"
+    echo "Workspace:    ${TASKS_DIR}"
+    ;;
+  *)
+    ensure_initialized
+    exec bd -C "${TASKS_DIR}" "$@"
+    ;;
+esac

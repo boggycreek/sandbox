@@ -51,9 +51,6 @@ A dedicated, air-gapped issue and dependency graph tracking repository enabling 
   bd sync
   ```
 
-> [!NOTE]
-> **Plane Separation**: In-container task tracking (`task-*`) is local to the sandbox fleet and backed by `agent-sandbox-gitea`. It is strictly isolated from the host platform's own task tracker on GitHub (`sndbx-*`).
-
 ### 3. Creating Projects & Pushing Branches
 ```bash
 # Clone a fleet repository
