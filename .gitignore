@@ -17,9 +17,13 @@
 !.env.example
 secrets/
 
-# IDE and editor files
+# IDE, editor, and agent integration files
 .idea/
 .vscode/
+.cursor/
+.codex/
+.claude/
+.agents/
 *.swp
 *.swo
 *~
