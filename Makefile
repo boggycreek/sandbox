@@ -14,7 +14,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress
+.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress
 
 all: check build
 
@@ -117,6 +117,16 @@ deadcode-diff: ## Check for dead code introduced or orphaned by staged/local cha
 
 deadcode-all: ## Run comprehensive whole-codebase dead code audit (accumulated debt)
 	@./scripts/deadcode-check.sh --all
+
+sbom: ## Generate Software Bill of Materials (SBOM) in SPDX and CycloneDX formats using syft
+	@echo "==> Generating Software Bill of Materials (SBOM)..."
+	@mkdir -p $(DIST_DIR)/sbom
+	@if command -v syft >/dev/null 2>&1; then \
+		syft dir:. -o spdx-json=$(DIST_DIR)/sbom/agent-sandbox.spdx.json -o cyclonedx-json=$(DIST_DIR)/sbom/agent-sandbox.cyclonedx.json; \
+		echo "SBOM generated in $(DIST_DIR)/sbom/ (SPDX & CycloneDX)"; \
+	else \
+		echo "Notice: syft not installed. Install via: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b $(HOME)/.local/bin"; \
+	fi
 
 check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) + SCA security
 

@@ -106,3 +106,12 @@ Detailed architectural specifications and decision records:
 - **Go Toolchain**: Go 1.23+ (for building native static binaries from source).
 - **Core Utilities**: `git`, `curl`, `ssh-keygen`, `make`.
 
+---
+
+## License & Open Source Attribution
+
+- **License**: Agent Sandbox is licensed under the [MIT License](LICENSE) by **Boggy Creek Software LLC**.
+- **Acknowledgements**: See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) for ecosystem credits and community appreciation.
+- **Third-Party Notices**: See [NOTICES.md](NOTICES.md) for third-party copyright statements, SPDX license identifiers, and legal notices.
+
+

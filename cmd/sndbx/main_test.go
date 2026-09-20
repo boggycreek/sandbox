@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -229,7 +230,9 @@ func TestSndbxUpdateAndGUIDomains(t *testing.T) {
 	}
 
 	// Update command execution with invalid git/repo or dry behavior
-	t.Setenv("AGENT_SANDBOX_REPO", t.TempDir())
+	tempRepo := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tempRepo, ".git"), 0755)
+	t.Setenv("AGENT_SANDBOX_REPO", tempRepo)
 	code, _, errOut := runSndbx([]string{"update"})
 	// TempDir has no go.mod or Makefile, but handleUpdate will attempt git pull, compile, and image build
 	// We expect either error or execution failure

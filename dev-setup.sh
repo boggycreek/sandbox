@@ -109,6 +109,7 @@ check_cmd "shellcheck" "ShellCheck" "dev"
 check_cmd "govulncheck" "govulncheck (SCA)" "dev"
 check_cmd "gosec" "gosec (AST Security)" "dev"
 check_cmd "deadcode" "deadcode (Reachability)" "dev"
+check_cmd "syft" "Syft (SBOM Generator)" "dev"
 
 # GUI Development Toolchains
 echo

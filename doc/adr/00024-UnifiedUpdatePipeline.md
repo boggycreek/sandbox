@@ -23,9 +23,9 @@ As Agent Sandbox evolves, updates span multiple independent layers: git source u
 ## Decision (What)
 The `sndbx update` command provides an atomic, sequential three-stage pipeline to bring the entire local environment up to date:
 
-1. **Repository Synchronization**: Performs a fast-forward git pull (`git pull --ff-only`) in the resolved repository checkout directory.
-2. **Native Binary Compilation**: Recompiles `sndbx` and `bp` using the local Go toolchain with stripped symbols (`-ldflags="-s -w"`), installs them to `~/.local/bin`, and enforces `0755` executable permissions.
-3. **OCI Image Rebuilding**: Executes `make build-images`, systematically rebuilding `sndbx-base` and all preset images (`sndbx-opencode`, `sndbx-claude`, `sndbx-agy`) into the local Podman store.
+1. **Repository Synchronization**: Synchronizes or clones the local repository (`~/.local/share/agent-sandbox/repo`) with upstream `main` via safe git fetch and fast-forward pull.
+2. **Native Binary Distribution & Installation**: Downloads prebuilt native CLI binaries (`sndbx`, `bp`, `bpd`, `sonar-mcp`) from GitHub Releases directly to `~/.local/bin`, eliminating local Go toolchain requirements and environment variable conflicts (`GOROOT`/`GOPATH`). If prebuilt releases are unavailable (e.g. air-gapped or private environments), falls back to compiling from source with sanitized environment flags (`-ldflags="-s -w"`).
+3. **OCI Image Rebuilding**: Executes `make build-images`, systematically rebuilding `sndbx-base` and all preset images (`sndbx-opencode`, `sndbx-claude`, `sndbx-agy`, `sndbx-egress`) into the local Podman store.
 
 ## Status
 Accepted (Alpha as-built).
@@ -33,7 +33,8 @@ Accepted (Alpha as-built).
 ## Consequences
 ### Positive
 - Single command keeps the entire host and container ecosystem consistent.
-- Fast-forward git requirement prevents accidental overwrites of uncommitted developer changes.
+- Prebuilt binary distribution removes Go compiler requirements and prevents GOROOT/GOPATH conflicts on operator machines.
+- Fast-forward git synchronization prevents accidental overwrites of uncommitted developer changes.
 - Automatically ensures local container images match latest host CLI capabilities.
 
 ### Negative / Trade-offs
