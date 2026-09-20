@@ -177,10 +177,12 @@ else
   # Executing via curl pipe or outside a repository checkout -> ensure standard XDG checkout
   if [ -d "${REPO_DIR}/.git" ]; then
     echo "  Existing repository checkout found at ${REPO_DIR}. Syncing..."
-    if ! git -C "${REPO_DIR}" diff --quiet || ! git -C "${REPO_DIR}" diff --cached --quiet; then
+    if ! git -C "${REPO_DIR}" diff --quiet 2>/dev/null || ! git -C "${REPO_DIR}" diff --cached --quiet 2>/dev/null; then
       echo "  Warning: ${REPO_DIR} has local modifications. Skipping git pull to preserve changes."
     else
-      git -C "${REPO_DIR}" pull --ff-only || echo "  Warning: git pull failed. Continuing with existing checkout."
+      git -C "${REPO_DIR}" fetch origin "${BRANCH}" 2>/dev/null || true
+      git -C "${REPO_DIR}" checkout "${BRANCH}" 2>/dev/null || true
+      git -C "${REPO_DIR}" pull --ff-only origin "${BRANCH}" 2>/dev/null || echo "  Warning: git pull failed. Continuing with existing checkout."
     fi
   else
     echo "  Cloning ${REMOTE_URL} (branch: ${BRANCH}) into ${REPO_DIR}..."
@@ -282,26 +284,46 @@ else
   fi
 fi
 
-# Configure sndbx and bp CLI executables
+# Configure sndbx, bp, bpd, and sonar-mcp CLI executables
 SNDBX_BIN="${BIN_DIR}/sndbx"
 BP_BIN="${BIN_DIR}/bp"
+BPD_BIN="${BIN_DIR}/bpd"
+SONAR_MCP_BIN="${BIN_DIR}/sonar-mcp"
 
-if command -v go >/dev/null 2>&1 && [ -f "${SANDBOX_ROOT}/go.mod" ]; then
-  echo "  Compiling native Go CLI binaries (sndbx, bp)..."
-  (cd "${SANDBOX_ROOT}" && go build -o "${SNDBX_BIN}" ./cmd/sndbx && go build -o "${BP_BIN}" ./cmd/bp)
-  chmod +x "${SNDBX_BIN}" "${BP_BIN}" 2>/dev/null || true
-  echo "  Installed ${SNDBX_BIN} and ${BP_BIN}"
+INSTALLED_PREBUILT=true
+RELEASE_URL_BASE="https://github.com/boggycreek/sandbox/releases/latest/download"
+
+echo "  Checking for prebuilt native CLI binaries from GitHub Releases..."
+for bin_name in sndbx bp bpd sonar-mcp; do
+  target_file="${BIN_DIR}/${bin_name}"
+  download_url="${RELEASE_URL_BASE}/${bin_name}-${OS}-${ARCH}"
+  if curl -fsSL "${download_url}" -o "${target_file}.tmp" 2>/dev/null; then
+    mv "${target_file}.tmp" "${target_file}"
+    chmod +x "${target_file}"
+  else
+    rm -f "${target_file}.tmp"
+    INSTALLED_PREBUILT=false
+  fi
+done
+
+if [ "${INSTALLED_PREBUILT}" = "true" ] && [ -f "${SNDBX_BIN}" ]; then
+  echo "  Installed prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases."
+elif command -v go >/dev/null 2>&1 && [ -f "${SANDBOX_ROOT}/go.mod" ]; then
+  echo "  Compiling native Go CLI binaries from source..."
+  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./cmd/sonar-mcp)
+  chmod +x "${SNDBX_BIN}" "${BP_BIN}" "${BPD_BIN}" "${SONAR_MCP_BIN}" 2>/dev/null || true
+  echo "  Installed ${SNDBX_BIN}, ${BP_BIN}, ${BPD_BIN}, and ${SONAR_MCP_BIN}"
 elif [ ! -f "${SNDBX_BIN}" ]; then
   cat > "${SNDBX_BIN}" <<EOF
 #!/usr/bin/env bash
-# Temporary bootstrap dispatcher until native Go binary is compiled
+# Temporary bootstrap dispatcher until native Go binary is compiled or downloaded
 if command -v go >/dev/null 2>&1 && [ -d "${SANDBOX_ROOT}" ]; then
   echo "Compiling native sndbx binary..."
-  (cd "${SANDBOX_ROOT}" && go build -o "${SNDBX_BIN}" ./cmd/sndbx && go build -o "${BP_BIN}" ./cmd/bp)
+  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./cmd/bp)
   exec "${SNDBX_BIN}" "\$@"
 fi
 echo "Agent Sandbox CLI (sndbx)"
-echo "Go compiler required to build native binaries. Please install Go and run: cd ${SANDBOX_ROOT} && make build-cli"
+echo "Go compiler or prebuilt release required. Visit: https://github.com/boggycreek/sandbox/releases"
 exit 1
 EOF
   chmod +x "${SNDBX_BIN}"

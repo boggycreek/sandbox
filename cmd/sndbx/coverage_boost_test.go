@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -367,41 +368,58 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 		t.Errorf("update help should return 0")
 	}
 
-	// Test handleUpdate error paths using custom execCommandContext
+	// Test handleUpdate error paths using custom execCommandContext and httpClientForDownload
 	origExec := execCommandContext
-	defer func() { execCommandContext = origExec }()
+	origHTTP := httpClientForDownload
+	defer func() {
+		execCommandContext = origExec
+		httpClientForDownload = origHTTP
+	}()
 
-	// 1. Success path
+	// 1. Success path via prebuilt binary downloads
+	httpClientForDownload = &mockHTTPClient{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("#!/bin/sh\nexit 0\n")),
+			}, nil
+		},
+	}
 	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.Command("true")
 	}
 	code = Run([]string{"update"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("update mock success should return 0, got %d", code)
+		t.Errorf("update mock success with prebuilt download should return 0, got %d", code)
 	}
 
-	// 2. Failure at sndbx build
+	// 2. Prebuilt download failure, fallback to go build success
+	httpClientForDownload = &mockHTTPClient{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Body:       io.NopCloser(strings.NewReader("404 Not Found")),
+			}, nil
+		},
+	}
 	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		if name == "go" && len(args) > 2 && strings.Contains(args[2], "sndbx") {
+		return exec.Command("true")
+	}
+	code = Run([]string{"update"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("update fallback to go build success should return 0, got %d", code)
+	}
+
+	// 3. Failure at go build
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "go" {
 			return exec.Command("false")
 		}
 		return exec.Command("true")
 	}
 	code = Run([]string{"update"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("update failure at sndbx build should return 1")
-	}
-
-	// 3. Failure at bp build
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		if name == "go" && len(args) > 2 && strings.Contains(args[2], "bp") {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	code = Run([]string{"update"}, &stdout, &stderr)
-	if code != 1 {
-		t.Errorf("update failure at bp build should return 1")
+		t.Errorf("update failure at go build should return 1")
 	}
 
 	// 4. Failure at make build-images
@@ -413,6 +431,28 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	}
 	code = Run([]string{"update"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("update failure at build-images should return 1")
+		t.Errorf("update failure at make build-images should return 1")
 	}
+
+	// 5. Test sanitizeGoEnv
+	cleaned := sanitizeGoEnv([]string{"PATH=/bin", "GOROOT=/opt/bad/goroot", "HOME=/home/user"})
+	for _, env := range cleaned {
+		if strings.HasPrefix(env, "GOROOT=") {
+			t.Errorf("expected GOROOT to be removed, got: %s", env)
+		}
+	}
+}
+
+type mockHTTPClient struct {
+	doFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	if m.doFunc != nil {
+		return m.doFunc(req)
+	}
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Body:       io.NopCloser(strings.NewReader("404 Not Found")),
+	}, nil
 }

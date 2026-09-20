@@ -1,0 +1,127 @@
+# Copyright (c) 2026 Boggy Creek Software LLC
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file.
+
+name: Release Native Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            goos: linux
+            goarch: amd64
+          - os: linux
+            arch: arm64
+            goos: linux
+            goarch: arm64
+          - os: darwin
+            arch: amd64
+            goos: darwin
+            goarch: amd64
+          - os: darwin
+            arch: arm64
+            goos: darwin
+            goarch: arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Build binaries (${{ matrix.goos }}/${{ matrix.goarch }})
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist/${{ matrix.os }}_${{ matrix.arch }}
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/sndbx ./cmd/sndbx
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/bp ./cmd/bp
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/bpd ./cmd/bpd
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/sonar-mcp ./cmd/sonar-mcp
+
+      - name: Package artifacts
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ -z "${TAG}" ] || [[ "${TAG}" != v* ]]; then
+            TAG="${{ github.event.inputs.tag || 'v0.1.0' }}"
+          fi
+
+          mkdir -p release-assets
+          cd dist/${{ matrix.os }}_${{ matrix.arch }}
+          tar -czf ../../release-assets/sandbox_${TAG}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz sndbx bp bpd sonar-mcp
+          
+          # Standalone binaries for direct downloading
+          cp sndbx ../../release-assets/sndbx-${{ matrix.os }}-${{ matrix.arch }}
+          cp bp ../../release-assets/bp-${{ matrix.os }}-${{ matrix.arch }}
+          cp bpd ../../release-assets/bpd-${{ matrix.os }}-${{ matrix.arch }}
+          cp sonar-mcp ../../release-assets/sonar-mcp-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.os }}-${{ matrix.arch }}
+          path: release-assets/
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-assets
+          merge-multiple: true
+
+      - name: Generate SHA256 Checksums
+        run: |
+          cd all-assets
+          sha256sum * > checksums.txt 2>/dev/null || shasum -a 256 * > checksums.txt
+
+      - name: Create / Update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ -z "${TAG}" ] || [[ "${TAG}" != v* ]]; then
+            TAG="${{ github.event.inputs.tag || 'v0.1.0' }}"
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} exists, uploading assets..."
+            gh release upload "${TAG}" all-assets/* --clobber
+          else
+            echo "Creating release ${TAG}..."
+            gh release create "${TAG}" all-assets/* \
+              --title "Agent Sandbox ${TAG}" \
+              --notes "Automated release containing prebuilt native CLI binaries for Linux (amd64, arm64) and macOS (amd64, arm64)."
+          fi

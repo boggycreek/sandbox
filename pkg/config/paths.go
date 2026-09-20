@@ -125,6 +125,21 @@ func (p Paths) ResolveRepoDir() string {
 		return standardRepo
 	}
 
+	// 5. Parent directories of current working directory
+	if cwd, err := os.Getwd(); err == nil {
+		dir := cwd
+		for {
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+			if fi, err := os.Stat(filepath.Join(dir, "Makefile")); err == nil && !fi.IsDir() {
+				return dir
+			}
+		}
+	}
+
 	// Fallback to current working directory if none found
 	cwd, _ := os.Getwd()
 	return cwd
