@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -251,4 +252,15 @@ func TestSndbxUpdateAndGUIDomains(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "Launching Backplane GUI") {
 		t.Errorf("gui command failed: %s", out)
 	}
+}
+
+func TestMainFunction(t *testing.T) {
+	if os.Getenv("TEST_RUN_MAIN") == "1" {
+		os.Args = []string{"sndbx", "help"}
+		main()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainFunction")
+	cmd.Env = append(os.Environ(), "TEST_RUN_MAIN=1")
+	_ = cmd.Run()
 }
