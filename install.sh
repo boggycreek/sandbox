@@ -9,7 +9,7 @@
 # Supports macOS (Darwin) and Linux (all standard distributions).
 #
 # Can be executed via curl from GitHub:
-#   curl -fsSL https://raw.githubusercontent.com/boggycreek/agent-sandbox/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/boggycreek/sandbox/main/install.sh | bash
 #
 # Or run directly from a cloned repository checkout:
 #   ./install.sh
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # Default configuration
-REPO_URL_DEFAULT="https://github.com/boggycreek/agent-sandbox.git"
+REPO_URL_DEFAULT="https://github.com/boggycreek/sandbox.git"
 DEFAULT_BRANCH="main"
 
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/agent-sandbox"

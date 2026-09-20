@@ -56,7 +56,7 @@ flowchart TD
     subgraph HostPlane["Operator Plane (Platform Development)"]
         HostDev["Operator / Developer"]
         HostBeads[".beads/ (Prefix: sndbx-*)"]
-        GH["Upstream GitHub Remote<br/>(boggycreek/agent-sandbox.git)"]
+        GH["Upstream GitHub Remote<br/>(boggycreek/sandbox.git)"]
         HostDev --> HostBeads --> GH
     end
 
@@ -80,7 +80,7 @@ flowchart TD
 | **Primary Actors** | Human developers & host coding assistants | Autonomous container agents (`alice`, `bob`, etc.) |
 | **Operational Scope** | Developing `sndbx`, OCI images, ADRs, runtime Go code | Executing assigned software engineering missions |
 | **Issue Prefix** | `sndbx-*` (e.g. `sndbx-cpm`) | `task-*` (or project-specific mission prefix) |
-| **Remote Storage** | GitHub (`origin` / `boggycreek/agent-sandbox.git`) | Local Gitea (`http://gitea:3000/fleet/tasks.git`) |
+| **Remote Storage** | GitHub (`origin` / `boggycreek/sandbox.git`) | Local Gitea (`http://gitea:3000/fleet/tasks.git`) |
 | **Network Boundary** | Host user network | Internal container bridge (`agent-sandbox-infra`) |
 | **Persistence** | Host workstation git clones | Podman volume `agent-sandbox-gitea-data` |
 | **Data Sharing** | **Zero**. No database tables, remotes, or credentials shared across planes. |

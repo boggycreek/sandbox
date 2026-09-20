@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/libbp/resp"
+	"github.com/boggycreek/sandbox/pkg/libbp/resp"
 )
 
 // mockValkeyServer provides an in-memory RESP TCP server for unit testing

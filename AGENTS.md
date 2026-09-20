@@ -57,7 +57,7 @@ For in-depth architectural specifications and operational protocols, refer to th
 
 Contributors and AI coding agents working on the `agent-sandbox` repository itself use **Beads (`bd`)** for graph issue tracking and backlog management:
 - **Prefix**: `sndbx-*` (e.g., `sndbx-cpm`)
-- **Dolt Remote**: Upstream GitHub (`git+ssh://git@github.com/boggycreek/agent-sandbox.git`)
+- **Dolt Remote**: Upstream GitHub (`git+ssh://git@github.com/boggycreek/sandbox.git`)
 - **Key Commands**: `bd ready` (find unblocked work), `bd list` (view hierarchy), `bd update <id> --claim`, `bd sync` (push/pull Dolt issue commits to GitHub).
 
 > **Architectural Boundary Notice**: This host repository issue tracker (`sndbx-*`) is strictly for platform development of `agent-sandbox`. It is completely distinct and isolated from the in-container Beads infrastructure used by autonomous fleet agents inside running sandboxes (which use local Gitea at `http://gitea:3000/fleet/tasks.git` as detailed in ADR 00028).

@@ -21,10 +21,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/gitea"
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
-	"github.com/boggycreek/agent-sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 // CheckStatus indicates the outcome of an individual diagnostic check

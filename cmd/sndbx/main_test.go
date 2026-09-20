@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/libbp"
-	"github.com/boggycreek/agent-sandbox/test/harness"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/test/harness"
 )
 
 func runSndbx(args []string) (int, string, string) {

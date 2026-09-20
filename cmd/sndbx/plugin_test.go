@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/plugin"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/plugin"
 )
 
 func TestHandlePluginCommands(t *testing.T) {

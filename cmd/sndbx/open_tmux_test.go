@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 func TestAgentTmuxAndConnect(t *testing.T) {

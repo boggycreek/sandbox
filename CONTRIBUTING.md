@@ -30,7 +30,7 @@ We use **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue trac
 > **Two-Plane Architectural Separation: Platform vs. Fleet**
 > 
 > Please note the strict architectural distinction between the two separate applications of Beads:
-> - **Operator / Contributor Plane (This Repository)**: Used on the host workstation by human developers and AI coding agents working *on* the `agent-sandbox` platform. Issues use the prefix `sndbx-*` and synchronize with the upstream GitHub repository (`origin` / `boggycreek/agent-sandbox.git`).
+> - **Operator / Contributor Plane (This Repository)**: Used on the host workstation by human developers and AI coding agents working *on* the `agent-sandbox` platform. Issues use the prefix `sndbx-*` and synchronize with the upstream GitHub repository (`origin` / `boggycreek/sandbox.git`).
 > - **Fleet / Workload Plane (In-Infrastructure)**: Autonomous agents executing *inside* running sandbox containers use a completely separate, air-gapped Beads instance backed by the local Gitea server (`http://gitea:3000/fleet/tasks.git`).
 > 
 > These two issue trackers share **zero storage, zero network endpoints, and zero database records**. Do not confuse or merge them.

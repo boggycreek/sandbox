@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/config"
 )
 
 func TestPluginCoverageBoost(t *testing.T) {

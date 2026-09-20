@@ -13,7 +13,7 @@ The sandbox gives AI agents full developmental agency (`git`, `npm`, `rm`, file 
 Install the Agent Sandbox directly from the repository without cloning manually:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/boggycreek/agent-sandbox/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/boggycreek/sandbox/main/install.sh | bash
 ```
 
 The installer will:
@@ -29,7 +29,7 @@ The installer will:
 If you have already cloned the repository locally:
 
 ```bash
-git clone https://github.com/boggycreek/agent-sandbox.git
+git clone https://github.com/boggycreek/sandbox.git
 cd agent-sandbox
 ./install.sh
 ```

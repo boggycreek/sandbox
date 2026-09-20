@@ -35,7 +35,7 @@ intellijPlatform {
         vendor {
             name = "Boggy Creek Software LLC"
             email = "support@boggycreek.com"
-            url = "https://github.com/boggycreek/agent-sandbox"
+            url = "https://github.com/boggycreek/sandbox"
         }
     }
 }

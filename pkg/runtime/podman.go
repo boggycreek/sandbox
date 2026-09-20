@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/gitea"
 )
 
 // EgressImage is the default OCI image for the network egress filter sidecar.

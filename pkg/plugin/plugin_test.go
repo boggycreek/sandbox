@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/config"
 )
 
 func TestGenerateGatewayPluginXML(t *testing.T) {

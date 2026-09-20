@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/boggycreek/agent-sandbox/pkg/sonar"
+	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
 // JSONRPCMessage represents a standard JSON-RPC 2.0 message

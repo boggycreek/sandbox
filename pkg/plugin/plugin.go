@@ -17,8 +17,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	sndbxRuntime "github.com/boggycreek/agent-sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/pkg/config"
+	sndbxRuntime "github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 // Plugin identifiers and constants.
@@ -94,7 +94,7 @@ func GenerateGatewayPluginXML() string {
     <id>` + JetBrainsPluginID + `</id>
     <name>` + JetBrainsPluginName + `</name>
     <version>` + JetBrainsPluginVersion + `</version>
-    <vendor email="support@boggycreek.com" url="https://github.com/boggycreek/agent-sandbox">` + JetBrainsPluginVendor + `</vendor>
+    <vendor email="support@boggycreek.com" url="https://github.com/boggycreek/sandbox">` + JetBrainsPluginVendor + `</vendor>
 
     <description><![CDATA[
       Direct JetBrains Gateway integration for Agent Sandbox.<br>
@@ -157,7 +157,7 @@ func GenerateToolboxExtensionJSON() string {
     "readableName": "Agent Sandbox",
     "description": "Direct JetBrains Toolbox integration for local agent sandboxes",
     "vendor": "` + JetBrainsPluginVendor + `",
-    "url": "https://github.com/boggycreek/agent-sandbox"
+    "url": "https://github.com/boggycreek/sandbox"
   }
 }
 `

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/sonar"
+	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
 func TestMCPServerLifecycle(t *testing.T) {

@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/boggycreek/agent-sandbox/pkg/config"
-	"github.com/boggycreek/agent-sandbox/test/harness"
+	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/test/harness"
 )
 
 func TestSndbxSubcommandsBoost(t *testing.T) {
