@@ -46,10 +46,11 @@ We integrate SonarQube Server Community Edition as a first-class shared infrastr
    - Configured to execute as unprivileged user `sonarqube` (UID `1000`, GID `1000`), complying with rootless Podman constraints.
 
 2. **Network Topology & Infrastructure Lifecycle**:
-   - Deployed on the shared bridge network `agent-sandbox-infra` under hostname `sonarqube`.
+   - Deployed on the shared bridge network `agent-sandbox-infra` under hostname `sonarqube`, backed by a dedicated PostgreSQL 16 container (`agent-sandbox-postgres`, hostname `postgres`, port `5432`) for relational database persistence.
    - Port `9000` mapped to host loopback `127.0.0.1:9000` for operator observability and container address `http://sonarqube:9000` for agent access.
    - Persistent Podman volumes manage state across lifecycles:
-     - `agent-sandbox-sonarqube-data` (embedded database and search indexes)
+     - `agent-sandbox-postgres-data` (PostgreSQL relational database)
+     - `agent-sandbox-sonarqube-data` (SonarQube search indexes)
      - `agent-sandbox-sonarqube-extensions` (community plugins)
      - `agent-sandbox-sonarqube-logs` (service execution logs)
    - Integrated into `sndbx infra up`, `sndbx infra stop`, and `sndbx doctor --infra` with automated health validation (`/api/system/status`).

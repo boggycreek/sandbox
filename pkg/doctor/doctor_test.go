@@ -341,6 +341,20 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 	os.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65503")
 	checkAndHealSonarContainer(ctx, reportOffline)
 
+	// 7d. Test PostgreSQL TCP listener for infra check
+	pgLn, pgErr := net.Listen("tcp", "127.0.0.1:0")
+	if pgErr == nil {
+		defer pgLn.Close()
+		_, pgPortStr, _ := net.SplitHostPort(pgLn.Addr().String())
+		os.Setenv("POSTGRES_HOST", "127.0.0.1")
+		os.Setenv("POSTGRES_PORT", pgPortStr)
+		checkAndHealPostgresContainer(ctx, report2)
+	}
+
+	// 7e. Test unreachable PostgreSQL in infra check
+	os.Setenv("POSTGRES_PORT", "65504")
+	checkAndHealPostgresContainer(ctx, reportOffline)
+
 	// 8. Test FormatDoctorReport with unrepairable counts and warning counts
 	reportUnrep := &DoctorReport{
 		AgentName:         "unrep-agent",

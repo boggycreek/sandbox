@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,12 +23,13 @@ import (
 	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
-// infraValkeyContainer and infraGiteaContainer are the expected shared infra container names.
+// infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
 // These are package-level vars so integration tests can override them with ephemeral container names.
 var (
-	infraValkeyContainer = "agent-sandbox-valkey"
-	infraGiteaContainer  = "agent-sandbox-gitea"
-	infraSonarContainer  = "agent-sandbox-sonarqube"
+	infraValkeyContainer   = "agent-sandbox-valkey"
+	infraGiteaContainer    = "agent-sandbox-gitea"
+	infraPostgresContainer = "agent-sandbox-postgres"
+	infraSonarContainer    = "agent-sandbox-sonarqube"
 )
 
 // DiagnoseAndHealInfra performs a comprehensive health check and auto-healing on shared infrastructure
@@ -51,7 +53,10 @@ func DiagnoseAndHealInfra(ctx context.Context, paths config.Paths) (*DoctorRepor
 	// 5. Gitea Git Forge Container & Service
 	checkAndHealGiteaContainer(ctx, paths, report)
 
-	// 6. SonarQube Mechanical Analysis Container & Service
+	// 6. PostgreSQL Relational Database Container & Service
+	checkAndHealPostgresContainer(ctx, report)
+
+	// 7. SonarQube Mechanical Analysis Container & Service
 	checkAndHealSonarContainer(ctx, report)
 
 	return report, nil
@@ -129,6 +134,7 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 	for _, vol := range []string{
 		"agent-sandbox-valkey-data",
 		"agent-sandbox-gitea-data",
+		"agent-sandbox-postgres-data",
 		"agent-sandbox-sonarqube-data",
 		"agent-sandbox-sonarqube-extensions",
 		"agent-sandbox-sonarqube-logs",
@@ -153,9 +159,46 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Infrastructure Storage",
 			Status:  StatusOK,
-			Message: "Bridge network and data volumes (valkey-data, gitea-data, sonarqube-data) present",
+			Message: "Bridge network and data volumes (valkey-data, gitea-data, postgres-data, sonarqube-data) present",
 		})
 	}
+}
+
+func checkAndHealPostgresContainer(ctx context.Context, report *DoctorReport) {
+	containerName := infraPostgresContainer
+	info, err := runtime.InspectAgentContainer(ctx, containerName)
+	state := "stopped"
+	if err == nil && info != nil {
+		state = info.State
+	}
+
+	pgHost := os.Getenv("POSTGRES_HOST")
+	if pgHost == "" {
+		pgHost = "127.0.0.1"
+	}
+	pgPort := os.Getenv("POSTGRES_PORT")
+	if pgPort == "" {
+		pgPort = "5432"
+	}
+
+	dialer := net.Dialer{Timeout: 1 * time.Second}
+	conn, dialErr := dialer.DialContext(ctx, "tcp", net.JoinHostPort(pgHost, pgPort))
+	if dialErr != nil {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "PostgreSQL Database",
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("PostgreSQL container is %s (start via `sndbx infra up`)", state),
+		})
+		report.WarningCount++
+		return
+	}
+	_ = conn.Close()
+
+	report.Checks = append(report.Checks, CheckItem{
+		Name:    "PostgreSQL Database",
+		Status:  StatusOK,
+		Message: fmt.Sprintf("Container %s, listening on %s:%s (database: sonar)", state, pgHost, pgPort),
+	})
 }
 
 func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {

@@ -84,7 +84,7 @@ Usage:
 
 Domains:
   agent       Manage agent instance provisioning and container lifecycles
-  infra       Manage shared Valkey backplane and Gitea Git infrastructure
+  infra       Manage shared Valkey, Gitea, and PostgreSQL infrastructure
   plugin      Install and manage IDE plugins (JetBrains Gateway/Toolbox, VS Code)
   gui         Launch native desktop Backplane GUI client
 
@@ -868,14 +868,14 @@ func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout,
 		fmt.Fprintln(stdout, `Usage: sndbx infra <command>
 
 Commands:
-  up      Start shared Valkey and Gitea services via Podman Compose
+  up      Start shared Valkey, Gitea, and PostgreSQL services via Podman Compose
   down    Stop shared infrastructure services
   list    Show status of running infrastructure containers
   doctor  Diagnose shared infrastructure storage, containers, and services, and auto-heal defects`)
 		return 0
 
 	case "up":
-		fmt.Fprintln(stdout, "Starting shared infrastructure (Valkey & Gitea)...")
+		fmt.Fprintln(stdout, "Starting shared infrastructure (Valkey, Gitea & PostgreSQL)...")
 		adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 		humanPass := os.Getenv("HUMAN_BACKPLANE_PASSWORD")
 		humanName := os.Getenv("HUMAN_NAME")

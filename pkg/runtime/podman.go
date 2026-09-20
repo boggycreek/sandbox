@@ -25,13 +25,14 @@ import (
 // EgressImage is the default OCI image for the network egress filter sidecar.
 const EgressImage = "agent-sandbox-egress:latest"
 
-// infraValkeyContainer and infraGiteaContainer are the expected shared infra container names.
+// infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
 // These are package-level vars so tests can override them with ephemeral container names.
 var (
-	infraValkeyContainer = "agent-sandbox-valkey"
-	infraGiteaContainer  = "agent-sandbox-gitea"
-	infraSonarContainer  = "agent-sandbox-sonarqube"
-	execCommandContext   = exec.CommandContext
+	infraValkeyContainer   = "agent-sandbox-valkey"
+	infraGiteaContainer    = "agent-sandbox-gitea"
+	infraPostgresContainer = "agent-sandbox-postgres"
+	infraSonarContainer    = "agent-sandbox-sonarqube"
+	execCommandContext     = exec.CommandContext
 )
 
 // SetExecCommandContextForTesting configures command execution mocking for unit tests.
@@ -466,6 +467,10 @@ func StartInfraStack(ctx context.Context, paths config.Paths, adminPass, humanPa
 	_ = EnsureVolume(ctx, "agent-sandbox-valkey-data")
 	_ = EnsureVolume(ctx, "agent-sandbox-valkey-config")
 	_ = EnsureVolume(ctx, "agent-sandbox-gitea-data")
+	_ = EnsureVolume(ctx, "agent-sandbox-postgres-data")
+	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-data")
+	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-extensions")
+	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-logs")
 
 	// Render Valkey ACL in config directory
 	valkeyConfigDir := filepath.Join(paths.DataHome, "valkey")
@@ -586,7 +591,50 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	// 3. Bootstrap Gitea admin user and default fleet organization
 	_ = BootstrapGitea(ctx, adminPass)
 
-	// 4. Start SonarQube container if image exists and not already running
+	// 4. Start PostgreSQL container if not already running
+	postgresContainer := infraPostgresContainer
+	postgresArgs := []string{
+		"run", "-d",
+		"--name", postgresContainer,
+		"--hostname", "postgres",
+		"--network", netName,
+		"-p", "127.0.0.1:5432:5432",
+		"-e", "POSTGRES_USER=sonar",
+		"-e", "POSTGRES_PASSWORD=sonar",
+		"-e", "POSTGRES_DB=sonar",
+		"-v", "agent-sandbox-postgres-data:/var/lib/postgresql/data:z",
+		"docker.io/library/postgres:16-alpine",
+	}
+
+	checkPostgres := execCommandContext(ctx, "podman", "container", "exists", postgresContainer)
+	if err := checkPostgres.Run(); err != nil {
+		cmd := execCommandContext(ctx, "podman", postgresArgs...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			if isRootlessNetnsError(err, out) {
+				_ = EnsureRootlessNetNS(ctx)
+				retryCmd := execCommandContext(ctx, "podman", postgresArgs...)
+				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
+					return fmt.Errorf("failed starting postgres container: %v (%s)", retryErr, string(retryOut))
+				}
+			} else {
+				return fmt.Errorf("failed starting postgres container: %v (%s)", err, string(out))
+			}
+		}
+	} else {
+		startCmd := execCommandContext(ctx, "podman", "start", postgresContainer)
+		if startOut, err := startCmd.CombinedOutput(); err != nil {
+			_ = execCommandContext(ctx, "podman", "rm", "-f", postgresContainer).Run()
+			if isRootlessNetnsError(err, startOut) {
+				_ = EnsureRootlessNetNS(ctx)
+			}
+			cmd := execCommandContext(ctx, "podman", postgresArgs...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed restarting postgres container: %v (%s)", err, string(out))
+			}
+		}
+	}
+
+	// 5. Start SonarQube container if image exists and not already running
 	sonarContainer := infraSonarContainer
 	sonarArgs := []string{
 		"run", "-d",
@@ -594,6 +642,9 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"--hostname", "sonarqube",
 		"--network", netName,
 		"-p", "127.0.0.1:9000:9000",
+		"-e", "SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonar",
+		"-e", "SONAR_JDBC_USERNAME=sonar",
+		"-e", "SONAR_JDBC_PASSWORD=sonar",
 		"-v", "agent-sandbox-sonarqube-data:/opt/sonarqube/data:z",
 		"-v", "agent-sandbox-sonarqube-extensions:/opt/sonarqube/extensions:z",
 		"-v", "agent-sandbox-sonarqube-logs:/opt/sonarqube/logs:z",
@@ -709,13 +760,14 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 func StopInfraStack(ctx context.Context) error {
 	_ = execCommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
 	_ = execCommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
+	_ = execCommandContext(ctx, "podman", "stop", infraPostgresContainer).Run()
 	_ = execCommandContext(ctx, "podman", "stop", infraSonarContainer).Run()
 	return nil
 }
 
-// InspectInfraStack returns the runtime state of Valkey, Gitea, and SonarQube containers
+// InspectInfraStack returns the runtime state of Valkey, Gitea, PostgreSQL, and SonarQube containers
 func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
-	containers := []string{infraValkeyContainer, infraGiteaContainer, infraSonarContainer}
+	containers := []string{infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, infraSonarContainer}
 	var results []ContainerInfo
 	for _, c := range containers {
 		info, err := InspectAgentContainer(ctx, c)
