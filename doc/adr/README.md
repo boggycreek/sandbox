@@ -2,7 +2,7 @@
 
 This directory documents the foundational architectural decisions governing the **Agent Sandbox** system for the **v0.1.0-alpha** release.
 
-Records are numbered serially (`00001` through `00030`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
+Records are numbered serially (`00001` through `00031`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
 
 ---
 
@@ -18,7 +18,8 @@ Records are numbered serially (`00001` through `00030`) and organized by topic d
 | **`THEME-DEVEXP`** | Developer Experience & IDEs | One-shot IDE launching (`open`), managed OpenSSH config include, root-owned settings protection. |
 | **`THEME-PLUGINS`** | IDE Plugin Management | Strict three-verb plugin interface, JetBrains Gateway vs. Toolbox decoupling & native SSH sync. |
 | **`THEME-FLEET`** | Shared Fleet Services | Local Gitea git hosting & memory backup, standardized local OpenAI inference proxy. |
-| **`THEME-OPERATIONS`** | Operations, Diagnostics & Quality | Diagnostic doctor self-healing (`--fix`), unified update pipeline, >=90% test coverage gate. |
+| **`THEME-OPERATIONS`** | Operations, Diagnostics & Quality | Diagnostic doctor self-healing (`--fix`), unified update pipeline, >=90% test coverage gate, SBOM generation. |
+| **`THEME-GOVERNANCE`** | Compliance & Governance | Open-source attribution standards, third-party licensing compliance, legal notices. |
 
 ---
 
@@ -99,6 +100,11 @@ Records are numbered serially (`00001` through `00030`) and organized by topic d
   *Executive Summary:* The `sndbx update` command executes an atomic three-stage local deployment: git repository synchronization, native CLI compilation to `~/.local/bin`, and OCI image rebuilding.
 - **[00025 — Quality Gates and Coverage Enforcement](00025-QualityGatesAndCoverageEnforcement.md)**  
   *Executive Summary:* Enforces continuous quality gates requiring >=90% statement test coverage (`make test-coverage`), static analysis (`golangci-lint`), and isolated ephemeral integration test fixtures.
-- **[00030 — Open Source Attribution, Licensing Compliance, and SBOM Publishing Standards](00030-OpenSourceAttributionLicensingComplianceAndSbomPublishing.md)**  
-  *Executive Summary:* Establishes a comprehensive open-source attribution, legal licensing compliance, and automated Software Bill of Materials (SBOM) publishing standard. Differentiates human-centric recognition (`ACKNOWLEDGEMENTS.md`) from formal legal license texts (`NOTICES.md`), and automates SPDX/CycloneDX SBOM generation across CI/CD release pipelines and local build targets.
+- **[00031 — Automated Software Bill of Materials (SBOM) Generation and Release Publishing](00031-AutomatedSoftwareBillOfMaterialsAndReleasePublishing.md)**  
+  *Executive Summary:* Automates the generation and distribution of machine-readable Software Bill of Materials (SBOM) across release pipelines and local build targets. Leverages Syft to produce both SPDX and CycloneDX JSON formats for source repositories and compiled release archives, publishing them directly as release assets.
+
+### Compliance, Licensing & Governance (`THEME-GOVERNANCE`)
+- **[00030 — Open Source Attribution and Third-Party Licensing Notices](00030-OpenSourceAttributionAndThirdPartyLicensingNotices.md)**  
+  *Executive Summary:* Establishes a clear boundary between human-centric open-source recognition (`ACKNOWLEDGEMENTS.md`) and formal legal license texts (`NOTICES.md`). Reinforces our zero-dependency standard library Go architecture while systematically preserving third-party copyright notices and disclaimers for all container runtime, infrastructure, and session tooling components.
+
 
