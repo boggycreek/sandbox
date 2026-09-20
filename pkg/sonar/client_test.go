@@ -245,3 +245,129 @@ func TestGetComponentMeasuresErrors(t *testing.T) {
 		t.Fatal("expected decode error, got nil")
 	}
 }
+
+func TestEnsureUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/users/create" {
+			http.NotFound(w, r)
+			return
+		}
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "admin" || pass != "secret" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"user":{"login":"agent-bob"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{
+		BaseURL:   server.URL,
+		AdminUser: "admin",
+		AdminPass: "secret",
+	})
+	err := client.EnsureUser(context.Background(), "agent-bob", "pass123", "Bob Agent", "bob@local.sndbx")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Test 400 Bad Request (user already exists) is tolerated
+	server400 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "user exists", http.StatusBadRequest)
+	}))
+	defer server400.Close()
+	client400 := NewClient(ClientConfig{BaseURL: server400.URL})
+	if err := client400.EnsureUser(context.Background(), "agent-bob", "pass123", "", ""); err != nil {
+		t.Fatalf("expected 400 to be tolerated, got: %v", err)
+	}
+
+	// Test 500 error
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	defer server500.Close()
+	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
+	if err := client500.EnsureUser(context.Background(), "agent-bob", "pass123", "Bob", "bob@local.sndbx"); err == nil {
+		t.Fatal("expected error on 500, got nil")
+	}
+}
+
+func TestGenerateAndRevokeUserToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user_tokens/generate":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"login":"agent-bob","name":"agent-bob-token","token":"sqa_mock_token_123"}`))
+		case "/api/user_tokens/revoke":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL, AdminUser: "admin", AdminPass: "pass"})
+	token, err := client.GenerateUserToken(context.Background(), "agent-bob", "agent-bob-token")
+	if err != nil {
+		t.Fatalf("unexpected error generating token: %v", err)
+	}
+	if token != "sqa_mock_token_123" {
+		t.Errorf("expected token sqa_mock_token_123, got %s", token)
+	}
+
+	if err := client.RevokeUserToken(context.Background(), "agent-bob", "agent-bob-token"); err != nil {
+		t.Fatalf("unexpected error revoking token: %v", err)
+	}
+}
+
+func TestGenerateAndRevokeUserTokenErrors(t *testing.T) {
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer server500.Close()
+
+	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
+	_, err := client500.GenerateUserToken(context.Background(), "agent-bob", "token")
+	if err == nil {
+		t.Fatal("expected error on generate token 500")
+	}
+	if err := client500.RevokeUserToken(context.Background(), "agent-bob", "token"); err == nil {
+		t.Fatal("expected error on revoke token 500")
+	}
+
+	badJSONServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer badJSONServer.Close()
+	badClient := NewClient(ClientConfig{BaseURL: badJSONServer.URL})
+	_, err = badClient.GenerateUserToken(context.Background(), "agent-bob", "token")
+	if err == nil {
+		t.Fatal("expected decode error on bad JSON token response")
+	}
+}
+
+func TestDeactivateUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/users/deactivate" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	if err := client.DeactivateUser(context.Background(), "agent-bob"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "failed", http.StatusInternalServerError)
+	}))
+	defer server500.Close()
+	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
+	if err := client500.DeactivateUser(context.Background(), "agent-bob"); err == nil {
+		t.Fatal("expected error on 500, got nil")
+	}
+}

@@ -337,6 +337,9 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"-e", "SONAR_HOST_URL=http://sonarqube:9000",
 		"-e", "SONARQUBE_URL=http://sonarqube:9000",
 	)
+	if cfg.SonarToken != "" {
+		args = append(args, "-e", fmt.Sprintf("SONAR_TOKEN=%s", cfg.SonarToken))
+	}
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 

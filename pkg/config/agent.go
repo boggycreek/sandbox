@@ -40,6 +40,7 @@ type AgentConfig struct {
 	ModelURL      string    `json:"model_url,omitempty"`
 	ModelName     string    `json:"model_name,omitempty"`
 	ModelAPIKey   string    `json:"model_api_key,omitempty"`
+	SonarToken    string    `json:"sonar_token,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
