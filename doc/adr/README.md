@@ -2,7 +2,7 @@
 
 This directory documents the foundational architectural decisions governing the **Agent Sandbox** system for the **v0.1.0-alpha** release.
 
-Records are numbered serially (`00001` through `00026`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
+Records are numbered serially (`00001` through `00030`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
 
 ---
 
@@ -99,3 +99,6 @@ Records are numbered serially (`00001` through `00026`) and organized by topic d
   *Executive Summary:* The `sndbx update` command executes an atomic three-stage local deployment: git repository synchronization, native CLI compilation to `~/.local/bin`, and OCI image rebuilding.
 - **[00025 — Quality Gates and Coverage Enforcement](00025-QualityGatesAndCoverageEnforcement.md)**  
   *Executive Summary:* Enforces continuous quality gates requiring >=90% statement test coverage (`make test-coverage`), static analysis (`golangci-lint`), and isolated ephemeral integration test fixtures.
+- **[00030 — Open Source Attribution, Licensing Compliance, and SBOM Publishing Standards](00030-OpenSourceAttributionLicensingComplianceAndSbomPublishing.md)**  
+  *Executive Summary:* Establishes a comprehensive open-source attribution, legal licensing compliance, and automated Software Bill of Materials (SBOM) publishing standard. Differentiates human-centric recognition (`ACKNOWLEDGEMENTS.md`) from formal legal license texts (`NOTICES.md`), and automates SPDX/CycloneDX SBOM generation across CI/CD release pipelines and local build targets.
+

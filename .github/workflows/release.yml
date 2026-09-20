@@ -102,6 +102,22 @@ jobs:
           path: all-assets
           merge-multiple: true
 
+      - name: Install Syft for SBOM generation
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate Software Bill of Materials (SBOM)
+        run: |
+          echo "==> Generating repository source SBOMs..."
+          syft dir:. -o spdx-json=all-assets/agent-sandbox-source.spdx.json -o cyclonedx-json=all-assets/agent-sandbox-source.cyclonedx.json
+
+          echo "==> Generating release archive SBOMs..."
+          for archive in all-assets/*.tar.gz; do
+            if [ -f "${archive}" ]; then
+              base_name="$(basename "${archive}" .tar.gz)"
+              syft file:"${archive}" -o spdx-json="all-assets/${base_name}.spdx.json" -o cyclonedx-json="all-assets/${base_name}.cyclonedx.json"
+            fi
+          done
+
       - name: Generate SHA256 Checksums
         run: |
           cd all-assets
@@ -123,5 +139,5 @@ jobs:
             echo "Creating release ${TAG}..."
             gh release create "${TAG}" all-assets/* \
               --title "Agent Sandbox ${TAG}" \
-              --notes "Automated release containing prebuilt native CLI binaries for Linux (amd64, arm64) and macOS (amd64, arm64)."
+              --notes "Automated release containing prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) and Software Bill of Materials (SBOMs in SPDX & CycloneDX formats) for Linux and macOS."
           fi
