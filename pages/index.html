@@ -6,8 +6,8 @@
        license that can be found in the LICENSE file. -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent Sandbox (Alpha) — Autonomous Multi-Agent Containerization</title>
-  <meta name="description" content="Local, host-managed, multi-agent containerization platform designed to run autonomous AI coding agents safely in isolated Podman environments. Currently in active Alpha.">
+  <title>Agent Sandbox (Alpha) — Host-Managed Container Platform for AI Agents</title>
+  <meta name="description" content="Local, host-managed container platform for running autonomous AI coding agents inside rootless Podman environments. Currently in active Alpha.">
   <link rel="stylesheet" href="assets/css/style.css?v=3">
 </head>
 <body>
@@ -15,7 +15,7 @@
   <!-- Alpha Status Banner -->
   <div class="alpha-banner">
     <span class="alpha-tag">Alpha</span>
-    <span>Agent Sandbox is in active <strong>Alpha development</strong>. CLI commands, backplane specifications, and OCI image architectures are subject to breaking changes. <a href="https://github.com/boggycreek/sandbox/issues" target="_blank" rel="noopener">Feedback welcome!</a></span>
+    <span>Agent Sandbox is in active <strong>Alpha development</strong>. CLI commands, backplane specifications, and OCI image architectures are subject to changes. <a href="https://github.com/boggycreek/sandbox/issues" target="_blank" rel="noopener">Issue tracker</a></span>
   </div>
 
   <!-- Navigation -->
@@ -27,8 +27,8 @@
         <span class="badge-alpha">Alpha</span>
       </a>
       <nav class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#quickstart">Quick Start</a>
+        <a href="#features">Architecture</a>
+        <a href="#quickstart">Installation</a>
         <a href="https://github.com/boggycreek/sandbox" class="btn-github" target="_blank" rel="noopener">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
@@ -42,17 +42,17 @@
   <!-- Hero Section -->
   <section class="hero">
     <div class="hero-pill">
-      <span>⚡ Project Stage: Alpha • Active Development</span>
+      <span>Project Stage: Alpha • Active Development</span>
     </div>
-    <h1>Autonomous AI Agent Workspaces<br><span>Safely Isolated on Bare Metal</span></h1>
+    <h1>Autonomous Agent Workspaces<br><span>Isolated in Rootless Containers</span></h1>
     <p>
-      Give autonomous coding agents unrestricted developmental agency (<code>git</code>, <code>npm</code>, <code>rm</code>, compilers) 
-      inside containerized perimeters without human approval prompts or risk to your host secrets.
+      Run autonomous AI coding agents (<code>git</code>, <code>deno</code>, compilers, file operations) 
+      inside rootless Podman containers without per-command approval prompts or exposing host secrets.
     </p>
 
     <div class="hero-actions">
-      <a href="#quickstart" class="btn-primary">Get Started (Alpha)</a>
-      <a href="https://github.com/boggycreek/sandbox/blob/main/AGENTS.md" class="btn-secondary" target="_blank" rel="noopener">Read System Guide</a>
+      <a href="#quickstart" class="btn-primary">Installation</a>
+      <a href="https://github.com/boggycreek/sandbox/blob/main/AGENTS.md" class="btn-secondary" target="_blank" rel="noopener">Documentation</a>
     </div>
 
     <!-- Terminal Mockup -->
@@ -64,15 +64,15 @@
         <span class="terminal-title">bash — sndbx CLI</span>
       </div>
       <div class="terminal-body">
-        <p><span class="comment"># Provision shared messaging backplane and local forge</span></p>
+        <p><span class="comment"># Start shared Valkey backplane and Gitea forge</span></p>
         <p><span class="cmd">$</span> sndbx infra up</p>
         <br>
-        <p><span class="comment"># Create and launch an autonomous coding agent</span></p>
+        <p><span class="comment"># Provision and start an agent instance</span></p>
         <p><span class="cmd">$</span> sndbx agent create able as opencode --role coding-agent</p>
         <p><span class="cmd">$</span> sndbx agent start able</p>
         <br>
-        <p><span class="comment"># One-shot open in desktop IDE or attach for diagnostics</span></p>
-        <p><span class="cmd">$</span> sndbx agent open able --ide code</p>
+        <p><span class="comment"># Open in desktop IDE or attach to tmux supervisor</span></p>
+        <p><span class="cmd">$</span> sndbx agent open able in code</p>
         <p><span class="cmd">$</span> sndbx agent tmux able</p>
       </div>
     </div>
@@ -81,45 +81,45 @@
   <!-- Key Features -->
   <section class="features-section" id="features">
     <div class="section-title">
-      <h2>Engineered for High-Agency Multi-Agent Systems</h2>
-      <p>Local orchestration designed specifically for parallel, autonomous AI developers.</p>
+      <h2>System Architecture</h2>
+      <p>Host management, container isolation, and communication infrastructure for local agent fleets.</p>
     </div>
 
     <div class="grid-3">
       <div class="feature-card">
         <div class="feature-icon">🔒</div>
-        <h3>Container Security Boundary</h3>
-        <p>Agents execute in rootless Podman containers. Host file access and secrets are completely isolated from agent processes.</p>
+        <h3>Rootless Container Isolation</h3>
+        <p>Agents run under rootless Podman as unprivileged user <code>agent</code> (UID 1000). Host filesystem access and environment secrets remain isolated.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">⚡</div>
-        <h3>Valkey Redis Stream Backplane</h3>
-        <p>High-performance asynchronous messaging bus with Ed25519 cryptographic signatures, strict Valkey ACLs, and thread citations.</p>
+        <h3>Valkey Streams Backplane</h3>
+        <p>Asynchronous cross-agent messaging over Redis Streams with Ed25519 digital signatures, Valkey ACL isolation, and citation threading.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">🛠️</div>
-        <h3>Self-Healing Diagnostics</h3>
-        <p>Built-in <code>sndbx agent doctor</code> and <code>sndbx infra doctor</code> automatically diagnose and heal misconfigurations, keys, and containers.</p>
+        <h3>Diagnostic Self-Healing</h3>
+        <p><code>sndbx agent doctor</code> and <code>sndbx infra doctor</code> verify configurations, signing keys, network bridges, and auto-heal runtime defects.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">🐙</div>
         <h3>Local Gitea Git Forge</h3>
-        <p>Automated user registration, SSH key synchronization, and shared repositories for inter-agent pull requests and task management.</p>
+        <p>Self-hosted internal Git server providing repository hosting, user registration, pull requests, and Beads (<code>bd</code>) task tracking.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">💻</div>
-        <h3>Zero-Touch IDE Ensembling</h3>
-        <p>Managed OpenSSH configurations integrate seamlessly with VS Code and JetBrains Gateway with isolated per-alias host keys.</p>
+        <h3>IDE Remote Development</h3>
+        <p>Managed OpenSSH configurations support remote development attachment from VS Code and JetBrains IDEs using isolated host aliases.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">🧠</div>
         <h3>Local Inference Gateway</h3>
-        <p>Built-in <code>llm-gateway</code> host bridges allow agents to interact with local Ollama, vLLM, or LiteLLM models seamlessly.</p>
+        <p>Internal <code>llm-gateway</code> bridge routes agent requests to OpenAI-compatible host inference servers (Ollama, vLLM, llama.cpp).</p>
       </div>
     </div>
   </section>
@@ -127,8 +127,8 @@
   <!-- Quick Start -->
   <section class="features-section" id="quickstart" style="background-color: var(--bg-secondary); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color);">
     <div class="section-title">
-      <h2>Install via One-Liner</h2>
-      <p>Bootstrap your local agent fleet in seconds on macOS or Linux.</p>
+      <h2>Installation</h2>
+      <p>Bootstrap the sandbox environment on macOS or Linux.</p>
     </div>
 
     <div class="terminal-card">
@@ -136,16 +136,16 @@
         <div class="dot red"></div>
         <div class="dot yellow"></div>
         <div class="dot green"></div>
-        <span class="terminal-title">curl — installer</span>
+        <span class="terminal-title">bash</span>
       </div>
       <div class="terminal-body">
-        <p><span class="comment"># Download and install the latest host binaries</span></p>
+        <p><span class="comment"># Install host management CLI and dependencies</span></p>
         <p><span class="cmd">curl</span> -fsSL https://raw.githubusercontent.com/boggycreek/sandbox/main/install.sh | bash</p>
       </div>
     </div>
 
     <div class="alpha-note">
-      ⚠️ <strong>Alpha Notice:</strong> Agent Sandbox is actively under development. Interfaces and behaviors may evolve between alpha releases. Please submit feedback or bug reports on <a href="https://github.com/boggycreek/sandbox/issues" target="_blank" rel="noopener">GitHub Issues</a>.
+      <strong>Alpha Notice:</strong> Agent Sandbox is actively under development. Interfaces and behaviors may change between releases. Please report issues on <a href="https://github.com/boggycreek/sandbox/issues" target="_blank" rel="noopener">GitHub</a>.
     </div>
   </section>
 
