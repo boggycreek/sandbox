@@ -18,15 +18,19 @@ import (
 
 // ClientConfig holds configuration parameters for the SonarQube API client.
 type ClientConfig struct {
-	BaseURL string
-	Token   string
-	Timeout time.Duration
+	BaseURL   string
+	Token     string
+	AdminUser string
+	AdminPass string
+	Timeout   time.Duration
 }
 
 // Client interacts with the SonarQube REST API.
 type Client struct {
 	baseURL    string
 	token      string
+	adminUser  string
+	adminPass  string
 	httpClient *http.Client
 }
 
@@ -87,6 +91,12 @@ type componentMeasuresWrapper struct {
 	} `json:"component"`
 }
 
+type generateTokenResponse struct {
+	Login string `json:"login"`
+	Name  string `json:"name"`
+	Token string `json:"token"`
+}
+
 // NewClient instantiates a SonarQube API client.
 func NewClient(cfg ClientConfig) *Client {
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
@@ -98,8 +108,10 @@ func NewClient(cfg ClientConfig) *Client {
 		timeout = 5 * time.Second
 	}
 	return &Client{
-		baseURL: baseURL,
-		token:   cfg.Token,
+		baseURL:   baseURL,
+		token:     cfg.Token,
+		adminUser: cfg.AdminUser,
+		adminPass: cfg.AdminPass,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -256,8 +268,133 @@ func (c *Client) GetComponentMeasures(ctx context.Context, componentKey string, 
 	return wrapper.Component.Measures, nil
 }
 
+// EnsureUser creates a user account in SonarQube if it does not already exist.
+func (c *Client) EnsureUser(ctx context.Context, login, password, name, email string) error {
+	params := url.Values{}
+	params.Set("login", login)
+	params.Set("password", password)
+	if name == "" {
+		name = login
+	}
+	params.Set("name", name)
+	if email != "" {
+		params.Set("email", email)
+	}
+
+	endpoint := fmt.Sprintf("%s/api/users/create", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed creating user request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.authenticate(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed executing user create request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 200 OK or 400 Bad Request (if already exists)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("user create failed with HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// GenerateUserToken creates an analysis or user token for the specified user login.
+func (c *Client) GenerateUserToken(ctx context.Context, login, tokenName string) (string, error) {
+	// First revoke any existing token with the same name to prevent conflict
+	_ = c.RevokeUserToken(ctx, login, tokenName)
+
+	params := url.Values{}
+	params.Set("login", login)
+	params.Set("name", tokenName)
+
+	endpoint := fmt.Sprintf("%s/api/user_tokens/generate", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed creating token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.authenticate(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed executing token generate request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("token generation failed with HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp generateTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed decoding token response: %w", err)
+	}
+	return tokenResp.Token, nil
+}
+
+// RevokeUserToken revokes a user token by name.
+func (c *Client) RevokeUserToken(ctx context.Context, login, tokenName string) error {
+	params := url.Values{}
+	params.Set("login", login)
+	params.Set("name", tokenName)
+
+	endpoint := fmt.Sprintf("%s/api/user_tokens/revoke", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed creating revoke token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.authenticate(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed executing revoke token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("revoke token failed with HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// DeactivateUser deactivates a user account in SonarQube.
+func (c *Client) DeactivateUser(ctx context.Context, login string) error {
+	params := url.Values{}
+	params.Set("login", login)
+
+	endpoint := fmt.Sprintf("%s/api/users/deactivate", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
+	if err != nil {
+		return fmt.Errorf("failed creating deactivate user request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.authenticate(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed executing deactivate user request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("deactivate user failed with HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 func (c *Client) authenticate(req *http.Request) {
 	if c.token != "" {
 		req.SetBasicAuth(c.token, "")
+	} else if c.adminUser != "" {
+		req.SetBasicAuth(c.adminUser, c.adminPass)
 	}
 }

@@ -210,6 +210,27 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	registerGiteaUser(context.Background(), cfg, paths)
 	deprovisionGiteaUser(context.Background(), "acl-test-agent")
 
+	// Mock SonarQube server for registerSonarUser and deprovisionSonarUser
+	sonarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/system/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"UP"}`))
+		case "/api/user_tokens/generate":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"token":"sqa_test_token"}`))
+		case "/api/user_tokens/revoke":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer sonarServer.Close()
+	os.Setenv("SONAR_HOST_URL", sonarServer.URL)
+
+	registerSonarUser(context.Background(), cfg, paths)
+	deprovisionSonarUser(context.Background(), "acl-test-agent")
+
 	// 9. Corrupted JSON file in list & handleAgentList error branch
 	corruptFile := filepath.Join(paths.AgentsDir, "corrupted.json")
 	_ = os.WriteFile(corruptFile, []byte("{invalid-json"), 0600)

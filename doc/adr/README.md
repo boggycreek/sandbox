@@ -89,6 +89,8 @@ Records are numbered serially (`00001` through `00026`) and organized by topic d
   *Executive Summary:* Integrates SonarQube Server Community Edition into the shared sandbox infrastructure alongside Valkey and Gitea. Agents utilize SonarQube for multi-tiered deterministic mechanical analysis — contrasting with probabilistic LLM code review — through automated defect discovery via a native Model Context Protocol (MCP) server and strict Quality Gate verification across fleet repositories.
 - **[00028 — In-Container Fleet Task Coordination via Local Gitea-Backed Beads](00028-InContainerFleetTaskCoordinationViaLocalGiteaBackedBeads.md)**  
   *Executive Summary:* Establishes an air-gapped, distributed task and dependency tracking architecture for autonomous in-container agents using Beads (`bd`) backed by the local Gitea server (`http://gitea:3000/fleet/tasks.git`), maintaining strict architectural separation from host-level platform development on GitHub.
+- **[00029 — Per-Agent SonarQube User Account and Analysis Token Provisioning Lifecycle](00029-SonarQubeUserAccountAndTokenProvisioningLifecycle.md)**  
+  *Executive Summary:* Automates the provisioning and deprovisioning of dedicated SonarQube user accounts and analysis tokens for sandbox agents. During agent creation, a scoped analysis token is generated and injected into the container environment as `SONAR_TOKEN`. Agent retirement revokes active analysis tokens and deactivates the SonarQube user account.
 
 ### Operations, Diagnostics & Quality (`THEME-OPERATIONS`)
 - **[00023 — Comprehensive Diagnostic Doctor and Self-Healing](00023-ComprehensiveDoctorAndSelfHealing.md)**  

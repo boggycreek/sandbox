@@ -239,6 +239,48 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	if reportErr.WarningCount == 0 {
 		t.Errorf("expected warning for 500 server error in Gitea check")
 	}
+
+	// 13. SonarQube agent check & heal tests
+	sonarMockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/system/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"UP"}`))
+		case "/api/users/create":
+			w.WriteHeader(http.StatusOK)
+		case "/api/user_tokens/generate":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"token":"sqa_test_healed_token"}`))
+		case "/api/user_tokens/revoke":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer sonarMockServer.Close()
+	os.Setenv("SONAR_HOST_URL", sonarMockServer.URL)
+
+	cfg.SonarToken = ""
+	reportSonarHeal := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSonar(ctx, cfg, paths, reportSonarHeal)
+	if reportSonarHeal.HealedCount == 0 || cfg.SonarToken != "sqa_test_healed_token" {
+		t.Errorf("expected SonarQube token to be auto-generated and healed")
+	}
+
+	// Run again now that token exists
+	reportSonarOK := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSonar(ctx, cfg, paths, reportSonarOK)
+	if len(reportSonarOK.Checks) == 0 || reportSonarOK.Checks[0].Status != StatusOK {
+		t.Errorf("expected StatusOK for valid SonarQube user check")
+	}
+
+	// Offline SonarQube branch
+	os.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65505")
+	reportSonarOffline := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSonar(ctx, cfg, paths, reportSonarOffline)
+	if reportSonarOffline.WarningCount == 0 {
+		t.Errorf("expected warning on offline SonarQube")
+	}
 }
 
 func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {

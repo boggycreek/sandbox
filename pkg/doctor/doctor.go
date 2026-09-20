@@ -25,6 +25,7 @@ import (
 	"github.com/boggycreek/sandbox/pkg/gitea"
 	"github.com/boggycreek/sandbox/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
 // CheckStatus indicates the outcome of an individual diagnostic check
@@ -87,10 +88,13 @@ func DiagnoseAndHealAgent(ctx context.Context, agentName string, paths config.Pa
 	// 6. Valkey Backplane Registration Check & Heal
 	checkAndHealValkey(ctx, cfg, paths, report)
 
-	// 6. Gitea Git Forge Registration Check & Heal
+	// 7. Gitea Git Forge Registration Check & Heal
 	checkAndHealGitea(ctx, cfg, paths, report)
 
-	// 7. Container State & SSH Config Sync
+	// 8. SonarQube Mechanical Analysis Registration Check & Heal
+	checkAndHealSonar(ctx, cfg, paths, report)
+
+	// 9. Container State & SSH Config Sync
 	checkAndHealContainer(ctx, cfg, paths, report)
 
 	return report, nil
@@ -458,6 +462,65 @@ func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths confi
 		Name:    "Gitea Git Forge",
 		Status:  StatusOK,
 		Message: "User account, SSH key, and fleet organization membership verified",
+	})
+}
+
+func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	if adminPass == "" {
+		adminPass = "admin"
+	}
+	adminUser := os.Getenv("SONAR_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+
+	sonarURL := os.Getenv("SONAR_HOST_URL")
+	if sonarURL == "" {
+		sonarURL = os.Getenv("SONARQUBE_URL")
+	}
+	if sonarURL == "" {
+		sonarURL = "http://127.0.0.1:9000"
+	}
+
+	client := sonar.NewClient(sonar.ClientConfig{
+		BaseURL:   sonarURL,
+		AdminUser: adminUser,
+		AdminPass: adminPass,
+		Timeout:   1 * time.Second,
+	})
+
+	if _, err := client.GetSystemStatus(ctx); err != nil {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "SonarQube Analysis",
+			Status:  StatusWarning,
+			Message: "SonarQube infrastructure is offline (skipped user sync; start via `sndbx infra up`)",
+		})
+		report.WarningCount++
+		return
+	}
+
+	_ = client.EnsureUser(ctx, cfg.Name, cfg.Password, cfg.Name, fmt.Sprintf("%s@local.sndbx", cfg.Name))
+	if cfg.SonarToken == "" {
+		token, err := client.GenerateUserToken(ctx, cfg.Name, fmt.Sprintf("%s-agent-token", cfg.Name))
+		if err == nil && token != "" {
+			cfg.SonarToken = token
+			_ = config.SaveAgentConfig(cfg, paths)
+			report.Checks = append(report.Checks, CheckItem{
+				Name:    "SonarQube Analysis",
+				Status:  StatusHealed,
+				Message: "Generated missing SonarQube user analysis token",
+				Healed:  true,
+			})
+			report.HealedCount++
+			return
+		}
+	}
+
+	report.Checks = append(report.Checks, CheckItem{
+		Name:    "SonarQube Analysis",
+		Status:  StatusOK,
+		Message: "User account and analysis token verified",
 	})
 }
 

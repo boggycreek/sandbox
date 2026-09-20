@@ -24,6 +24,7 @@ import (
 	"github.com/boggycreek/sandbox/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/plugin"
 	"github.com/boggycreek/sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/pkg/sonar"
 	"text/tabwriter"
 )
 
@@ -259,6 +260,9 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	// Register User, Key, and Org Membership with live Gitea instance if running
 	registerGiteaUser(ctx, cfg, paths)
 
+	// Register User and Analysis Token with live SonarQube instance if running
+	registerSonarUser(ctx, cfg, paths)
+
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
 	fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
 	fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
@@ -339,6 +343,47 @@ func registerGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 
 	// 3. Add user to default fleet organization
 	_ = client.AddOrgMember(ctx, "fleet", cfg.Name)
+}
+
+func registerSonarUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) {
+	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	if adminPass == "" {
+		adminPass = "admin"
+	}
+	adminUser := os.Getenv("SONAR_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+
+	sonarURL := os.Getenv("SONAR_HOST_URL")
+	if sonarURL == "" {
+		sonarURL = os.Getenv("SONARQUBE_URL")
+	}
+	if sonarURL == "" {
+		sonarURL = "http://127.0.0.1:9000"
+	}
+
+	client := sonar.NewClient(sonar.ClientConfig{
+		BaseURL:   sonarURL,
+		AdminUser: adminUser,
+		AdminPass: adminPass,
+		Timeout:   2 * time.Second,
+	})
+
+	// Check if SonarQube is responsive
+	if _, err := client.GetSystemStatus(ctx); err != nil {
+		return
+	}
+
+	// 1. Provision user in SonarQube
+	_ = client.EnsureUser(ctx, cfg.Name, cfg.Password, cfg.Name, fmt.Sprintf("%s@local.sndbx", cfg.Name))
+
+	// 2. Generate agent-specific analysis token
+	token, err := client.GenerateUserToken(ctx, cfg.Name, fmt.Sprintf("%s-agent-token", cfg.Name))
+	if err == nil && token != "" {
+		cfg.SonarToken = token
+		_ = config.SaveAgentConfig(cfg, paths)
+	}
 }
 
 func handleAgentStart(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
@@ -736,6 +781,9 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 	// 4. Deprovision Gitea user & keys
 	deprovisionGiteaUser(ctx, name)
 
+	// 4b. Deprovision SonarQube user & analysis tokens
+	deprovisionSonarUser(ctx, name)
+
 	// 5. Update SSH config file
 	_ = runtime.SyncSSHConfigFile(ctx, paths)
 
@@ -744,6 +792,7 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 	fmt.Fprintf(stdout, "  ✓ Local configuration and secrets purged\n")
 	fmt.Fprintf(stdout, "  ✓ Valkey ACL user and backplane identity removed\n")
 	fmt.Fprintf(stdout, "  ✓ Gitea user account and authorized keys purged\n")
+	fmt.Fprintf(stdout, "  ✓ SonarQube user account and analysis tokens purged\n")
 	return 0
 }
 
@@ -793,6 +842,35 @@ func deprovisionGiteaUser(ctx context.Context, agentName string) {
 	})
 
 	_ = client.DeleteUser(ctx, agentName, true)
+}
+
+func deprovisionSonarUser(ctx context.Context, agentName string) {
+	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	if adminPass == "" {
+		adminPass = "admin"
+	}
+	adminUser := os.Getenv("SONAR_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+
+	sonarURL := os.Getenv("SONAR_HOST_URL")
+	if sonarURL == "" {
+		sonarURL = os.Getenv("SONARQUBE_URL")
+	}
+	if sonarURL == "" {
+		sonarURL = "http://127.0.0.1:9000"
+	}
+
+	client := sonar.NewClient(sonar.ClientConfig{
+		BaseURL:   sonarURL,
+		AdminUser: adminUser,
+		AdminPass: adminPass,
+		Timeout:   2 * time.Second,
+	})
+
+	_ = client.RevokeUserToken(ctx, agentName, fmt.Sprintf("%s-agent-token", agentName))
+	_ = client.DeactivateUser(ctx, agentName)
 }
 
 func handleAgentList(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
