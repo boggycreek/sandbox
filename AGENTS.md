@@ -32,7 +32,7 @@ agent-sandbox/
 │   ├── harness/            # Embedded Valkey test server harness
 │   └── integration/        # End-to-end integration tests (bp, sndbx, infra lifecycle)
 ├── doc/
-│   ├── adr/                # Architecture Decision Records (00001 - 00030)
+│   ├── adr/                # Architecture Decision Records (00001 - 00028)
 │   └── ai/                 # Progressive disclosure knowledge base optimized for AI agents
 ├── install.sh              # Host installation & bootstrap script
 ├── dev-setup.sh            # Developer environment setup & verification script
@@ -71,7 +71,8 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
 - **Agent Lifecycle**:
   - `sndbx agent create <name> [as <type>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
   - `sndbx agent start <name>`: Starts container via Podman.
-  - `sndbx agent connect <name>`: Attaches interactively to container tmux supervisor.
+  - `sndbx agent tmux <name>`: Attaches interactively to container tmux supervisor.
+  - `sndbx agent open <name> [in <ide>] [--no-launch]`: Launches desktop IDE remote development (VS Code, JetBrains).
   - `sndbx agent ssh <name>`: Direct SSH into unprivileged agent environment.
   - `sndbx agent ssh-config [name] [--all]`: Emits OpenSSH configuration stanzas for IDE Remote-SSH discovery.
   - `sndbx agent doctor <name>`: Diagnoses agent configuration, keys, storage, and infrastructure provisioning, and auto-heals defects.
@@ -84,6 +85,10 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
   - `sndbx infra list`: Inspects runtime status and ports.
   - `sndbx infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Gitea repos, and auto-heals defects.
   - `sndbx infra down`: Halts infrastructure containers.
+- **IDE Plugins & Integration**:
+  - `sndbx plugin add <gateway|toolbox|vscode>`: Installs and configures IDE plugin / SSH integration.
+  - `sndbx plugin remove <gateway|toolbox|vscode>`: Uninstalls and unlinks IDE plugin configuration.
+  - `sndbx plugin list`: Lists supported and installed IDE plugins.
 - **Update & Synchronization**:
   - `sndbx update`: Orchestrates complete host update (synchronizes git repository, rebuilds and installs native CLI binaries, and builds all native OCI images).
 

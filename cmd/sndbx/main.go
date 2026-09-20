@@ -111,8 +111,8 @@ Infra Commands:
   sndbx infra doctor
 
 Plugin Commands:
-  sndbx plugin add <toolbox|vscode>
-  sndbx plugin remove <toolbox|vscode>
+  sndbx plugin add <gateway|toolbox|vscode>
+  sndbx plugin remove <gateway|toolbox|vscode>
   sndbx plugin list
 
 Update Command:
@@ -145,7 +145,7 @@ Commands:
     Attach interactively to the agent container's tmux supervisor.
 
   open <name> [in <ide>] [--ide <ide>] [--no-launch]
-    Launch desktop IDE remote development environment (VS Code or JetBrains WebStorm).
+    Launch desktop IDE remote development environment (VS Code, GoLand, CLion, WebStorm, PyCharm, etc.).
 
   ssh <name>
     Connect directly via SSH to the agent's unprivileged environment.
