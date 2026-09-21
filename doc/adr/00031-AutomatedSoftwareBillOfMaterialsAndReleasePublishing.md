@@ -56,7 +56,7 @@ We establish automated SBOM generation integrated into our release workflows and
 - The repository provides a `make sbom` target:
   - Outputs `dist/sbom/agent-sandbox.spdx.json` and `dist/sbom/agent-sandbox.cyclonedx.json`.
   - Audits local repository and compiled artifacts on demand.
-- `dev-setup.sh` inspects the local presence of `syft` and provides installation guidance.
+- `setup.sh` inspects the local presence of `syft` and provides installation guidance.
 
 ---
 

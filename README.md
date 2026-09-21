@@ -94,8 +94,7 @@ sndbx update                                             # Synchronize git repo,
 Detailed architectural specifications and decision records:
 
 - **[AGENTS.md](AGENTS.md)**: System guide covering runtime architecture, messaging protocol, local inference gateway, security boundaries, and engineering quality gates.
-- **[Architecture Decision Records (`doc/adr/`)](doc/adr/README.md)**: Complete log of architectural decision records (00001 through 00028).
-- **[Developer Workflow & Contributing](CONTRIBUTING.md)**: Contributor guide, code quality gates, and Beads issue tracking workflow.
+- **[Developer Setup & Contributing Guide](CONTRIBUTING.md)**: Workstation setup (`setup.sh`), environment doctor (`setup.sh --doctor`), XDG Go management, quality gates, and Beads workflow.
 
 ---
 

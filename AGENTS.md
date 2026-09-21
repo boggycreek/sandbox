@@ -35,7 +35,7 @@ agent-sandbox/
 │   ├── adr/                # Architecture Decision Records (00001 - 00028)
 │   └── ai/                 # Progressive disclosure knowledge base optimized for AI agents
 ├── install.sh              # Host installation & bootstrap script
-├── dev-setup.sh            # Developer environment setup & verification script
+├── setup.sh                # Multi-platform development environment setup & diagnostic script
 └── Makefile                # Quality gates, tests, linting, and build targets
 ```
 
@@ -49,7 +49,7 @@ For in-depth architectural specifications and operational protocols, refer to th
 - **[OCI Image Resolution & Tagging](doc/ai/image-resolution.md)**: 3-tier image resolution, well-known presets, local store discovery, remote OCI refs (ADR 00029).
 - **[Testing Guidelines & Coverage Gates](doc/ai/testing-guidelines.md)**: Strict >=90% test coverage enforcement, rootless Podman cleanup patterns, containerized smoke testing.
 - **[Diagnostic Doctor & Auto-Healing](doc/ai/doctor-diagnostics.md)**: `sndbx agent doctor` and `sndbx infra doctor` diagnostic checks and self-healing.
-- **[Contributor Guide & Task Tracking](CONTRIBUTING.md)**: Standards, quality gates, and Beads (`bd`) task tracking for developers of this repository.
+- **[Workstation Setup & Contributor Guide](CONTRIBUTING.md)**: Automated `setup.sh`, XDG multi-version Go management, `--doctor` health check, quality gates, and Beads (`bd`) task tracking.
 
 ---
 
@@ -167,7 +167,7 @@ make format            # Auto-format Go source code (gofmt)
 make build             # Compile all native binaries into bin/
 
 # Development Setup
-./dev-setup.sh         # Verify/install development tools (golangci-lint, shellcheck, gosec, etc.)
+./setup.sh             # Setup development environment & diagnostic doctor
 ./install.sh           # Install/update sndbx and bp binaries in ~/.local/bin
 
 # Environment & Test Cleanup

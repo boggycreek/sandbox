@@ -14,7 +14,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress
+.PHONY: all help setup dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress
 
 all: check build
 
@@ -25,8 +25,10 @@ help: ## Show available Makefile targets
 
 # --- Development & Setup ---
 
-dev-setup: ## Run developer workstation configuration and dependency checks
-	@./dev-setup.sh
+setup: ## Run developer workstation configuration and dependency checks
+	@./setup.sh
+
+dev-setup: setup ## Alias for setup
 
 # --- Quality Gates: Linting & Static Analysis ---
 
@@ -37,15 +39,15 @@ lint-go: ## Run golangci-lint on Go code
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
-		echo "Warning: golangci-lint not installed. Run ./dev-setup.sh to install."; \
+		echo "Warning: golangci-lint not installed. Run ./setup.sh to install."; \
 	fi
 
 lint-shell: ## Run shellcheck on bash scripts
 	@echo "==> Running shellcheck..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck install.sh dev-setup.sh scripts/clean-test-env.sh scripts/deadcode-check.sh scripts/build-sonarqube-image.sh; \
+		shellcheck install.sh setup.sh scripts/clean-test-env.sh scripts/deadcode-check.sh scripts/build-sonarqube-image.sh; \
 	else \
-		echo "Warning: shellcheck not installed. Run ./dev-setup.sh to install."; \
+		echo "Warning: shellcheck not installed. Run ./setup.sh to install."; \
 	fi
 
 format: ## Auto-format Go code and scripts
