@@ -52,6 +52,7 @@ GO_CURRENT_LINK="${GO_SDK_BASE}/current"
 export GOPATH="${XDG_DATA_HOME}/go"
 export GOCACHE="${XDG_CACHE_HOME}/go-build"
 export GOBIN="${XDG_BIN_HOME}"
+unset GOROOT
 
 # Resolve repository root
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -554,7 +555,7 @@ run_environment_doctor() {
       warnings=$((warnings + 1))
       case "${cmd}" in
         golangci-lint)
-          remediation+=("Install golangci-lint: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \${HOME}/.local/bin")
+          remediation+=("Install golangci-lint: ./setup.sh (or go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)")
           ;;
         shellcheck)
           remediation+=("Install shellcheck via system package manager (apt/brew/dnf)")
@@ -668,7 +669,7 @@ mkdir -p "${XDG_CACHE_HOME}"
 mkdir -p "${GO_SDK_BASE}"
 
 # 1. Platform Detection
-echo "[1/6] Detecting operating system and architecture..."
+echo "[1/7] Detecting operating system and architecture..."
 echo "  Platform: ${OS_PRETTY} (${OS}/${ARCH})"
 
 # Determine Package Manager
@@ -714,7 +715,7 @@ fi
 
 # 2. Package Manager Dependencies Installation
 echo
-echo "[2/6] Installing development toolchain packages..."
+echo "[2/7] Installing development toolchain packages..."
 
 case "${PKG_MGR}" in
   brew)
@@ -786,7 +787,7 @@ esac
 
 # 3. Multi-Version Go Toolchain Setup (under XDG)
 echo
-echo "[3/6] Setting up Go toolchain under XDG path (${GO_SDK_BASE})..."
+echo "[3/7] Setting up Go toolchain under XDG path (${GO_SDK_BASE})..."
 
 if [ "${SKIP_GO}" = false ]; then
   install_xdg_go "${TARGET_GO_VER}"
@@ -796,7 +797,7 @@ fi
 
 # 4. Beads Issue Tracker CLI (bd) Setup
 echo
-echo "[4/6] Setting up Beads (bd) issue tracking CLI..."
+echo "[4/7] Setting up Beads (bd) issue tracking CLI..."
 if [ "${SKIP_BEADS}" = false ]; then
   if [ -x "${XDG_BIN_HOME}/bd" ]; then
     echo "  ✓ Found bd at: ${XDG_BIN_HOME}/bd"
@@ -832,9 +833,40 @@ else
   echo "  Skipping Beads CLI setup (--skip-beads)."
 fi
 
-# 5. Local Repository Configurations & Templates
+# 5. Developer Quality & Linting Tools (golangci-lint)
 echo
-echo "[5/6] Configuring local repository development environment..."
+echo "[5/7] Setting up developer quality and linting tools..."
+if [ "${SKIP_TOOLS}" = false ]; then
+  if [ -x "${XDG_BIN_HOME}/golangci-lint" ]; then
+    echo "  ✓ Found golangci-lint at: ${XDG_BIN_HOME}/golangci-lint"
+  elif command -v golangci-lint >/dev/null 2>&1; then
+    echo "  ✓ Found golangci-lint at: $(command -v golangci-lint)"
+  else
+    echo "  Installing golangci-lint into ${XDG_BIN_HOME}..."
+    if [ "${DRY_RUN}" = true ]; then
+      echo "  [DRY-RUN] GOBIN=${XDG_BIN_HOME} go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+    else
+      ACTIVE_GO="${XDG_BIN_HOME}/go"
+      if ! [ -x "${ACTIVE_GO}" ] && command -v go >/dev/null 2>&1; then
+        ACTIVE_GO="$(command -v go)"
+      fi
+      if [ -x "${ACTIVE_GO}" ]; then
+        GOBIN="${XDG_BIN_HOME}" "${ACTIVE_GO}" install github.com/golangci/golangci-lint/cmd/golangci-lint@latest >/dev/null 2>&1 || true
+      fi
+      if [ -x "${XDG_BIN_HOME}/golangci-lint" ]; then
+        echo "  ✓ Installed golangci-lint to ${XDG_BIN_HOME}/golangci-lint"
+      else
+        echo "  ⚠️  Could not automatically install golangci-lint."
+      fi
+    fi
+  fi
+else
+  echo "  Skipping developer tools setup (--skip-tools)."
+fi
+
+# 6. Local Repository Configurations & Templates
+echo
+echo "[6/7] Configuring local repository development environment..."
 
 # Create developer .env template if missing in repo root
 if [ ! -f "${REPO_ROOT}/.env" ]; then
@@ -882,9 +914,9 @@ if [ -d "${REPO_ROOT}/.githooks" ]; then
   fi
 fi
 
-# 6. Environment and PATH Verification
+# 7. Environment and PATH Verification
 echo
-echo "[6/6] Verifying PATH environment..."
+echo "[7/7] Verifying PATH environment..."
 PATH_OK=false
 IFS=':' read -ra PATH_DIRS <<< "${PATH}"
 for dir in "${PATH_DIRS[@]}"; do

@@ -581,4 +581,3 @@ func TestMockedInfraStack(t *testing.T) {
 	_ = StartInfraStack(ctx, paths, "p1", "p2", "u1")
 	restore9()
 }
-

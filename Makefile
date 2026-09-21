@@ -4,6 +4,7 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -euo pipefail -c
 
 # Go build settings
+unexport GOROOT
 GO ?= go
 GOFLAGS ?=
 COVERAGE_THRESHOLD := 90.0
@@ -143,6 +144,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, retention-sweep)
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./cmd/sndbx; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./cmd/bpd; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./cmd/bp-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./cmd/sonar-mcp; \
 		if [ -d ./cmd/retention-sweep ]; then \
 			$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
