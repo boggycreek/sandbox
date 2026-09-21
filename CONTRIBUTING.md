@@ -7,22 +7,162 @@ Use of this source code is governed by an MIT-style
 license that can be found in the LICENSE file.
 -->
 
-Thank you for contributing to the **Agent Sandbox** platform. This guide outlines the development standards, contribution protocols, and repository task tracking tools.
+Thank you for your interest in **Agent Sandbox**! This document provides governance guidelines and complete instructions for configuring your local developer environment, managing multi-version Go toolchains under XDG paths, running system diagnostics via `--doctor`, executing test suites, and tracking tasks using Beads (`bd`).
 
 ---
 
-## 1. Development Prerequisites & Setup
+## 1. Governance & External Contributions
 
-The sandbox repository is a pure **Go monorepo** with rootless **Podman** container dependencies:
+At this time, **Agent Sandbox is maintained solely by Boggy Creek Software LLC and is not accepting external pull requests or feature requests**. Public contributions and pull requests are disabled to maintain strict security boundaries and development velocity.
 
-1. **Go 1.24+**: Ensure standard Go toolchain is installed.
-2. **Podman 5.0+**: Configured for rootless user operation (`subuid`/`subgid` allocated).
-3. **Beads CLI (`bd`)**: Version 1.3.0+ for repository task tracking (`brew install beads` or download from [gastownhall/beads releases](https://github.com/gastownhall/beads/releases)).
-4. **Environment Setup**: Run `./dev-setup.sh` to verify system dependencies, linters (`golangci-lint`, `shellcheck`), and PATH configurations.
+If you are inspecting, developing, or maintaining a fork of Agent Sandbox, feel free to inspect and modify the code under the terms of the [MIT License](LICENSE). The instructions below detail the environment setup, tooling, and standards used to build and test the project.
 
 ---
 
-## 2. Task Tracking for Contributors: Beads (`bd`)
+## 2. Automated Development Environment Setup (`setup.sh`)
+
+To streamline onboarding across macOS and Linux developer workstations, `agent-sandbox` provides a root setup script: [`setup.sh`](setup.sh).
+
+The script detects your operating system, CPU architecture, and available package manager, then installs and configures all required toolchains and dependencies.
+
+### Quick Start
+
+From the root of the repository, execute:
+
+```bash
+./setup.sh
+```
+
+For unattended or automated environments (e.g., CI runners, container builds, cloud devboxes), pass `-y` to run without confirmation prompts:
+
+```bash
+./setup.sh -y
+```
+
+If running without root/sudo privileges:
+
+```bash
+./setup.sh --no-sudo
+```
+
+---
+
+## 3. Environment Diagnostics (`setup.sh --doctor`)
+
+To verify whether your system has all required build tools, rootless Podman configuration, proper directory permissions, and valid XDG paths, run the diagnostic doctor:
+
+```bash
+./setup.sh --doctor
+```
+
+### What `--doctor` Inspects:
+
+1. **Operating System & Hardware Architecture**: Platform (`darwin` / `linux`), kernel release, and CPU architecture (`amd64` / `arm64`).
+2. **XDG Base Directory Compliance**:
+   - `XDG_BIN_HOME` (`~/.local/bin`), `XDG_DATA_HOME` (`~/.local/share`), `XDG_CONFIG_HOME` (`~/.config`), and `XDG_CACHE_HOME` (`~/.cache`).
+   - PATH inclusion of `~/.local/bin`.
+   - Permissions of `.beads` directory (verifies `0700` mode).
+3. **Go SDKs & Multi-Version Toolchains**:
+   - Active Go binary path and resolved compiler version (`go version`).
+   - Compatibility against the minimum version required by `go.mod` (e.g., Go 1.25.8).
+   - Inventory of all installed XDG Go SDKs, indicating which one is active.
+4. **Core Build Tools**: Presence and versions of `git`, `make`, C compiler (`gcc` or `clang`), `cmake`, and `pkg-config`.
+5. **Container Engine (Podman — ADR 00019)**:
+   - Podman binary presence and version.
+   - Rootless container execution status.
+6. **Developer Quality Gates, Linters & SCA Tools**:
+   - `golangci-lint`: Go monorepo linter.
+   - `shellcheck`: Bash script safety and correctness analyzer.
+   - `govulncheck`: Go Software Composition Analysis (SCA).
+   - `gosec`: AST-based security vulnerability scanner.
+   - `deadcode`: Unreachable code reachability analyzer.
+   - `syft`: Software Bill of Materials (SBOM) generator.
+7. **Beads Issue Tracker (`bd`)**:
+   - Validates that `bd` is installed and executable.
+   - Verifies local issue database workspace status.
+8. **Actionable Remediation**: If any checks produce `[WARN]` or `[FAIL]`, the doctor outputs exact shell commands to resolve the issue.
+
+---
+
+## 4. Supported Platforms & Package Managers
+
+`setup.sh` provides first-class support for three primary package management ecosystems:
+
+| Platform / Distro Family | Package Manager | Detected By | Default Packages Installed |
+| :--- | :--- | :--- | :--- |
+| **macOS (Darwin)** | Homebrew (`brew`) | `uname -s == Darwin` | `git`, `curl`, `make`, `pkg-config`, `cmake`, `podman`, Go SDK |
+| **Linux (APT-based)** | APT (`apt-get`) | `apt-get` on PATH (Ubuntu, Debian, Pop!_OS, Linux Mint) | `curl`, `git`, `make`, `build-essential`, `pkg-config`, `tar`, `gzip`, `ca-certificates`, `cmake`, `podman`, Go SDK |
+| **Linux (RPM-based)** | DNF / YUM (`dnf` / `yum`) | `dnf` or `yum` on PATH (Fedora, RHEL, CentOS, Rocky Linux, AlmaLinux) | `curl`, `git`, `make`, `gcc`, `gcc-c++`, `pkgconfig`, `tar`, `gzip`, `ca-certificates`, `cmake`, `podman`, Go SDK |
+
+---
+
+## 5. Multi-Version Go SDK Management (XDG Paths)
+
+Standard Go multi-version tools pollute `$HOME/sdk`, and distro package managers frequently ship outdated Go compilers. `setup.sh` installs and manages Go SDKs entirely in user space adhering strictly to the XDG Base Directory Specification:
+
+### Directory Layout
+
+```
+~/.local/
+├── bin/
+│   ├── go              -> ~/.local/share/go/sdk/current/bin/go       # Active Go binary
+│   ├── gofmt           -> ~/.local/share/go/sdk/current/bin/gofmt    # Active gofmt
+│   ├── go1.25.8        -> ~/.local/share/go/sdk/go1.25.8/bin/go      # Direct version alias
+│   └── bd                                                            # Beads issue tracker CLI
+│
+└── share/
+    └── go/
+        └── sdk/
+            ├── current -> go1.25.8                                   # Active SDK pointer
+            └── go1.25.8/                                             # Full Go 1.25.8 SDK
+```
+
+### Managing Go Versions
+
+- **Install a specific Go version** (e.g., 1.25.8):
+  ```bash
+  ./setup.sh --go-version 1.25.8
+  ```
+- **List installed Go versions**:
+  ```bash
+  ./setup.sh --list-go
+  ```
+- **Switch active Go version**:
+  ```bash
+  ./setup.sh --switch-go 1.25.8
+  ```
+- **Invoke a specific version directly**:
+  ```bash
+  go1.25.8 version
+  go1.25.8 test ./...
+  ```
+
+---
+
+## 6. Options and Flags for `setup.sh`
+
+```bash
+Usage: setup.sh [options]
+
+Options:
+  -y, --yes, --non-interactive   Run without prompting (assumes 'yes' to package installs)
+  --doctor                       Run comprehensive development environment diagnostic checks
+  --go-version <version>         Install and activate specific Go SDK version (e.g. 1.25.8)
+  --list-go                      List all installed XDG Go SDK versions
+  --switch-go <version>          Switch active Go SDK to an already installed version
+  --no-sudo                      Do not use sudo (for rootless or unprivileged environments)
+  --skip-go                      Skip Go toolchain installation/check
+  --skip-beads                   Skip Beads (bd) CLI installation
+  --skip-cmake                   Skip CMake build tool installation
+  --skip-podman                  Skip Podman container engine installation
+  --skip-tools                   Skip developer quality tools check
+  --dry-run                      Print actions without executing commands
+  -h, --help                     Show this help message
+```
+
+---
+
+## 7. Task Tracking for Contributors: Beads (`bd`)
 
 We use **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker — to manage backlogs, epics, features, and bug fixes for the `agent-sandbox` codebase.
 
@@ -41,45 +181,75 @@ We use **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue trac
    ```bash
    bd ready
    ```
-   Surfaces open tasks that have no blocking dependencies.
-
 2. **Inspect the Task Hierarchy**:
    ```bash
    bd list
    ```
-
 3. **View Issue Details & Acceptance Criteria**:
    ```bash
-   bd show sndbx-cpm.1
+   bd show <id>
    ```
-
 4. **Claim a Task**:
    ```bash
-   bd update sndbx-cpm.1 --claim
+   bd update <id> --claim
    ```
-
 5. **Create a New Feature, Bug, or Subtask**:
    ```bash
-   # Create a child task under an existing epic
-   bd create "Add support for custom registry mirrors" \
-     -t feature -p P2 -l "oci,runtime" --parent sndbx-cpm \
-     -d "Allow users to specify alternate mirror registries in ~/.config/sndbx/config.yaml."
+   bd create --title="Feature description" --description="Details" --type=feature --priority=2
    ```
-
 6. **Close a Completed Task**:
    ```bash
-   bd close sndbx-cpm.1 --reason "Implemented in commit abc1234; all unit tests passing"
+   bd close <id> --reason="Resolved and validated by quality gates"
    ```
-
-7. **Synchronize with GitHub Remote**:
-   ```bash
-   bd sync
-   ```
-   Reconciles your local Dolt database with the upstream GitHub replica (`origin`).
 
 ---
 
-## 3. Branching & Pull Request Protocols
+## 8. Building, Testing, and Local Infrastructure
+
+Once dependencies are installed and `~/.local/bin` is in your `PATH`, verify the build with the monorepo `Makefile` targets:
+
+### 1. Run Complete Quality Gate
+```bash
+make check
+```
+Executes format verification, Go linters (`golangci-lint`), shell linter (`shellcheck`), atomic test coverage enforcement (>= 90.0%), and static security analysis (`govulncheck`, `gosec`).
+
+### 2. Run Unit Tests with Race Detection
+```bash
+make test
+```
+
+### 3. Generate Test Coverage Report
+```bash
+make test-coverage
+```
+Produces `coverage/coverage.html` and asserts that atomic statement coverage meets or exceeds the **>= 90.0%** gate.
+
+### 4. Build Native Binaries
+```bash
+make build
+# or:
+make build-cli
+```
+Compiles `bin/sndbx` and `bin/bp`.
+
+### 5. Local Infrastructure
+```bash
+# Start shared infrastructure (Valkey Backplane + Gitea Forge)
+sndbx infra up
+# or:
+make infra-up
+
+# Verify service status
+sndbx infra list
+
+# Stop shared infrastructure
+sndbx infra down
+```
+
+---
+
+## 9. Branching, Pull Request & Quality Guidelines
 
 1. **Branch Isolation**:
    - `main` is protected. Never commit directly to `main`.
@@ -95,7 +265,17 @@ We use **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue trac
    - `make lint`: `golangci-lint` and `shellcheck`.
    - `make test-coverage`: **Strict >= 90.0% statement test coverage** across all packages.
    - `make sca`: Static application security analysis.
-3. **Conventional Commits**:
+3. **Required Container Engine**:
+   - **Podman** is the required container engine (ADR 00019). Do not introduce dependencies on Docker or `docker-compose` binaries.
+4. **Conventional Commits**:
    Format commit messages following Conventional Commits (`feat: ...`, `fix: ...`, `docs: ...`, `test: ...`, `refactor: ...`).
-4. **Architecture Decision Records (ADRs)**:
+5. **Architecture Decision Records (ADRs)**:
    Any significant architectural change, new infrastructure service, CLI command group, or protocol addition requires an ADR in `doc/adr/`.
+6. **Copyright & License Header**:
+   Every source file (`.go`, `.sh`, `.yml`) must begin with the standard **Boggy Creek Software LLC** MIT header:
+   ```go
+   // Copyright (c) 2026 Boggy Creek Software LLC
+   //
+   // Use of this source code is governed by an MIT-style
+   // license that can be found in the LICENSE file.
+   ```
