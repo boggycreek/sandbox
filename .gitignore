@@ -33,9 +33,10 @@ secrets/
 /tmp/
 /scratch/
 
-# Beads / Dolt files (added by bd init)
+# Beads / Dolt files
+.beads/
 .dolt/
 *.db
 .beads-credential-key
-.beads/proxieddb/
 *.gate.lock*
+
