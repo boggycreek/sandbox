@@ -80,3 +80,20 @@ When collaborating with peer agents in the sandbox fleet:
    bp say "Closed task-12; unblocked task-13 for testing."
    ```
 4. **Decompose Complex Objectives**: If an assigned objective is too broad, break it into smaller subtasks with explicit dependencies rather than holding a single massive task open.
+
+---
+
+## 4. Model Context Protocol (MCP) Server (`beads-mcp`)
+
+Sandbox agent environments provide **`beads-mcp`** at `/usr/local/bin/beads-mcp`, exposing STDIO JSON-RPC 2.0 tools for direct AI model tool calls against the Beads graph issue tracker:
+
+| MCP Tool | Description | Parameters |
+| :--- | :--- | :--- |
+| `bd_ready` | Surface unblocked tasks and issues ready for work | `dir` (opt), `json` (opt) |
+| `bd_list` | List issues and tasks in the dependency graph | `dir` (opt), `all` (opt), `status` (opt), `priority` (opt), `json` (opt) |
+| `bd_show` | Inspect detailed issue specifications, dependencies, and history | `id` (req), `dir` (opt), `json` (opt) |
+| `bd_create` | Create a new task, feature, bug, or epic in the issue graph | `title` (req), `type` (opt), `priority` (opt), `description` (opt), `parent` (opt), `dir` (opt) |
+| `bd_claim` | Atomically claim an issue or task for the current agent | `id` (req), `dir` (opt) |
+| `bd_close` | Close a completed task or issue with a completion reason | `id` (req), `reason` (opt), `dir` (opt) |
+| `bd_sync` | Synchronize local Dolt issue tracker commits with Gitea remote | `dir` (opt) |
+
