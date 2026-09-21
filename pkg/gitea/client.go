@@ -3,15 +3,18 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
+// Package gitea provides a REST client for Gitea forge operations and administrative tasks.
 package gitea
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -53,21 +56,21 @@ func NewClient(cfg ClientConfig) *Client {
 }
 
 // doRequest performs an authenticated HTTP request against Gitea REST API
-func (c *Client) doRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Response, []byte, error) {
-	url := fmt.Sprintf("%s/api/v1%s", c.cfg.BaseURL, endpoint)
+func (c *Client) doRequest(ctx context.Context, method, endpoint string, body interface{}) (statusCode int, respBody []byte, err error) {
+	apiURL := fmt.Sprintf("%s/api/v1%s", c.cfg.BaseURL, endpoint)
 
 	var bodyReader io.Reader
 	if body != nil {
-		buf, err := json.Marshal(body)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed marshaling request body: %w", err)
+		buf, marshalErr := json.Marshal(body)
+		if marshalErr != nil {
+			return 0, nil, fmt.Errorf("failed marshaling request body: %w", marshalErr)
 		}
 		bodyReader = bytes.NewReader(buf)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating http request: %w", err)
+	req, reqErr := http.NewRequestWithContext(ctx, method, apiURL, bodyReader)
+	if reqErr != nil {
+		return 0, nil, fmt.Errorf("failed creating http request: %w", reqErr)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -81,16 +84,18 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body in
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return 0, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return resp, nil, fmt.Errorf("failed reading response body: %w", err)
+		return resp.StatusCode, nil, fmt.Errorf("failed reading response body: %w", err)
 	}
 
-	return resp, respBody, nil
+	return resp.StatusCode, respBody, nil
 }
 
 // EnsureUser creates a user in Gitea if it does not already exist
@@ -104,8 +109,8 @@ func (c *Client) EnsureUser(ctx context.Context, username, password, email strin
 	}
 
 	// Check if user exists
-	resp, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/users/%s", username), nil)
-	if err == nil && resp.StatusCode == http.StatusOK {
+	statusCode, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/users/%s", username), nil)
+	if err == nil && statusCode == http.StatusOK {
 		return nil // User already exists
 	}
 
@@ -118,12 +123,12 @@ func (c *Client) EnsureUser(ctx context.Context, username, password, email strin
 		"send_notify":          false,
 	}
 
-	resp, respBody, err := c.doRequest(ctx, http.MethodPost, "/admin/users", payload)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, "/admin/users", payload)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("failed creating gitea user %s (status %d): %s", username, resp.StatusCode, string(respBody))
+	if statusCode != http.StatusCreated && statusCode != http.StatusOK && statusCode != http.StatusConflict {
+		return fmt.Errorf("failed creating gitea user %s (status %d): %s", username, statusCode, string(respBody))
 	}
 
 	return nil
@@ -137,12 +142,12 @@ func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) er
 	}
 
 	endpoint := fmt.Sprintf("/admin/users/%s?purge=%t", username, purge)
-	resp, respBody, err := c.doRequest(ctx, http.MethodDelete, endpoint, nil)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("failed deleting gitea user %s (status %d): %s", username, resp.StatusCode, string(respBody))
+	if statusCode != http.StatusNoContent && statusCode != http.StatusOK && statusCode != http.StatusNotFound {
+		return fmt.Errorf("failed deleting gitea user %s (status %d): %s", username, statusCode, string(respBody))
 	}
 
 	return nil
@@ -166,13 +171,13 @@ func (c *Client) AddUserSSHKey(ctx context.Context, username, title, keyContent 
 	}
 
 	endpoint := fmt.Sprintf("/admin/users/%s/keys", username)
-	resp, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
 	if err != nil {
 		return err
 	}
 	// Gitea returns 201 Created on success, 422/409 if key already exists
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict && resp.StatusCode != http.StatusUnprocessableEntity {
-		return fmt.Errorf("failed adding ssh key for %s (status %d): %s", username, resp.StatusCode, string(respBody))
+	if statusCode != http.StatusCreated && statusCode != http.StatusOK && statusCode != http.StatusConflict && statusCode != http.StatusUnprocessableEntity {
+		return fmt.Errorf("failed adding ssh key for %s (status %d): %s", username, statusCode, string(respBody))
 	}
 
 	return nil
@@ -186,8 +191,8 @@ func (c *Client) EnsureOrg(ctx context.Context, orgName string) error {
 	}
 
 	// Check if org exists
-	resp, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/orgs/%s", orgName), nil)
-	if err == nil && resp.StatusCode == http.StatusOK {
+	statusCode, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/orgs/%s", orgName), nil)
+	if err == nil && statusCode == http.StatusOK {
 		return nil
 	}
 
@@ -196,12 +201,12 @@ func (c *Client) EnsureOrg(ctx context.Context, orgName string) error {
 		"visibility": "public",
 	}
 
-	resp, respBody, err := c.doRequest(ctx, http.MethodPost, "/orgs", payload)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, "/orgs", payload)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("failed creating organization %s (status %d): %s", orgName, resp.StatusCode, string(respBody))
+	if statusCode != http.StatusCreated && statusCode != http.StatusOK && statusCode != http.StatusConflict {
+		return fmt.Errorf("failed creating organization %s (status %d): %s", orgName, statusCode, string(respBody))
 	}
 
 	return nil
@@ -216,12 +221,12 @@ func (c *Client) AddOrgMember(ctx context.Context, orgName, username string) err
 	}
 
 	endpoint := fmt.Sprintf("/orgs/%s/members/%s", orgName, username)
-	resp, respBody, err := c.doRequest(ctx, http.MethodPut, endpoint, nil)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPut, endpoint, nil)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed adding member %s to org %s (status %d): %s", username, orgName, resp.StatusCode, string(respBody))
+	if statusCode != http.StatusNoContent && statusCode != http.StatusOK && statusCode != http.StatusCreated {
+		return fmt.Errorf("failed adding member %s to org %s (status %d): %s", username, orgName, statusCode, string(respBody))
 	}
 
 	return nil
@@ -236,8 +241,8 @@ func (c *Client) EnsureRepo(ctx context.Context, orgName, repoName, description 
 	}
 
 	// Check if repo exists
-	resp, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s", orgName, repoName), nil)
-	if err == nil && resp.StatusCode == http.StatusOK {
+	statusCode, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s", orgName, repoName), nil)
+	if err == nil && statusCode == http.StatusOK {
 		return nil
 	}
 
@@ -249,13 +254,308 @@ func (c *Client) EnsureRepo(ctx context.Context, orgName, repoName, description 
 	}
 
 	endpoint := fmt.Sprintf("/orgs/%s/repos", orgName)
-	resp, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("failed creating repository %s/%s (status %d): %s", orgName, repoName, resp.StatusCode, string(respBody))
+	if statusCode != http.StatusCreated && statusCode != http.StatusOK && statusCode != http.StatusConflict {
+		return fmt.Errorf("failed creating repository %s/%s (status %d): %s", orgName, repoName, statusCode, string(respBody))
 	}
 
 	return nil
+}
+
+// User represents a Gitea user object
+type User struct {
+	ID       int64  `json:"id"`
+	UserName string `json:"username"`
+	FullName string `json:"full_name,omitempty"`
+	Email    string `json:"email,omitempty"`
+}
+
+// Label represents a Gitea issue label
+type Label struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color,omitempty"`
+}
+
+// Issue represents a Gitea issue or task
+type Issue struct {
+	ID        int64     `json:"id"`
+	Index     int64     `json:"number"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	State     string    `json:"state"` // "open" or "closed"
+	User      *User     `json:"user,omitempty"`
+	Assignees []*User   `json:"assignees,omitempty"`
+	Labels    []*Label  `json:"labels,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+// PRBranch represents branch ref info for pull requests
+type PRBranch struct {
+	Label string `json:"label"`
+	Ref   string `json:"ref"`
+	Sha   string `json:"sha"`
+}
+
+// PullRequest represents a Gitea pull request
+type PullRequest struct {
+	ID        int64     `json:"id"`
+	Index     int64     `json:"number"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	State     string    `json:"state"`
+	Head      *PRBranch `json:"head,omitempty"`
+	Base      *PRBranch `json:"base,omitempty"`
+	User      *User     `json:"user,omitempty"`
+	Merged    bool      `json:"merged"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+// PullReview represents a code review on a pull request
+type PullReview struct {
+	ID        int64     `json:"id"`
+	User      *User     `json:"user,omitempty"`
+	State     string    `json:"state"` // "APPROVED", "REQUEST_CHANGES", "COMMENT"
+	Body      string    `json:"body"`
+	Submitted time.Time `json:"submitted_at,omitempty"`
+}
+
+// FileContent represents file metadata and content retrieved from Gitea
+type FileContent struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	SHA         string `json:"sha"`
+	Size        int64  `json:"size"`
+	Content     string `json:"content"`
+	Encoding    string `json:"encoding,omitempty"`
+	DownloadURL string `json:"download_url,omitempty"`
+}
+
+// ListIssues returns issues and tasks matching filters from a repository
+func (c *Client) ListIssues(ctx context.Context, owner, repo, state string, page, limit int) ([]*Issue, error) {
+	if owner == "" {
+		owner = "fleet"
+	}
+	if repo == "" {
+		repo = "tasks"
+	}
+	if state == "" {
+		state = "open"
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/issues?state=%s&page=%d&limit=%d",
+		url.PathEscape(owner), url.PathEscape(repo), url.QueryEscape(state), page, limit)
+
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed listing issues for %s/%s (status %d): %s", owner, repo, statusCode, string(respBody))
+	}
+
+	var issues []*Issue
+	if err := json.Unmarshal(respBody, &issues); err != nil {
+		return nil, fmt.Errorf("failed unmarshaling issues response: %w", err)
+	}
+
+	return issues, nil
+}
+
+// CreateIssue creates a new issue or task in a repository
+func (c *Client) CreateIssue(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*Issue, error) {
+	if owner == "" {
+		owner = "fleet"
+	}
+	if repo == "" {
+		repo = "tasks"
+	}
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("issue title cannot be empty")
+	}
+
+	payload := map[string]interface{}{
+		"title": title,
+		"body":  body,
+	}
+	if len(labels) > 0 {
+		payload["labels"] = labels
+	}
+	if len(assignees) > 0 {
+		payload["assignees"] = assignees
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/issues", url.PathEscape(owner), url.PathEscape(repo))
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusCreated && statusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed creating issue in %s/%s (status %d): %s", owner, repo, statusCode, string(respBody))
+	}
+
+	var issue Issue
+	if err := json.Unmarshal(respBody, &issue); err != nil {
+		return nil, fmt.Errorf("failed unmarshaling issue response: %w", err)
+	}
+
+	return &issue, nil
+}
+
+// CreatePullRequest opens a new pull request in a repository
+func (c *Client) CreatePullRequest(ctx context.Context, owner, repo, title, body, head, base string) (*PullRequest, error) {
+	if owner == "" {
+		owner = "fleet"
+	}
+	if repo == "" {
+		return nil, fmt.Errorf("repository name cannot be empty")
+	}
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("pull request title cannot be empty")
+	}
+	if strings.TrimSpace(head) == "" {
+		return nil, fmt.Errorf("head branch cannot be empty")
+	}
+	if base == "" {
+		base = "main"
+	}
+
+	payload := map[string]interface{}{
+		"title": title,
+		"body":  body,
+		"head":  head,
+		"base":  base,
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls", url.PathEscape(owner), url.PathEscape(repo))
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusCreated && statusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed creating pull request in %s/%s (status %d): %s", owner, repo, statusCode, string(respBody))
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(respBody, &pr); err != nil {
+		return nil, fmt.Errorf("failed unmarshaling pull request response: %w", err)
+	}
+
+	return &pr, nil
+}
+
+// GetPullRequest fetches details for a specific pull request
+func (c *Client) GetPullRequest(ctx context.Context, owner, repo string, index int64) (*PullRequest, error) {
+	if owner == "" {
+		owner = "fleet"
+	}
+	if repo == "" {
+		return nil, fmt.Errorf("repository name cannot be empty")
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), index)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed getting pull request #%d for %s/%s (status %d): %s", index, owner, repo, statusCode, string(respBody))
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(respBody, &pr); err != nil {
+		return nil, fmt.Errorf("failed unmarshaling pull request response: %w", err)
+	}
+
+	return &pr, nil
+}
+
+// ReviewPullRequest submits an approval, change request, or comment review on a pull request
+func (c *Client) ReviewPullRequest(ctx context.Context, owner, repo string, index int64, event, body string) (*PullReview, error) {
+	if owner == "" {
+		owner = "fleet"
+	}
+	if repo == "" {
+		return nil, fmt.Errorf("repository name cannot be empty")
+	}
+
+	normalizedEvent := strings.ToUpper(strings.TrimSpace(event))
+	if normalizedEvent == "" {
+		normalizedEvent = "COMMENT"
+	}
+
+	payload := map[string]interface{}{
+		"event": normalizedEvent,
+		"body":  body,
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews", url.PathEscape(owner), url.PathEscape(repo), index)
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodPost, endpoint, payload)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusOK && statusCode != http.StatusCreated {
+		return nil, fmt.Errorf("failed reviewing pull request #%d in %s/%s (status %d): %s", index, owner, repo, statusCode, string(respBody))
+	}
+
+	var review PullReview
+	if err := json.Unmarshal(respBody, &review); err != nil {
+		return nil, fmt.Errorf("failed unmarshaling review response: %w", err)
+	}
+
+	return &review, nil
+}
+
+// GetFile retrieves file contents and metadata from a repository at a given ref
+func (c *Client) GetFile(ctx context.Context, owner, repo, filePath, ref string) (*FileContent, error) {
+	if owner == "" {
+		owner = "fleet"
+	}
+	if repo == "" {
+		return nil, fmt.Errorf("repository name cannot be empty")
+	}
+	filePath = strings.TrimPrefix(filePath, "/")
+	if filePath == "" {
+		return nil, fmt.Errorf("filePath cannot be empty")
+	}
+	if ref == "" {
+		ref = "main"
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/contents/%s?ref=%s",
+		url.PathEscape(owner), url.PathEscape(repo), filePath, url.QueryEscape(ref))
+
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed reading file %s from %s/%s (status %d): %s", filePath, owner, repo, statusCode, string(respBody))
+	}
+
+	var file FileContent
+	if err := json.Unmarshal(respBody, &file); err != nil {
+		return nil, fmt.Errorf("failed unmarshaling file response: %w", err)
+	}
+
+	// Decode Base64 if encoded
+	if strings.EqualFold(file.Encoding, "base64") && file.Content != "" {
+		cleanB64 := strings.ReplaceAll(file.Content, "\n", "")
+		if decoded, err := base64.StdEncoding.DecodeString(cleanB64); err == nil {
+			file.Content = string(decoded)
+		}
+	}
+
+	return &file, nil
 }
