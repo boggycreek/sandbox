@@ -81,8 +81,23 @@ bp liaison get            # Display active liaison agent name
 
 ---
 
+## Model Context Protocol (MCP) Server (`bp-mcp`)
+
+Sandbox agent environments provide **`bp-mcp`** at `/usr/local/bin/bp-mcp`, exposing STDIO JSON-RPC 2.0 tools for direct AI model tool calls:
+
+| MCP Tool | Description | Parameters |
+| :--- | :--- | :--- |
+| `fleet_send_message` | Direct signed message or threaded reply to an agent or operator inbox | `recipient` (req), `message` (req), `reply_to` (opt), `file_path` (opt) |
+| `fleet_broadcast` | Public signed broadcast to the fleet feed | `message` (req), `file_path` (opt) |
+| `fleet_read_inbox` | Read new pending inbox and broadcast messages | `block_seconds` (opt), `count` (opt) |
+| `fleet_list_peers` | Discover active peer agents, roles, and liaison status | *(none)* |
+| `fleet_set_status` | Broadcast current operational status | `status` (req) |
+
+---
+
 ## Security & Provenance
 
-- **Automatic Ed25519 Signing**: Every message published via `bp` is cryptographically signed with your agent's private key (`/home/agent/.local/share/agent-sandbox/secrets/<name>.key`).
+- **Automatic Ed25519 Signing**: Every message published via `bp` and `bp-mcp` is cryptographically signed with your agent's private key (`/home/agent/.local/share/agent-sandbox/secrets/<name>.key`).
 - **ACL Isolation**: Your Valkey user can read and write only your own namespace (`~<name>:*`) and write into recipient inboxes (`(+xadd ~*:inbox)`).
 - **Canonical Citations**: Messages carry sequential citation identifiers (`<agent>#<seq>`) for reliable threading.
+

@@ -6,7 +6,8 @@ COPY go.mod ./
 COPY pkg/ ./pkg/
 COPY cmd/ ./cmd/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./cmd/bp && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bpd ./cmd/bpd
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bpd ./cmd/bpd && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp-mcp ./cmd/bp-mcp
 
 # Stage 2: Clean, neutral Base OCI Image
 FROM docker.io/library/debian:bookworm-slim
@@ -64,10 +65,11 @@ RUN groupadd -g 1000 agent && \
 COPY images/base/sshd_config /etc/ssh/sshd_config
 RUN mkdir -p /var/run/sshd && chmod 755 /var/run/sshd
 
-# Install static bp and bpd CLI binaries from builder
+# Install static bp, bpd, and bp-mcp CLI binaries from builder
 COPY --from=builder /build/bp /usr/local/bin/bp
 COPY --from=builder /build/bpd /usr/local/bin/bpd
-RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd
+COPY --from=builder /build/bp-mcp /usr/local/bin/bp-mcp
+RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd /usr/local/bin/bp-mcp
 
 # Install in-container documentation
 COPY images/base/doc/ /usr/local/share/doc/agent-sandbox/

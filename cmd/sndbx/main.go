@@ -582,7 +582,6 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	return 0
 }
 
-
 func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "Usage: sndbx agent ssh <name>")
