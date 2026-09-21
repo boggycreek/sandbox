@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -119,6 +120,62 @@ func TestGiteaClientSuite(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":100,"name":"new-repo"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/tasks/issues":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[{"id":1,"number":101,"title":"Task 1","state":"open"}]`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/fail-repo/issues":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"failed"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/repos/fleet/tasks/issues":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":2,"number":102,"title":"Created Task","state":"open"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/repos/fleet/fail-repo/issues":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"failed"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/repos/fleet/tools/pulls":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":5,"number":1,"title":"PR Title","state":"open"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/repos/fleet/fail-repo/pulls":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"failed"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/tools/pulls/1":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":5,"number":1,"title":"PR Title","state":"open"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/fail-repo/pulls/1":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"not found"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/repos/fleet/tools/pulls/1/reviews":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":12,"state":"APPROVED","body":"looks good"}`))
+
+		case r.Method == http.MethodPost && path == "/api/v1/repos/fleet/fail-repo/pulls/1/reviews":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"review failed"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/tools/contents/README.md":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"name":"README.md","path":"README.md","encoding":"base64","content":"IyBUb29scyBSZXBvCg=="}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/tools/contents/raw.txt":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"name":"raw.txt","path":"raw.txt","content":"plain raw text content"}`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/tools/contents/bad-json.txt":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`not valid json`))
+
+		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/fail-repo/contents/README.md":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"file not found"}`))
 
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -236,6 +293,109 @@ func TestGiteaClientSuite(t *testing.T) {
 		t.Errorf("expected error on empty repo args")
 	}
 
+	var err error
+
+	// 6. ListIssues
+	issues, listErr := client.ListIssues(ctx, "fleet", "tasks", "open", 1, 10)
+	if listErr != nil || len(issues) != 1 {
+		t.Errorf("ListIssues failed: %v (len: %d)", listErr, len(issues))
+	}
+	if _, err = client.ListIssues(ctx, "fleet", "fail-repo", "open", 1, 10); err == nil {
+		t.Errorf("expected error on ListIssues fail-repo")
+	}
+	// Default params check
+	if _, err = client.ListIssues(ctx, "", "", "", 0, 0); err != nil {
+		t.Errorf("ListIssues with defaults failed: %v", err)
+	}
+
+	// 7. CreateIssue
+	issue, createErr := client.CreateIssue(ctx, "fleet", "tasks", "New Task", "Task Body", []string{"bug"}, []string{"agent"})
+	if createErr != nil || issue.ID != 2 {
+		t.Errorf("CreateIssue failed: %v", createErr)
+	}
+	if _, err = client.CreateIssue(ctx, "fleet", "fail-repo", "Task", "Body", nil, nil); err == nil {
+		t.Errorf("expected error on CreateIssue fail-repo")
+	}
+	if _, err = client.CreateIssue(ctx, "", "", "", "", nil, nil); err == nil {
+		t.Errorf("expected error on empty title in CreateIssue")
+	}
+
+	// 8. CreatePullRequest
+	pr, prErr := client.CreatePullRequest(ctx, "fleet", "tools", "New PR", "PR Body", "feat/1", "main")
+	if prErr != nil || pr.ID != 5 {
+		t.Errorf("CreatePullRequest failed: %v", prErr)
+	}
+	if _, err = client.CreatePullRequest(ctx, "fleet", "fail-repo", "PR", "Body", "feat/1", "main"); err == nil {
+		t.Errorf("expected error on CreatePullRequest fail-repo")
+	}
+	if _, err = client.CreatePullRequest(ctx, "", "", "PR", "Body", "feat/1", ""); err == nil {
+		t.Errorf("expected error on empty repo in CreatePullRequest")
+	}
+	if _, err = client.CreatePullRequest(ctx, "fleet", "tools", "", "Body", "feat/1", ""); err == nil {
+		t.Errorf("expected error on empty title in CreatePullRequest")
+	}
+	if _, err = client.CreatePullRequest(ctx, "fleet", "tools", "PR", "Body", "", ""); err == nil {
+		t.Errorf("expected error on empty head in CreatePullRequest")
+	}
+	if _, err = client.CreatePullRequest(ctx, "", "tools", "PR", "Body", "feat/1", ""); err != nil {
+		t.Errorf("expected default owner in CreatePullRequest to succeed: %v", err)
+	}
+
+	// 9. GetPullRequest
+	prGet, getErr := client.GetPullRequest(ctx, "fleet", "tools", 1)
+	if getErr != nil || prGet.ID != 5 {
+		t.Errorf("GetPullRequest failed: %v", getErr)
+	}
+	if _, err = client.GetPullRequest(ctx, "fleet", "fail-repo", 1); err == nil {
+		t.Errorf("expected error on GetPullRequest fail-repo")
+	}
+	if _, err = client.GetPullRequest(ctx, "fleet", "", 1); err == nil {
+		t.Errorf("expected error on empty repo in GetPullRequest")
+	}
+	if _, err = client.GetPullRequest(ctx, "", "tools", 1); err != nil {
+		t.Errorf("expected default owner in GetPullRequest to succeed: %v", err)
+	}
+
+	// 10. ReviewPullRequest
+	review, revErr := client.ReviewPullRequest(ctx, "fleet", "tools", 1, "APPROVE", "looks good")
+	if revErr != nil || review.ID != 12 {
+		t.Errorf("ReviewPullRequest failed: %v", revErr)
+	}
+	if _, err = client.ReviewPullRequest(ctx, "fleet", "fail-repo", 1, "APPROVE", ""); err == nil {
+		t.Errorf("expected error on ReviewPullRequest fail-repo")
+	}
+	if _, err = client.ReviewPullRequest(ctx, "fleet", "", 1, "", ""); err == nil {
+		t.Errorf("expected error on empty repo in ReviewPullRequest")
+	}
+	if _, err = client.ReviewPullRequest(ctx, "", "tools", 1, "", ""); err != nil {
+		t.Errorf("expected default owner and event in ReviewPullRequest to succeed: %v", err)
+	}
+
+	// 11. GetFile
+	file, fileErr := client.GetFile(ctx, "fleet", "tools", "/README.md", "main")
+	if fileErr != nil || !strings.Contains(file.Content, "# Tools Repo") {
+		t.Errorf("GetFile README.md failed: %v, content: %s", fileErr, file.Content)
+	}
+	rawFile, rawErr := client.GetFile(ctx, "fleet", "tools", "raw.txt", "")
+	if rawErr != nil || rawFile.Content != "plain raw text content" {
+		t.Errorf("GetFile raw.txt failed: %v", rawErr)
+	}
+	if _, err = client.GetFile(ctx, "fleet", "tools", "bad-json.txt", ""); err == nil {
+		t.Errorf("expected error on GetFile bad-json.txt")
+	}
+	if _, err = client.GetFile(ctx, "fleet", "fail-repo", "README.md", "main"); err == nil {
+		t.Errorf("expected error on GetFile fail-repo")
+	}
+	if _, err = client.GetFile(ctx, "fleet", "", "README.md", "main"); err == nil {
+		t.Errorf("expected error on empty repo in GetFile")
+	}
+	if _, err = client.GetFile(ctx, "fleet", "tools", "", "main"); err == nil {
+		t.Errorf("expected error on empty filePath in GetFile")
+	}
+	if _, err = client.GetFile(ctx, "", "tools", "raw.txt", ""); err != nil {
+		t.Errorf("expected default owner and ref in GetFile to succeed: %v", err)
+	}
+
 	// Network / URL error handling
 	badClient := NewClient(ClientConfig{BaseURL: "http://127.0.0.1:64999", Timeout: 10 * time.Millisecond})
 	_ = badClient.EnsureUser(ctx, "test", "pass", "")
@@ -243,4 +403,10 @@ func TestGiteaClientSuite(t *testing.T) {
 	_ = badClient.EnsureOrg(ctx, "org")
 	_ = badClient.AddOrgMember(ctx, "org", "user")
 	_ = badClient.EnsureRepo(ctx, "org", "repo", "", false)
+	_, _ = badClient.ListIssues(ctx, "fleet", "tasks", "open", 1, 10)
+	_, _ = badClient.CreateIssue(ctx, "fleet", "tasks", "title", "body", nil, nil)
+	_, _ = badClient.CreatePullRequest(ctx, "fleet", "tools", "title", "body", "head", "base")
+	_, _ = badClient.GetPullRequest(ctx, "fleet", "tools", 1)
+	_, _ = badClient.ReviewPullRequest(ctx, "fleet", "tools", 1, "APPROVE", "")
+	_, _ = badClient.GetFile(ctx, "fleet", "tools", "README.md", "main")
 }

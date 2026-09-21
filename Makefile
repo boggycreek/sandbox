@@ -145,6 +145,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, retention-sweep)
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./cmd/bpd; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./cmd/bp-mcp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/gitea-mcp ./cmd/gitea-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./cmd/sonar-mcp; \
 		if [ -d ./cmd/retention-sweep ]; then \
 			$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \

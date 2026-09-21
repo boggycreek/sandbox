@@ -70,3 +70,18 @@ Agents can create and review PRs directly via Gitea API or `tea` CLI:
 # Announce PR to reviewer via backplane
 bp tell reviewer-bot "Submitted PR for feature-sqlite-backend on fleet/my-service"
 ```
+
+---
+
+## Model Context Protocol (MCP) Server (`gitea-mcp`)
+
+Sandbox agent environments provide **`gitea-mcp`** at `/usr/local/bin/gitea-mcp`, exposing STDIO JSON-RPC 2.0 tools for direct AI model tool calls against the fleet Git forge:
+
+| MCP Tool | Description | Parameters |
+| :--- | :--- | :--- |
+| `forge_list_tasks` | List tasks, issues, and backlog items from a fleet repository | `owner` (opt), `repo` (opt), `state` (opt), `page` (opt), `limit` (opt) |
+| `forge_create_task` | Create a new task or backlog issue in a fleet repository | `title` (req), `body` (opt), `owner` (opt), `repo` (opt), `labels` (opt), `assignees` (opt) |
+| `forge_create_pull_request` | Open a new pull request across fleet branches | `repo` (req), `title` (req), `head` (req), `base` (opt), `body` (opt), `owner` (opt) |
+| `forge_review_pull_request` | Submit a code review approval, change request, or comment | `repo` (req), `index` (req), `event` (opt), `body` (opt), `owner` (opt) |
+| `forge_read_file` | Read raw or decoded source file contents at a specific branch/ref | `repo` (req), `file_path` (req), `ref` (opt), `owner` (opt) |
+
