@@ -369,6 +369,7 @@ func TestSndbxSubcommandsBoost(t *testing.T) {
 	}
 
 	// Test handleUpdate error paths using custom execCommandContext and httpClientForDownload
+	t.Setenv("HOME", t.TempDir())
 	origExec := execCommandContext
 	origHTTP := httpClientForDownload
 	defer func() {

@@ -43,9 +43,11 @@ func TestSndbxCLIUsageAndHelp(t *testing.T) {
 	}
 
 	// 3. Unknown command
-	code, _, errOut := runSndbx([]string{"unknown"})
-	if code != 1 || !strings.Contains(errOut, "unknown command") {
-		t.Errorf("expected unknown command error")
+	for _, unknown := range []string{"unknown", "repo"} {
+		code, _, errOut := runSndbx([]string{unknown})
+		if code != 1 || !strings.Contains(errOut, "unknown command") {
+			t.Errorf("expected unknown command error for %q, got: %s", unknown, errOut)
+		}
 	}
 }
 
@@ -220,8 +222,8 @@ func TestSndbxWithLiveValkey(t *testing.T) {
 	}
 }
 
-func TestSndbxUpdateAndGUIDomains(t *testing.T) {
-	// Update help
+func TestSndbxUpdateDomain(t *testing.T) {
+	// 1. Update help flags
 	for _, h := range []string{"help", "-h", "--help"} {
 		code, out, _ := runSndbx([]string{"update", h})
 		if code != 0 || !strings.Contains(out, "Usage: sndbx update") {
@@ -229,28 +231,29 @@ func TestSndbxUpdateAndGUIDomains(t *testing.T) {
 		}
 	}
 
-	// Update command execution with invalid git/repo or dry behavior
+	// 2. Update execution with mocked commands in an isolated repository
+	origExec := execCommandContext
+	defer func() { execCommandContext = origExec }()
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
+
 	tempRepo := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tempRepo, "Makefile"), []byte("all:\n"), 0644)
 	_ = os.MkdirAll(filepath.Join(tempRepo, ".git"), 0755)
 	t.Setenv("AGENT_SANDBOX_REPO", tempRepo)
-	code, _, errOut := runSndbx([]string{"update"})
-	// TempDir has no go.mod or Makefile, but handleUpdate will attempt git pull, compile, and image build
-	// We expect either error or execution failure
-	if code == 0 {
-		t.Logf("update in temp dir succeeded: %v", code)
-	} else {
-		if !strings.Contains(errOut, "failed") && !strings.Contains(errOut, "warning") {
-			t.Errorf("unexpected error output for update: %s", errOut)
-		}
-	}
+	t.Setenv("SNDBX_UPDATE_TIMEOUT", "15m")
 
-	// Unknown domain: repo should now fail as unknown command
-	code, _, errOut = runSndbx([]string{"repo"})
-	if code != 1 || !strings.Contains(errOut, "unknown command \"repo\"") {
-		t.Errorf("repo should be unknown command: %s", errOut)
+	code, out, errOut := runSndbx([]string{"update"})
+	if code != 0 {
+		t.Errorf("expected update to succeed with mocked commands, got code %d, err: %s", code, errOut)
 	}
+	if !strings.Contains(out, "Update complete") {
+		t.Errorf("expected update complete output, got: %s", out)
+	}
+}
 
-	// GUI
+func TestSndbxGUIDomain(t *testing.T) {
 	code, out, _ := runSndbx([]string{"gui"})
 	if code != 0 || !strings.Contains(out, "Launching Backplane GUI") {
 		t.Errorf("gui command failed: %s", out)
