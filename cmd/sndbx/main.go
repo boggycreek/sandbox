@@ -14,9 +14,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	stdRuntime "runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
@@ -50,8 +52,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	_ = paths.EnsureDirectories()
 	paths.LoadEnv()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	switch domain {
 	case "help", "-h", "--help":
@@ -59,19 +61,31 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 
 	case "agent":
-		return handleAgent(ctx, paths, domainArgs, stdout, stderr)
+		return handleAgent(sigCtx, paths, domainArgs, stdout, stderr)
 
 	case "infra":
+		ctx, cancel := context.WithTimeout(sigCtx, 120*time.Second)
+		defer cancel()
 		return handleInfra(ctx, paths, domainArgs, stdout, stderr)
 
 	case "plugin":
+		ctx, cancel := context.WithTimeout(sigCtx, 60*time.Second)
+		defer cancel()
 		return handlePlugin(ctx, paths, domainArgs, stdout, stderr)
 
 	case "update":
-		return handleUpdate(ctx, paths, domainArgs, stdout, stderr)
+		updateTimeout := 30 * time.Minute
+		if envTimeout := os.Getenv("SNDBX_UPDATE_TIMEOUT"); envTimeout != "" {
+			if d, err := time.ParseDuration(envTimeout); err == nil && d > 0 {
+				updateTimeout = d
+			}
+		}
+		updateCtx, updateCancel := context.WithTimeout(sigCtx, updateTimeout)
+		defer updateCancel()
+		return handleUpdate(updateCtx, paths, domainArgs, stdout, stderr)
 
 	case "gui":
-		return handleGUI(ctx, paths, domainArgs, stdout, stderr)
+		return handleGUI(sigCtx, paths, domainArgs, stdout, stderr)
 
 	default:
 		fmt.Fprintf(stderr, "sndbx: unknown command %q (see 'sndbx help')\n", domain)
@@ -171,30 +185,36 @@ Commands:
   retire <name> [--force]
     Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).`)
 		return 0
-	case "create":
-		return handleAgentCreate(ctx, paths, subArgs, stdout, stderr)
-	case "start":
-		return handleAgentStart(ctx, paths, subArgs, stdout, stderr)
 	case "tmux":
 		return handleAgentTmux(ctx, paths, subArgs, stdout, stderr)
 	case "connect":
 		return handleAgentConnect(ctx, paths, subArgs, stdout, stderr)
-	case "open":
-		return handleAgentOpen(ctx, paths, subArgs, stdout, stderr)
 	case "ssh":
 		return handleAgentSSH(ctx, paths, subArgs, stdout, stderr)
-	case "ssh-config", "sshconfig":
-		return handleAgentSSHConfig(ctx, paths, subArgs, stdout, stderr)
-	case "doctor":
-		return handleAgentDoctor(ctx, paths, subArgs, stdout, stderr)
-	case "stop":
-		return handleAgentStop(ctx, paths, subArgs, stdout, stderr)
-	case "list":
-		return handleAgentList(ctx, paths, subArgs, stdout, stderr)
-	case "clean":
-		return handleAgentClean(ctx, paths, subArgs, stdout, stderr)
-	case "retire":
-		return handleAgentRetire(ctx, paths, subArgs, stdout, stderr)
+	case "create", "start", "open", "ssh-config", "sshconfig", "doctor", "stop", "list", "clean", "retire":
+		opCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+		defer cancel()
+		switch sub {
+		case "create":
+			return handleAgentCreate(opCtx, paths, subArgs, stdout, stderr)
+		case "start":
+			return handleAgentStart(opCtx, paths, subArgs, stdout, stderr)
+		case "open":
+			return handleAgentOpen(opCtx, paths, subArgs, stdout, stderr)
+		case "ssh-config", "sshconfig":
+			return handleAgentSSHConfig(opCtx, paths, subArgs, stdout, stderr)
+		case "doctor":
+			return handleAgentDoctor(opCtx, paths, subArgs, stdout, stderr)
+		case "stop":
+			return handleAgentStop(opCtx, paths, subArgs, stdout, stderr)
+		case "list":
+			return handleAgentList(opCtx, paths, subArgs, stdout, stderr)
+		case "clean":
+			return handleAgentClean(opCtx, paths, subArgs, stdout, stderr)
+		case "retire":
+			return handleAgentRetire(opCtx, paths, subArgs, stdout, stderr)
+		}
+		return 1
 	default:
 		fmt.Fprintf(stderr, "sndbx agent: unknown command %q\n", sub)
 		return 1
