@@ -172,15 +172,62 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 	return cfg, nil
 }
 
+func parseEd25519PrivateKey(data []byte) (ed25519.PrivateKey, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("failed decoding PEM block")
+	}
+	// Try standard libbp PKCS#8 format
+	if priv, err := libbp.DecodePrivateKeyPEM(string(data)); err == nil {
+		return priv, nil
+	}
+	// Try raw 64-byte private key or 32-byte seed
+	if len(block.Bytes) == ed25519.PrivateKeySize {
+		return ed25519.PrivateKey(block.Bytes), nil
+	}
+	if len(block.Bytes) == ed25519.SeedSize {
+		return ed25519.NewKeyFromSeed(block.Bytes), nil
+	}
+	return nil, fmt.Errorf("not a valid Ed25519 private key")
+}
+
 func checkAndHealSigningKey(cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
 	keyPath := filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem")
-	keyValid := false
-	if data, err := os.ReadFile(keyPath); err == nil && len(data) > 0 {
-		block, _ := pem.Decode(data)
-		if block != nil && len(block.Bytes) == ed25519.PrivateKeySize {
-			keyValid = true
-		}
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:         "Ed25519 Signing Keys",
+			Status:       StatusError,
+			Message:      fmt.Sprintf("Signing key file missing at %s: keys must never be regenerated to preserve historical signature validity", keyPath),
+			Unrepairable: true,
+		})
+		report.UnrepairableCount++
+		return
 	}
+
+	if len(data) == 0 {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:         "Ed25519 Signing Keys",
+			Status:       StatusError,
+			Message:      fmt.Sprintf("Signing key file at %s is empty: keys must never be regenerated to preserve historical signature validity", keyPath),
+			Unrepairable: true,
+		})
+		report.UnrepairableCount++
+		return
+	}
+
+	privKey, err := parseEd25519PrivateKey(data)
+	if err != nil {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:         "Ed25519 Signing Keys",
+			Status:       StatusError,
+			Message:      fmt.Sprintf("Signing key file at %s is corrupt or not a valid Ed25519 private key: keys must never be regenerated to preserve historical signature validity", keyPath),
+			Unrepairable: true,
+		})
+		report.UnrepairableCount++
+		return
+	}
+
 	keyHealedPerm := false
 	if fi, err := os.Stat(keyPath); err == nil && fi.Mode().Perm() != 0600 {
 		if err := os.Chmod(keyPath, 0600); err == nil {
@@ -188,58 +235,39 @@ func checkAndHealSigningKey(cfg *config.AgentConfig, paths config.Paths, report 
 		}
 	}
 
-	if keyValid && cfg.SigningKeyPEM != "" && cfg.PublicKeyB64 != "" {
-		if keyHealedPerm {
-			report.Checks = append(report.Checks, CheckItem{
-				Name:    "Ed25519 Signing Keys",
-				Status:  StatusHealed,
-				Message: "Repaired signing key file permissions to 0600",
-				Healed:  true,
-			})
-			report.HealedCount++
-			return
+	priv := privKey
+	pub := priv.Public().(ed25519.PublicKey)
+	pubB64 := base64.StdEncoding.EncodeToString(pub)
+	cfgSynced := false
+	if cfg.SigningKeyPEM == "" || cfg.PublicKeyB64 == "" {
+		cfg.SigningKeyPEM = string(data)
+		cfg.PublicKeyB64 = pubB64
+		_ = config.SaveAgentConfig(cfg, paths)
+		cfgSynced = true
+	}
+
+	if keyHealedPerm || cfgSynced {
+		msg := "Repaired signing key file permissions to 0600"
+		if keyHealedPerm && cfgSynced {
+			msg = "Repaired signing key file permissions to 0600 and synchronized config"
+		} else if cfgSynced {
+			msg = "Synchronized agent configuration with existing Ed25519 signing key"
 		}
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Ed25519 Signing Keys",
-			Status:  StatusOK,
-			Message: "Cryptographic signing keypair intact",
+			Status:  StatusHealed,
+			Message: msg,
+			Healed:  true,
 		})
+		report.HealedCount++
 		return
 	}
-
-	// Heal signing key
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		report.Checks = append(report.Checks, CheckItem{
-			Name:         "Ed25519 Signing Keys",
-			Status:       StatusError,
-			Message:      fmt.Sprintf("Failed generating keypair: %v", err),
-			Unrepairable: true,
-		})
-		report.UnrepairableCount++
-		return
-	}
-
-	keyDir := filepath.Dir(keyPath)
-	_ = os.MkdirAll(keyDir, 0700)
-	block := &pem.Block{
-		Type:  "ED25519 PRIVATE KEY",
-		Bytes: []byte(priv),
-	}
-	pemBytes := pem.EncodeToMemory(block)
-	_ = os.WriteFile(keyPath, pemBytes, 0600)
-
-	cfg.SigningKeyPEM = string(pemBytes)
-	cfg.PublicKeyB64 = base64.StdEncoding.EncodeToString(pub)
-	_ = config.SaveAgentConfig(cfg, paths)
 
 	report.Checks = append(report.Checks, CheckItem{
 		Name:    "Ed25519 Signing Keys",
-		Status:  StatusHealed,
-		Message: "Regenerated Ed25519 keypair and synchronized config",
-		Healed:  true,
+		Status:  StatusOK,
+		Message: "Cryptographic signing keypair intact",
 	})
-	report.HealedCount++
 }
 
 func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {

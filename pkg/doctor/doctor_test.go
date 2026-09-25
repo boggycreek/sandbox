@@ -7,6 +7,8 @@ package doctor
 
 import (
 	"context"
+	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 	"github.com/boggycreek/sandbox/test/harness"
 )
@@ -76,13 +79,15 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected unrepairable issue for corrupted JSON")
 	}
 
-	// 4. Create an agent config with missing fields & missing signing key (to test auto-healing)
-	cfg := &config.AgentConfig{
-		Name: "heal-agent",
+	// 4. Create an agent config with missing fields & bad key permissions (to test auto-healing)
+	cfg, err := config.NewAgentConfig("heal-agent", "base", "coder")
+	if err != nil {
+		t.Fatalf("failed creating agent config: %v", err)
 	}
+	cfg.Password = ""
 	_ = config.SaveAgentConfig(cfg, paths)
-	// Delete signing key to trigger regeneration
-	_ = os.Remove(filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem"))
+	// Set signing key permissions to 0644 to test permission auto-healing
+	_ = os.Chmod(filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem"), 0644)
 
 	report, err = DiagnoseAndHealAgent(ctx, "heal-agent", paths)
 	if err != nil {
@@ -201,10 +206,42 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	cfg.SigningKeyPEM = ""
 	reportKey := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealSigningKey(cfg, paths, reportKey)
-	if reportKey.HealedCount == 0 {
-		t.Errorf("expected key to be healed when corrupt")
+	if reportKey.UnrepairableCount == 0 || len(reportKey.Checks) == 0 || reportKey.Checks[0].Status != StatusError || !reportKey.Checks[0].Unrepairable {
+		t.Errorf("expected corrupt key to be reported as unrepairable error")
 	}
-	// Run again now that key is healed and valid
+	// Verify corrupt key was NOT overwritten
+	content, _ := os.ReadFile(keyPath)
+	if string(content) != "bad-pem-data" {
+		t.Errorf("expected corrupt key file to be preserved without overwrite, got: %s", string(content))
+	}
+
+	// Test missing signing key
+	_ = os.Remove(keyPath)
+	reportMissing := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSigningKey(cfg, paths, reportMissing)
+	if reportMissing.UnrepairableCount == 0 || len(reportMissing.Checks) == 0 || reportMissing.Checks[0].Status != StatusError || !reportMissing.Checks[0].Unrepairable {
+		t.Errorf("expected missing key to be reported as unrepairable error")
+	}
+
+	// Test empty signing key
+	_ = os.WriteFile(keyPath, []byte(""), 0600)
+	reportEmpty := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSigningKey(cfg, paths, reportEmpty)
+	if reportEmpty.UnrepairableCount == 0 || len(reportEmpty.Checks) == 0 || reportEmpty.Checks[0].Status != StatusError || !reportEmpty.Checks[0].Unrepairable {
+		t.Errorf("expected empty key to be reported as unrepairable error")
+	}
+
+	// Restore valid signing key
+	priv, pub, err := libbp.GenerateKeypair()
+	if err != nil {
+		t.Fatalf("failed generating keypair: %v", err)
+	}
+	pemStr, _ := libbp.EncodePrivateKeyPEM(priv)
+	_ = os.WriteFile(keyPath, []byte(pemStr), 0600)
+	cfg.SigningKeyPEM = pemStr
+	cfg.PublicKeyB64 = libbp.EncodePublicKeyBase64(pub)
+
+	// Run again now that key is valid
 	reportKeyIntact := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealSigningKey(cfg, paths, reportKeyIntact)
 	if len(reportKeyIntact.Checks) == 0 || reportKeyIntact.Checks[0].Status != StatusOK {
@@ -215,8 +252,64 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	_ = os.Chmod(keyPath, 0644)
 	reportKeyPerm := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealSigningKey(cfg, paths, reportKeyPerm)
-	if reportKeyPerm.HealedCount == 0 {
+	if reportKeyPerm.HealedCount == 0 || reportKeyPerm.Checks[0].Status != StatusHealed {
 		t.Errorf("expected permission auto-healing for signing key")
+	}
+	if fi, err := os.Stat(keyPath); err != nil || fi.Mode().Perm() != 0600 {
+		t.Errorf("expected key permissions to be healed to 0600, got %o", fi.Mode().Perm())
+	}
+
+	// Test config synchronization when config is missing key fields but file is valid
+	cfg.SigningKeyPEM = ""
+	cfg.PublicKeyB64 = ""
+	reportKeySync := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSigningKey(cfg, paths, reportKeySync)
+	if reportKeySync.HealedCount == 0 || cfg.SigningKeyPEM == "" || cfg.PublicKeyB64 == "" {
+		t.Errorf("expected config synchronization from valid key file")
+	}
+
+	// Test combined permission heal and config sync
+	_ = os.Chmod(keyPath, 0644)
+	cfg.SigningKeyPEM = ""
+	cfg.PublicKeyB64 = ""
+	reportBoth := &DoctorReport{AgentName: "heal-agent"}
+	checkAndHealSigningKey(cfg, paths, reportBoth)
+	if reportBoth.HealedCount == 0 || !strings.Contains(reportBoth.Checks[0].Message, "and synchronized config") {
+		t.Errorf("expected combined permission heal and config sync")
+	}
+
+	// Test parseEd25519PrivateKey variations
+	// 1. Raw 64-byte private key PEM
+	raw64 := make([]byte, 64)
+	pem64 := pem.EncodeToMemory(&pem.Block{Type: "ED25519 PRIVATE KEY", Bytes: raw64})
+	if k, err := parseEd25519PrivateKey(pem64); err != nil || len(k) != 64 {
+		t.Errorf("expected successful decode of raw 64-byte key: %v", err)
+	}
+
+	// 2. Raw 32-byte seed PEM
+	raw32 := make([]byte, 32)
+	pem32 := pem.EncodeToMemory(&pem.Block{Type: "ED25519 SEED", Bytes: raw32})
+	if k, err := parseEd25519PrivateKey(pem32); err != nil || len(k) != 64 {
+		t.Errorf("expected successful decode of 32-byte seed: %v", err)
+	}
+
+	// 3. Invalid PEM block
+	if _, err := parseEd25519PrivateKey([]byte("not-pem-data")); err == nil {
+		t.Errorf("expected error decoding non-PEM data")
+	}
+
+	// 4. Invalid length block
+	badBlock := pem.EncodeToMemory(&pem.Block{Type: "UNKNOWN", Bytes: []byte("short")})
+	if _, err := parseEd25519PrivateKey(badBlock); err == nil {
+		t.Errorf("expected error decoding invalid length block")
+	}
+
+	// Test checkAndHealImage when image is not local
+	reportImgWarn := &DoctorReport{AgentName: "heal-agent"}
+	cfgRemoteImg := &config.AgentConfig{Name: "remote-img-agent", Image: "docker.io/library/busybox:latest"}
+	checkAndHealImage(ctx, cfgRemoteImg, paths, reportImgWarn)
+	if reportImgWarn.WarningCount == 0 {
+		t.Errorf("expected warning for non-local image")
 	}
 
 	// Test healing of agent config permissions when 0644
@@ -226,6 +319,17 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	_, _ = checkAndHealConfig(paths, cfg.Name, reportCfgPerm)
 	if reportCfgPerm.HealedCount == 0 {
 		t.Errorf("expected permission auto-healing for agent config JSON")
+	}
+
+	// Test healing of missing containerName, volumeName, and image in config
+	cfgMissingFields := &config.AgentConfig{Name: "missing-fields-agent"}
+	cfgMissingPath := filepath.Join(paths.AgentsDir, "missing-fields-agent.json")
+	dataMissing, _ := json.Marshal(cfgMissingFields)
+	_ = os.WriteFile(cfgMissingPath, dataMissing, 0600)
+	reportMissingFields := &DoctorReport{AgentName: "missing-fields-agent"}
+	repairedCfg, _ := checkAndHealConfig(paths, "missing-fields-agent", reportMissingFields)
+	if repairedCfg == nil || repairedCfg.ContainerName == "" || repairedCfg.VolumeName == "" || repairedCfg.Image == "" {
+		t.Errorf("expected missing container/volume/image fields to be healed")
 	}
 
 	// 12. Gitea server 500 error branch
