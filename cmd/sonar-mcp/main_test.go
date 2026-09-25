@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,7 +119,7 @@ func TestMCPServerContextCancel(t *testing.T) {
 	client := sonar.NewClient(sonar.ClientConfig{})
 	server := NewMCPServer(client, bytes.NewBuffer(nil), &bytes.Buffer{})
 	err := server.Serve(ctx)
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }

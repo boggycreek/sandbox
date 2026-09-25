@@ -7,7 +7,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,61 +16,16 @@ import (
 	"strings"
 
 	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/mcp"
 )
 
-// JSONRPCMessage represents a standard JSON-RPC 2.0 message
-type JSONRPCMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      any             `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  any             `json:"result,omitempty"`
-	Error   *JSONRPCError   `json:"error,omitempty"`
-}
+// JSONRPCMessage aliases mcp.JSONRPCMessage for testing compatibility.
+type JSONRPCMessage = mcp.JSONRPCMessage
 
-// JSONRPCError represents a JSON-RPC error payload
-type JSONRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-// Tool represents an MCP tool definition
-type Tool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	InputSchema InputSchema `json:"inputSchema"`
-}
-
-// InputSchema describes the tool parameters schema
-type InputSchema struct {
-	Type       string              `json:"type"`
-	Properties map[string]Property `json:"properties,omitempty"`
-	Required   []string            `json:"required,omitempty"`
-}
-
-// Property describes a parameter attribute
-type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
-}
-
-// CallToolParams defines input for tools/call
-type CallToolParams struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
-}
-
-// ContentBlock represents a formatted MCP text output block
-type ContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-// CallToolResult represents the response for tools/call
-type CallToolResult struct {
-	Content []ContentBlock `json:"content"`
-	IsError bool           `json:"isError,omitempty"`
-}
+type (
+	inputSchema = mcp.InputSchema
+	property    = mcp.Property
+)
 
 // GiteaClient defines the interface required by the Gitea Forge MCP server
 type GiteaClient interface {
@@ -83,245 +37,179 @@ type GiteaClient interface {
 	GetFile(ctx context.Context, owner, repo, filePath, ref string) (*gitea.FileContent, error)
 }
 
+var giteaTools = []mcp.Tool{
+	{
+		Name:        "forge_list_tasks",
+		Description: "List tasks, issues, and backlog items from a Gitea fleet forge repository",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"owner": {
+					Type:        "string",
+					Description: "Repository owner or organization (default: fleet)",
+				},
+				"repo": {
+					Type:        "string",
+					Description: "Repository name (default: tasks)",
+				},
+				"state": {
+					Type:        "string",
+					Description: "Issue state filter: 'open', 'closed', or 'all' (default: open)",
+				},
+				"page": {
+					Type:        "integer",
+					Description: "Page number (default: 1)",
+				},
+				"limit": {
+					Type:        "integer",
+					Description: "Page size (default: 50)",
+				},
+			},
+		},
+	},
+	{
+		Name:        "forge_create_task",
+		Description: "Create a new task, backlog item, or bug issue in a Gitea fleet repository",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"owner": {
+					Type:        "string",
+					Description: "Repository owner or organization (default: fleet)",
+				},
+				"repo": {
+					Type:        "string",
+					Description: "Repository name (default: tasks)",
+				},
+				"title": {
+					Type:        "string",
+					Description: "Task title or summary",
+				},
+				"body": {
+					Type:        "string",
+					Description: "Detailed markdown description of the task requirements or issue details",
+				},
+				"labels": {
+					Type:        "array",
+					Description: "Array of label names to assign",
+				},
+				"assignees": {
+					Type:        "array",
+					Description: "Array of agent usernames to assign to this task",
+				},
+			},
+			Required: []string{"title"},
+		},
+	},
+	{
+		Name:        "forge_create_pull_request",
+		Description: "Create a new pull request in a Gitea repository to submit code changes for review",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"owner": {
+					Type:        "string",
+					Description: "Repository owner or organization (default: fleet)",
+				},
+				"repo": {
+					Type:        "string",
+					Description: "Repository name",
+				},
+				"title": {
+					Type:        "string",
+					Description: "Pull request title",
+				},
+				"body": {
+					Type:        "string",
+					Description: "Detailed description of changes, rationale, and testing performed",
+				},
+				"head": {
+					Type:        "string",
+					Description: "Name of the branch containing the changes (e.g. feat/my-feature)",
+				},
+				"base": {
+					Type:        "string",
+					Description: "Target base branch to merge into (default: main)",
+				},
+			},
+			Required: []string{"repo", "title", "head"},
+		},
+	},
+	{
+		Name:        "forge_review_pull_request",
+		Description: "Submit a peer review with approval, change requests, or comments on a pull request",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"owner": {
+					Type:        "string",
+					Description: "Repository owner or organization (default: fleet)",
+				},
+				"repo": {
+					Type:        "string",
+					Description: "Repository name",
+				},
+				"index": {
+					Type:        "integer",
+					Description: "Pull request number / index",
+				},
+				"event": {
+					Type:        "string",
+					Description: "Review action: 'APPROVE', 'REQUEST_CHANGES', or 'COMMENT' (default: COMMENT)",
+				},
+				"body": {
+					Type:        "string",
+					Description: "Review feedback comments or critique",
+				},
+			},
+			Required: []string{"repo", "index"},
+		},
+	},
+	{
+		Name:        "forge_read_file",
+		Description: "Read raw or decoded source file contents from a repository at a specific branch or commit",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"owner": {
+					Type:        "string",
+					Description: "Repository owner or organization (default: fleet)",
+				},
+				"repo": {
+					Type:        "string",
+					Description: "Repository name",
+				},
+				"file_path": {
+					Type:        "string",
+					Description: "Relative file path inside the repository",
+				},
+				"ref": {
+					Type:        "string",
+					Description: "Branch name, tag, or commit SHA (default: main)",
+				},
+			},
+			Required: []string{"repo", "file_path"},
+		},
+	},
+}
+
 // MCPServer manages the STDIO JSON-RPC lifecycle for Gitea Fleet Forge integration
 type MCPServer struct {
+	*mcp.Server
 	giteaClient GiteaClient
-	reader      *bufio.Reader
-	writer      io.Writer
 }
 
 // NewMCPServer creates a new Gitea Forge MCP server instance
 func NewMCPServer(client GiteaClient, r io.Reader, w io.Writer) *MCPServer {
-	return &MCPServer{
+	s := &MCPServer{
 		giteaClient: client,
-		reader:      bufio.NewReader(r),
-		writer:      w,
 	}
+	s.Server = mcp.NewServer("gitea-mcp", "0.1.0", r, w, giteaTools, s.executeTool)
+	return s
 }
 
-// Serve handles incoming JSON-RPC requests until context cancellation or EOF
-func (s *MCPServer) Serve(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		line, err := s.reader.ReadBytes('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-
-		trimmed := strings.TrimSpace(string(line))
-		if trimmed == "" {
-			continue
-		}
-
-		var req JSONRPCMessage
-		if err := json.Unmarshal([]byte(trimmed), &req); err != nil {
-			s.sendError(nil, -32700, "Parse error")
-			continue
-		}
-
-		s.handleMessage(ctx, &req)
-	}
-}
-
-func (s *MCPServer) handleMessage(ctx context.Context, req *JSONRPCMessage) {
-	switch req.Method {
-	case "initialize":
-		res := map[string]any{
-			"protocolVersion": "2024-11-05",
-			"serverInfo": map[string]string{
-				"name":    "gitea-mcp",
-				"version": "0.1.0",
-			},
-			"capabilities": map[string]any{
-				"tools": map[string]bool{},
-			},
-		}
-		s.sendResult(req.ID, res)
-
-	case "notifications/initialized":
-		// No response required for notifications
-
-	case "tools/list":
-		tools := []Tool{
-			{
-				Name:        "forge_list_tasks",
-				Description: "List tasks, issues, and backlog items from a Gitea fleet forge repository",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"owner": {
-							Type:        "string",
-							Description: "Repository owner or organization (default: fleet)",
-						},
-						"repo": {
-							Type:        "string",
-							Description: "Repository name (default: tasks)",
-						},
-						"state": {
-							Type:        "string",
-							Description: "Task state filter: 'open', 'closed', or 'all' (default: open)",
-						},
-						"page": {
-							Type:        "integer",
-							Description: "Page number for pagination (default: 1)",
-						},
-						"limit": {
-							Type:        "integer",
-							Description: "Maximum items per page (default: 20)",
-						},
-					},
-				},
-			},
-			{
-				Name:        "forge_create_task",
-				Description: "Create a new task, defect, or backlog issue in a Gitea fleet forge repository",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"owner": {
-							Type:        "string",
-							Description: "Repository owner or organization (default: fleet)",
-						},
-						"repo": {
-							Type:        "string",
-							Description: "Repository name (default: tasks)",
-						},
-						"title": {
-							Type:        "string",
-							Description: "Task summary title",
-						},
-						"body": {
-							Type:        "string",
-							Description: "Detailed task specifications or acceptance criteria",
-						},
-					},
-					Required: []string{"title"},
-				},
-			},
-			{
-				Name:        "forge_create_pull_request",
-				Description: "Create a new pull request for code review across fleet branches",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"owner": {
-							Type:        "string",
-							Description: "Repository owner or organization (default: fleet)",
-						},
-						"repo": {
-							Type:        "string",
-							Description: "Repository name",
-						},
-						"title": {
-							Type:        "string",
-							Description: "Pull request title",
-						},
-						"head": {
-							Type:        "string",
-							Description: "Source branch containing new changes",
-						},
-						"base": {
-							Type:        "string",
-							Description: "Target branch to merge into (default: main)",
-						},
-						"body": {
-							Type:        "string",
-							Description: "Pull request description, summary of changes, and test instructions",
-						},
-					},
-					Required: []string{"repo", "title", "head"},
-				},
-			},
-			{
-				Name:        "forge_review_pull_request",
-				Description: "Submit a code review approval, change request, or comment on a pull request",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"owner": {
-							Type:        "string",
-							Description: "Repository owner or organization (default: fleet)",
-						},
-						"repo": {
-							Type:        "string",
-							Description: "Repository name",
-						},
-						"index": {
-							Type:        "integer",
-							Description: "Pull request number / index",
-						},
-						"event": {
-							Type:        "string",
-							Description: "Review action: 'APPROVE', 'REQUEST_CHANGES', or 'COMMENT' (default: COMMENT)",
-						},
-						"body": {
-							Type:        "string",
-							Description: "Review feedback comments or critique",
-						},
-					},
-					Required: []string{"repo", "index"},
-				},
-			},
-			{
-				Name:        "forge_read_file",
-				Description: "Read raw or decoded source file contents from a repository at a specific branch or commit",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"owner": {
-							Type:        "string",
-							Description: "Repository owner or organization (default: fleet)",
-						},
-						"repo": {
-							Type:        "string",
-							Description: "Repository name",
-						},
-						"file_path": {
-							Type:        "string",
-							Description: "Relative file path inside the repository",
-						},
-						"ref": {
-							Type:        "string",
-							Description: "Branch name, tag, or commit SHA (default: main)",
-						},
-					},
-					Required: []string{"repo", "file_path"},
-				},
-			},
-		}
-		s.sendResult(req.ID, map[string]any{"tools": tools})
-
-	case "tools/call":
-		var params CallToolParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			s.sendError(req.ID, -32602, "Invalid params")
-			return
-		}
-
-		result := s.executeTool(ctx, params)
-		s.sendResult(req.ID, result)
-
-	default:
-		s.sendError(req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
-	}
-}
-
-func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) CallToolResult {
-	var args map[string]any
-	if len(params.Arguments) > 0 {
-		_ = json.Unmarshal(params.Arguments, &args)
-	}
-	if args == nil {
-		args = make(map[string]any)
-	}
+func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) mcp.CallToolResult {
+	args := params.ParseArguments()
 
 	owner, _ := args["owner"].(string)
 	if owner == "" {
@@ -345,14 +233,11 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 
 		issues, err := s.giteaClient.ListIssues(ctx, owner, repo, state, page, limit)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error listing forge tasks: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error listing forge tasks: %v", err))
 		}
 
 		data, _ := json.MarshalIndent(issues, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "forge_create_task":
 		if repo == "" {
@@ -361,10 +246,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 		title, _ := args["title"].(string)
 		body, _ := args["body"].(string)
 		if strings.TrimSpace(title) == "" {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required argument 'title'"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required argument 'title'")
 		}
 
 		var labels []string
@@ -387,14 +269,11 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 
 		issue, err := s.giteaClient.CreateIssue(ctx, owner, repo, title, body, labels, assignees)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error creating forge task: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error creating forge task: %v", err))
 		}
 
 		data, _ := json.MarshalIndent(issue, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "forge_create_pull_request":
 		title, _ := args["title"].(string)
@@ -403,22 +282,16 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 		body, _ := args["body"].(string)
 
 		if repo == "" || strings.TrimSpace(title) == "" || strings.TrimSpace(head) == "" {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required arguments ('repo', 'title', 'head')"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required arguments ('repo', 'title', 'head')")
 		}
 
 		pr, err := s.giteaClient.CreatePullRequest(ctx, owner, repo, title, body, head, base)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error creating pull request: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error creating pull request: %v", err))
 		}
 
 		data, _ := json.MarshalIndent(pr, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "forge_review_pull_request":
 		var index int64
@@ -426,10 +299,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 			index = int64(idxVal)
 		}
 		if repo == "" || index <= 0 {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required arguments ('repo', 'index')"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required arguments ('repo', 'index')")
 		}
 
 		event, _ := args["event"].(string)
@@ -437,66 +307,31 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 
 		review, err := s.giteaClient.ReviewPullRequest(ctx, owner, repo, index, event, body)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error reviewing pull request #%d: %v", index, err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error reviewing pull request #%d: %v", index, err))
 		}
 
 		data, _ := json.MarshalIndent(review, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "forge_read_file":
 		filePath, _ := args["file_path"].(string)
 		ref, _ := args["ref"].(string)
 
 		if repo == "" || filePath == "" {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required arguments ('repo', 'file_path')"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required arguments ('repo', 'file_path')")
 		}
 
 		file, err := s.giteaClient.GetFile(ctx, owner, repo, filePath, ref)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error reading file %s: %v", filePath, err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error reading file %s: %v", filePath, err))
 		}
 
 		data, _ := json.MarshalIndent(file, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	default:
-		return CallToolResult{
-			Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Unknown tool: %s", params.Name)}},
-			IsError: true,
-		}
+		return mcp.ErrorResult(fmt.Sprintf("Unknown tool: %s", params.Name))
 	}
-}
-
-func (s *MCPServer) sendResult(id, result any) {
-	msg := JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
-	}
-	data, _ := json.Marshal(msg)
-	_, _ = s.writer.Write(append(data, '\n'))
-}
-
-func (s *MCPServer) sendError(id any, code int, message string) {
-	msg := JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: &JSONRPCError{
-			Code:    code,
-			Message: message,
-		},
-	}
-	data, _ := json.Marshal(msg)
-	_, _ = s.writer.Write(append(data, '\n'))
 }
 
 // Run executes the MCP server reading from r and writing to w
