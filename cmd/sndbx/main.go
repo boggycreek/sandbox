@@ -36,7 +36,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	domainArgs := args[1:]
 
 	paths := config.GetPaths()
-	_ = paths.EnsureDirectories()
+	if err := paths.EnsureDirectories(); err != nil {
+		fmt.Fprintf(stderr, "sndbx warning: failed to ensure directories: %v\n", err)
+	}
 	paths.LoadEnv()
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

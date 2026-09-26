@@ -3,6 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
+// Package main implements the host-side management CLI for Agent Sandbox.
 package main
 
 import (
@@ -161,14 +162,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		return 1
 	}
 
-	// Register ACL with live Valkey instance if running
-	registerValkeyACL(ctx, cfg, paths)
-
-	// Register User, Key, and Org Membership with live Gitea instance if running
-	registerGiteaUser(ctx, cfg, paths)
-
-	// Register User and Analysis Token with live SonarQube instance if running
-	registerSonarUser(ctx, cfg, paths)
+	report := lifecycle.ProvisionAgent(ctx, cfg, paths)
 
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
 	fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
@@ -181,20 +175,15 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	}
 	fmt.Fprintf(stdout, "  Container:  %s\n", cfg.ContainerName)
 	fmt.Fprintf(stdout, "  Volume:     %s\n", cfg.VolumeName)
+	if formatted := lifecycle.FormatReport(report); formatted != "" {
+		fmt.Fprintln(stdout, "Infrastructure Provisioning:")
+		fmt.Fprint(stdout, formatted)
+	}
+	if report.HasErrors() {
+		fmt.Fprintf(stderr, "sndbx warning: agent %q provisioned with errors; run 'sndbx agent doctor %s' to diagnose\n", cfg.Name, cfg.Name)
+	}
 	fmt.Fprintf(stdout, "To start: sndbx agent start %s\n", cfg.Name)
 	return 0
-}
-
-func registerValkeyACL(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) {
-	_ = lifecycle.RegisterValkeyACL(ctx, cfg, paths)
-}
-
-func registerGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) {
-	_ = lifecycle.RegisterGiteaUser(ctx, cfg, paths)
-}
-
-func registerSonarUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) {
-	_ = lifecycle.RegisterSonarUser(ctx, cfg, paths)
 }
 
 func handleAgentStart(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
@@ -216,7 +205,7 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 		return 1
 	}
 
-	_ = runtime.SyncSSHConfigFile(ctx, paths)
+	lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
 
 	fmt.Fprintf(stdout, "Agent %q started (%s).\n", cfg.Name, cfg.ContainerName)
 	fmt.Fprintf(stdout, "SSH:   sndbx agent ssh %s\n", cfg.Name)
@@ -374,7 +363,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		if err := checkServer.Run(); err == nil {
 			installCmd := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c",
 				`find /home/agent/.vscode-server/bin -name "code-server" -o -name "code" 2>/dev/null | head -n 1 | xargs -r -I {} {} --install-extension anthropic.claude-code`)
-			_ = installCmd.Run()
+			lifecycle.WarnOnErr(stderr, installCmd.Run(), "install claude-code extension")
 		}
 
 	case ide.FamilyJetBrains:
@@ -504,10 +493,10 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	if args[0] == "--all" {
 		configs, _ := config.ListAgentConfigs(paths)
 		for _, c := range configs {
-			_ = runtime.StopAgentContainer(ctx, c.ContainerName)
+			lifecycle.WarnOnErr(stderr, runtime.StopAgentContainer(ctx, c.ContainerName), "stop container "+c.ContainerName)
 			fmt.Fprintf(stdout, "Stopped %s\n", c.Name)
 		}
-		_ = runtime.SyncSSHConfigFile(ctx, paths)
+		lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
 		return 0
 	}
 
@@ -522,7 +511,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 		fmt.Fprintf(stderr, "sndbx error stopping %s: %v\n", cfg.Name, err)
 		return 1
 	}
-	_ = runtime.SyncSSHConfigFile(ctx, paths)
+	lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
 	fmt.Fprintf(stdout, "Agent %q stopped.\n", cfg.Name)
 	return 0
 }
@@ -543,7 +532,7 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 		fmt.Fprintf(stderr, "sndbx error cleaning %s: %v\n", cfg.Name, err)
 		return 1
 	}
-	_ = runtime.SyncSSHConfigFile(ctx, paths)
+	lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
 	fmt.Fprintf(stdout, "Agent container %q removed (home volume preserved).\n", cfg.ContainerName)
 	return 0
 }
@@ -576,46 +565,18 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 		return 1
 	}
 
-	// 1. Destroy container and persistent volume
-	_ = runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName)
+	report := lifecycle.DeprovisionAgent(ctx, cfg, paths)
 
-	// 2. Delete local config and secrets
-	_ = config.DeleteAgentConfig(name, paths)
-
-	// 2b. Clear per-agent known hosts file
-	runtime.ClearAgentKnownHosts(name, paths)
-
-	// 3. Deprovision Valkey ACL user & streams
-	deprovisionValkeyUser(ctx, name)
-
-	// 4. Deprovision Gitea user & keys
-	deprovisionGiteaUser(ctx, name)
-
-	// 4b. Deprovision SonarQube user & analysis tokens
-	deprovisionSonarUser(ctx, name)
-
-	// 5. Update SSH config file
-	_ = runtime.SyncSSHConfigFile(ctx, paths)
-
-	fmt.Fprintf(stdout, "Agent %q retired and deprovisioned successfully.\n", name)
-	fmt.Fprintf(stdout, "  ✓ Container (%s) and volume (%s) removed\n", cfg.ContainerName, cfg.VolumeName)
-	fmt.Fprintf(stdout, "  ✓ Local configuration and secrets purged\n")
-	fmt.Fprintf(stdout, "  ✓ Valkey ACL user and backplane identity removed\n")
-	fmt.Fprintf(stdout, "  ✓ Gitea user account and authorized keys purged\n")
-	fmt.Fprintf(stdout, "  ✓ SonarQube user account and analysis tokens purged\n")
+	if report.HasErrors() {
+		fmt.Fprintf(stdout, "Agent %q retired with errors.\n", name)
+	} else {
+		fmt.Fprintf(stdout, "Agent %q retired and deprovisioned successfully.\n", name)
+	}
+	fmt.Fprint(stdout, lifecycle.FormatReport(report))
+	if report.HasErrors() {
+		fmt.Fprintf(stderr, "sndbx warning: agent %q deprovisioned with errors\n", name)
+	}
 	return 0
-}
-
-func deprovisionValkeyUser(ctx context.Context, agentName string) {
-	_ = lifecycle.DeprovisionValkeyUser(ctx, agentName)
-}
-
-func deprovisionGiteaUser(ctx context.Context, agentName string) {
-	_ = lifecycle.DeprovisionGiteaUser(ctx, agentName)
-}
-
-func deprovisionSonarUser(ctx context.Context, agentName string) {
-	_ = lifecycle.DeprovisionSonarUser(ctx, agentName)
 }
 
 func handleAgentList(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
