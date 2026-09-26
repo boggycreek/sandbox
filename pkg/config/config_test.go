@@ -6,6 +6,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -95,5 +96,51 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	defaultPaths := GetPaths()
 	if defaultPaths.DataHome == "" || defaultPaths.SSHConfigFile == "" {
 		t.Errorf("GetPaths returned empty DataHome or SSHConfigFile: %+v", defaultPaths)
+	}
+
+	// 7. Whitespace in ResolveImage defaults to base
+	if img := ResolveImage("   \t\n"); img != "agent-sandbox-base:latest" {
+		t.Errorf("expected whitespace to resolve to base image, got %q", img)
+	}
+
+	// 8. Corrupt agent config handling
+	corruptFile := filepath.Join(paths.AgentsDir, "broken.json")
+	if err := os.WriteFile(corruptFile, []byte("{invalid-json-content"), 0600); err != nil {
+		t.Fatalf("failed to write corrupt agent json: %v", err)
+	}
+	if _, err := LoadAgentConfig("broken", paths); err == nil {
+		t.Errorf("expected LoadAgentConfig to fail on corrupt json")
+	}
+
+	// ListAgentConfigs skips corrupt json without failing
+	validCfg, _ := NewAgentConfig("valid-agent", "base", "worker")
+	_ = SaveAgentConfig(validCfg, paths)
+	agents, err := ListAgentConfigs(paths)
+	if err != nil {
+		t.Errorf("ListAgentConfigs failed with corrupt file present: %v", err)
+	}
+	if len(agents) != 1 || agents[0].Name != "valid-agent" {
+		t.Errorf("expected 1 valid agent in list, got %d", len(agents))
+	}
+
+	// 9. SaveAgentConfig fails when EnsureDirectories fails
+	blockedPaths := Paths{
+		DataHome: corruptFile,
+	}
+	if saveErr := SaveAgentConfig(validCfg, blockedPaths); saveErr == nil {
+		t.Errorf("expected SaveAgentConfig to fail when EnsureDirectories fails")
+	}
+
+	// 10. ListAgentConfigs with non-existent directory returns nil, nil
+	missingDirPaths := Paths{AgentsDir: filepath.Join(tmpDir, "does-not-exist")}
+	missingAgents, listErr := ListAgentConfigs(missingDirPaths)
+	if listErr != nil || len(missingAgents) != 0 {
+		t.Errorf("expected empty list without error for nonexistent directory, got len=%d, err=%v", len(missingAgents), listErr)
+	}
+
+	// 11. ListAgentConfigs with file instead of directory returns error
+	errorDirPaths := Paths{AgentsDir: corruptFile}
+	if _, errDir := ListAgentConfigs(errorDirPaths); errDir == nil {
+		t.Errorf("expected ListAgentConfigs to return error when AgentsDir is a file")
 	}
 }

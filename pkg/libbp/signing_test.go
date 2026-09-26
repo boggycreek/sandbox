@@ -100,4 +100,16 @@ func TestLoadPrivateKeyFromFile(t *testing.T) {
 	if _, err := DecodePublicKeyBase64("aGVsbG8="); err == nil { // valid base64 but wrong length (5 bytes instead of 32)
 		t.Errorf("expected error decoding wrong length public key, got nil")
 	}
+
+	// Malformed PEM block content
+	if _, err := DecodePrivateKeyPEM("-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----"); err == nil {
+		t.Errorf("expected error decoding malformed PEM payload, got nil")
+	}
+
+	// Read non-PEM file
+	badPemFile := filepath.Join(tmpDir, "bad.pem")
+	_ = os.WriteFile(badPemFile, []byte("plain text not pem"), 0600)
+	if _, err := LoadPrivateKeyFromFile(badPemFile); err == nil {
+		t.Errorf("expected error loading non-PEM file, got nil")
+	}
 }
