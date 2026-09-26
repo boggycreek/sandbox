@@ -10,9 +10,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/boggycreek/sandbox/pkg/libbp"
 	"github.com/boggycreek/sandbox/test/harness"
@@ -289,5 +291,111 @@ func TestClientConnectionFailure(t *testing.T) {
 	code = Run([]string{"human", "--invalid-flag"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected human invalid flag failure")
+	}
+}
+
+func TestBPDirectPayloadAndPeersScenario(t *testing.T) {
+	valkey := harness.StartValkeyHarness(t)
+	defer valkey.Teardown()
+
+	os.Setenv("BP_HOST", "127.0.0.1")
+	os.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
+	os.Setenv("BP_MODE", "agent")
+	os.Setenv("BP_AGENT", "agent-1")
+	os.Setenv("BP_PASSWORD", valkey.Agent1Pass)
+
+	adminClient, err := valkey.ClientFor("admin")
+	if err != nil {
+		t.Fatalf("failed to connect admin client: %v", err)
+	}
+	defer adminClient.Close()
+
+	ctx := context.Background()
+	// Set liaison to agent-1 and publish a message on its output stream
+	_, err = adminClient.Exec(ctx, "SET", libbp.KeyLiaisonCurrent, "agent-1")
+	if err != nil {
+		t.Fatalf("failed to set liaison: %v", err)
+	}
+	_, err = adminClient.Exec(ctx, "XADD", "agent-1:out", "*", "sender", "agent-1", "content", "initial ping")
+	if err != nil {
+		t.Fatalf("failed to record out message: %v", err)
+	}
+
+	// 1. Verify peers output reflects liaison role
+	code, out, errOut := runCLI([]string{"peers"})
+	if code != 0 {
+		t.Fatalf("peers failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "(liaison)") {
+		t.Errorf("expected peers output to contain '(liaison)', got %q", out)
+	}
+	if !strings.Contains(out, "agent-1") {
+		t.Errorf("expected peers output to contain agent-1, got %q", out)
+	}
+
+	// 2. Say with file only (empty message text)
+	tmpDir := t.TempDir()
+	attachmentPath := filepath.Join(tmpDir, "report.pdf")
+	_ = os.WriteFile(attachmentPath, []byte("%PDF-1.4 mock report"), 0600)
+	code, out, errOut = runCLI([]string{"say", "--file", attachmentPath})
+	if code != 0 {
+		t.Fatalf("say with file only failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "agent-1#") {
+		t.Errorf("expected citation in say output, got %q", out)
+	}
+
+	// 3. Receive message with destination, unverified signature, and parked blob citation
+	_, err = adminClient.Exec(ctx, "XADD", "agent-1:inbox", "*",
+		"sender", "agent-2",
+		"destination", "agent-1",
+		"content", "file attached for review",
+		"blob_path", "agent-2:blob:report.pdf",
+		"signature", "invalid-signature-bytes",
+		"timestamp", fmt.Sprintf("%d", time.Now().UnixMilli()),
+		"seq", "42",
+	)
+	if err != nil {
+		t.Fatalf("failed to write inbox message: %v", err)
+	}
+
+	code, out, errOut = runCLI([]string{"recv"})
+	if code != 0 {
+		t.Fatalf("recv failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "-> agent-1") {
+		t.Errorf("expected destination '-> agent-1' in output, got %q", out)
+	}
+	if !strings.Contains(out, "[UNVERIFIED]") {
+		t.Errorf("expected unverified status in output, got %q", out)
+	}
+	if !strings.Contains(out, "Payload attached: agent-2:blob:report.pdf") {
+		t.Errorf("expected attachment note in output, got %q", out)
+	}
+
+	// 4. Query finger profile of an unregistered agent
+	code, out, errOut = runCLI([]string{"finger", "unregistered-agent"})
+	if code != 0 {
+		t.Fatalf("finger unregistered agent failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "[unregistered-agent] No finger profile registered.") {
+		t.Errorf("expected no profile registered message, got %q", out)
+	}
+}
+
+func TestMainExecution(t *testing.T) {
+	if os.Getenv("TEST_BP_SUBPROCESS") == "1" {
+		os.Args = []string{"bp", "help"}
+		main()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainExecution")
+	cmd.Env = append(os.Environ(), "TEST_BP_SUBPROCESS=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("main subprocess failed: %v, output: %s", err, string(out))
+	}
+	if !strings.Contains(string(out), "Usage: bp") {
+		t.Errorf("expected help output from main, got: %s", string(out))
 	}
 }

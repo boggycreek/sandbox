@@ -480,6 +480,20 @@ func TestLoadClientFromEnv(t *testing.T) {
 	if cfgKeyPath.SigningKey == nil {
 		t.Errorf("expected signing key to load from BP_SIGNING_KEY file path")
 	}
+
+	// Test fallback to AGENT_NAME, AGENT_PASSWORD, and default port 6379
+	os.Setenv("BP_MODE", "agent")
+	os.Setenv("BP_PORT", "not-a-number")
+	os.Setenv("BP_AGENT", "")
+	os.Setenv("AGENT_NAME", "agent-fallback-id")
+	os.Setenv("BP_PASSWORD", "")
+	os.Setenv("AGENT_PASSWORD", "agent-fallback-pw")
+	os.Unsetenv("BP_SIGNING_KEY")
+	os.Unsetenv("BP_SIGNING_KEY_PEM")
+	cfgFallbackAgent := LoadClientFromEnv()
+	if cfgFallbackAgent.AgentID != "agent-fallback-id" || cfgFallbackAgent.Password != "agent-fallback-pw" || cfgFallbackAgent.Port != 6379 {
+		t.Errorf("unexpected LoadClientFromEnv agent fallback: %+v", cfgFallbackAgent)
+	}
 }
 
 func TestClientEdgeCases(t *testing.T) {
@@ -533,5 +547,128 @@ func TestClientEdgeCases(t *testing.T) {
 	liaison, err := client.GetLiaison(ctx)
 	if err != nil || liaison != "" {
 		t.Errorf("expected empty liaison, got %s", liaison)
+	}
+
+	// Guard against dangerous commands in Exec
+	if _, err := client.Exec(ctx, "SHUTDOWN"); err == nil {
+		t.Errorf("expected error from dangerous SHUTDOWN command")
+	}
+
+	// VerifyMessage with cached public key and corrupt signature
+	priv, pub, _ := GenerateKeypair()
+	pubB64 := EncodePublicKeyBase64(pub)
+	_ = client.RegisterIdentity(ctx, IdentityRecord{Name: "agent-1", PubKey: pubB64})
+	msg := &Message{
+		Sender:    "agent-1",
+		Content:   "signed message",
+		Timestamp: time.Now().UnixMilli(),
+		Seq:       1,
+		IsSigned:  true,
+	}
+	msg.Signature = SignPayload(priv, msg.SigningPayload())
+	if !client.VerifyMessage(ctx, msg) {
+		t.Errorf("expected VerifyMessage to succeed for signed message")
+	}
+
+	// Corrupted signature
+	msg.Signature = "AAAA"
+	if client.VerifyMessage(ctx, msg) {
+		t.Errorf("expected VerifyMessage to fail for bad signature")
+	}
+}
+
+func TestDialWithSigningKeyPEM(t *testing.T) {
+	srv, port := startMockValkeyServer(t)
+	defer srv.close()
+
+	priv, _, err := GenerateKeypair()
+	if err != nil {
+		t.Fatalf("GenerateKeypair failed: %v", err)
+	}
+	pemStr, err := EncodePrivateKeyPEM(priv)
+	if err != nil {
+		t.Fatalf("EncodePrivateKeyPEM failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := Dial(ctx, ClientConfig{
+		Host:          "127.0.0.1",
+		Port:          port,
+		Username:      "agent-1",
+		SigningKeyPEM: pemStr,
+	})
+	if err != nil {
+		t.Fatalf("Dial with SigningKeyPEM failed: %v", err)
+	}
+	defer client.Close()
+
+	if client.cfg.SigningKey == nil {
+		t.Errorf("expected SigningKey to be populated from SigningKeyPEM")
+	}
+}
+
+func TestClientClosedOperations(t *testing.T) {
+	srv, port := startMockValkeyServer(t)
+	defer srv.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := Dial(ctx, ClientConfig{
+		Host:     "127.0.0.1",
+		Port:     port,
+		Username: "agent-1",
+		AgentID:  "agent-1",
+	})
+	if err != nil {
+		t.Fatalf("Dial failed: %v", err)
+	}
+
+	// Close client
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// All client operations should return error when client is closed
+	if _, err := client.NextSeq(ctx); err == nil {
+		t.Errorf("expected error on NextSeq after Close")
+	}
+	if _, err := client.Say(ctx, "test", ""); err == nil {
+		t.Errorf("expected error on Say after Close")
+	}
+	if _, err := client.Tell(ctx, "agent-2", "test"); err == nil {
+		t.Errorf("expected error on Tell after Close")
+	}
+	if _, err := client.Reply(ctx, "100-0", "agent-2", "test"); err == nil {
+		t.Errorf("expected error on Reply after Close")
+	}
+	if _, err := client.Recv(ctx, 0); err == nil {
+		t.Errorf("expected error on Recv after Close")
+	}
+	if _, err := client.Human(ctx, 0); err == nil {
+		t.Errorf("expected error on Human after Close")
+	}
+	if _, err := client.Peers(ctx); err == nil {
+		t.Errorf("expected error on Peers after Close")
+	}
+	if err := client.SetStatus(ctx, "idle"); err == nil {
+		t.Errorf("expected error on SetStatus after Close")
+	}
+	if err := client.SetFinger(ctx, map[string]string{"k": "v"}); err == nil {
+		t.Errorf("expected error on SetFinger after Close")
+	}
+	if _, err := client.GetFinger(ctx, "agent-1"); err == nil {
+		t.Errorf("expected error on GetFinger after Close")
+	}
+	if _, err := client.ParkBlob(ctx, []byte("data")); err == nil {
+		t.Errorf("expected error on ParkBlob after Close")
+	}
+	if err := client.SetLiaison(ctx, "agent-1"); err == nil {
+		t.Errorf("expected error on SetLiaison after Close")
+	}
+	if err := client.RegisterIdentity(ctx, IdentityRecord{Name: "agent-1"}); err == nil {
+		t.Errorf("expected error on RegisterIdentity after Close")
 	}
 }
