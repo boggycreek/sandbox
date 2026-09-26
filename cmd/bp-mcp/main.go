@@ -7,71 +7,24 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/pkg/mcp"
 )
 
-// JSONRPCMessage represents a standard JSON-RPC 2.0 message
-type JSONRPCMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      any             `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  any             `json:"result,omitempty"`
-	Error   *JSONRPCError   `json:"error,omitempty"`
-}
+// JSONRPCMessage aliases mcp.JSONRPCMessage for testing compatibility.
+type JSONRPCMessage = mcp.JSONRPCMessage
 
-// JSONRPCError represents a JSON-RPC error payload
-type JSONRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-// Tool represents an MCP tool definition
-type Tool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	InputSchema InputSchema `json:"inputSchema"`
-}
-
-// InputSchema describes the tool parameters schema
-type InputSchema struct {
-	Type       string              `json:"type"`
-	Properties map[string]Property `json:"properties,omitempty"`
-	Required   []string            `json:"required,omitempty"`
-}
-
-// Property describes a parameter attribute
-type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
-}
-
-// CallToolParams defines input for tools/call
-type CallToolParams struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
-}
-
-// ContentBlock represents a formatted MCP text output block
-type ContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-// CallToolResult represents the response for tools/call
-type CallToolResult struct {
-	Content []ContentBlock `json:"content"`
-	IsError bool           `json:"isError,omitempty"`
-}
+type (
+	inputSchema = mcp.InputSchema
+	property    = mcp.Property
+)
 
 // BPClient defines the interface required by the Backplane MCP server
 type BPClient interface {
@@ -84,182 +37,108 @@ type BPClient interface {
 	Close() error
 }
 
+var bpTools = []mcp.Tool{
+	{
+		Name:        "fleet_send_message",
+		Description: "Send a direct, signed point-to-point message or threaded reply to another agent or human operator inbox",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"recipient": {
+					Type:        "string",
+					Description: "Target agent name or operator ID (e.g. opencode-1, operator)",
+				},
+				"message": {
+					Type:        "string",
+					Description: "Content of the message",
+				},
+				"reply_to": {
+					Type:        "string",
+					Description: "Optional citation ID or message ID being replied to (e.g. agent-1#42 or stream ID)",
+				},
+				"file_path": {
+					Type:        "string",
+					Description: "Optional local file path to attach as blob",
+				},
+			},
+			Required: []string{"recipient", "message"},
+		},
+	},
+	{
+		Name:        "fleet_broadcast",
+		Description: "Broadcast a public signed message to the entire fleet public feed",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"message": {
+					Type:        "string",
+					Description: "Content of the broadcast announcement",
+				},
+				"file_path": {
+					Type:        "string",
+					Description: "Optional local file path to attach as a public blob",
+				},
+			},
+			Required: []string{"message"},
+		},
+	},
+	{
+		Name:        "fleet_read_inbox",
+		Description: "Read new pending messages from agent inbox and peer broadcast feeds",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"block_seconds": {
+					Type:        "integer",
+					Description: "Optional blocking timeout in seconds (0 for non-blocking)",
+				},
+				"count": {
+					Type:        "integer",
+					Description: "Maximum number of messages to return (default: all pending)",
+				},
+			},
+		},
+	},
+	{
+		Name:        "fleet_list_peers",
+		Description: "List all known and active peer agents in the fleet, their status, roles, and liaison status",
+		InputSchema: inputSchema{
+			Type: "object",
+		},
+	},
+	{
+		Name:        "fleet_set_status",
+		Description: "Update current agent operational status broadcasted to the fleet",
+		InputSchema: inputSchema{
+			Type: "object",
+			Properties: map[string]property{
+				"status": {
+					Type:        "string",
+					Description: "Agent status text (e.g. idle, working: task-123, blocked: awaiting human input)",
+				},
+			},
+			Required: []string{"status"},
+		},
+	},
+}
+
 // MCPServer manages the STDIO JSON-RPC lifecycle for Fleet Backplane messaging
 type MCPServer struct {
+	*mcp.Server
 	bpClient BPClient
-	reader   *bufio.Reader
-	writer   io.Writer
 }
 
 // NewMCPServer creates a new Backplane MCP server instance
 func NewMCPServer(client BPClient, r io.Reader, w io.Writer) *MCPServer {
-	return &MCPServer{
+	s := &MCPServer{
 		bpClient: client,
-		reader:   bufio.NewReader(r),
-		writer:   w,
 	}
+	s.Server = mcp.NewServer("bp-mcp", "0.1.0", r, w, bpTools, s.executeTool)
+	return s
 }
 
-// Serve handles incoming JSON-RPC requests until context cancellation or EOF
-func (s *MCPServer) Serve(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		line, err := s.reader.ReadBytes('\n')
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
-
-		trimmed := strings.TrimSpace(string(line))
-		if trimmed == "" {
-			continue
-		}
-
-		var req JSONRPCMessage
-		if err := json.Unmarshal([]byte(trimmed), &req); err != nil {
-			s.sendError(nil, -32700, "Parse error")
-			continue
-		}
-
-		s.handleMessage(ctx, &req)
-	}
-}
-
-func (s *MCPServer) handleMessage(ctx context.Context, req *JSONRPCMessage) {
-	switch req.Method {
-	case "initialize":
-		res := map[string]any{
-			"protocolVersion": "2024-11-05",
-			"serverInfo": map[string]string{
-				"name":    "bp-mcp",
-				"version": "0.1.0",
-			},
-			"capabilities": map[string]any{
-				"tools": map[string]bool{},
-			},
-		}
-		s.sendResult(req.ID, res)
-
-	case "notifications/initialized":
-		// No response required for notifications
-
-	case "tools/list":
-		tools := []Tool{
-			{
-				Name:        "fleet_send_message",
-				Description: "Send a direct, signed point-to-point message or threaded reply to another agent or human operator inbox",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"recipient": {
-							Type:        "string",
-							Description: "Target agent name or operator ID (e.g. opencode-1, operator)",
-						},
-						"message": {
-							Type:        "string",
-							Description: "Content of the message",
-						},
-						"reply_to": {
-							Type:        "string",
-							Description: "Optional citation ID or message ID being replied to (e.g. agent-1#42 or stream ID)",
-						},
-						"file_path": {
-							Type:        "string",
-							Description: "Optional local file path to attach as blob",
-						},
-					},
-					Required: []string{"recipient", "message"},
-				},
-			},
-			{
-				Name:        "fleet_broadcast",
-				Description: "Broadcast a public signed message to the entire fleet public feed",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"message": {
-							Type:        "string",
-							Description: "Content of the broadcast announcement",
-						},
-						"file_path": {
-							Type:        "string",
-							Description: "Optional local file path to attach as a public blob",
-						},
-					},
-					Required: []string{"message"},
-				},
-			},
-			{
-				Name:        "fleet_read_inbox",
-				Description: "Read new pending messages from agent inbox and peer broadcast feeds",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"block_seconds": {
-							Type:        "integer",
-							Description: "Optional blocking timeout in seconds (0 for non-blocking)",
-						},
-						"count": {
-							Type:        "integer",
-							Description: "Maximum number of messages to return (default: all pending)",
-						},
-					},
-				},
-			},
-			{
-				Name:        "fleet_list_peers",
-				Description: "List all known and active peer agents in the fleet, their status, roles, and liaison status",
-				InputSchema: InputSchema{
-					Type: "object",
-				},
-			},
-			{
-				Name:        "fleet_set_status",
-				Description: "Update current agent operational status broadcasted to the fleet",
-				InputSchema: InputSchema{
-					Type: "object",
-					Properties: map[string]Property{
-						"status": {
-							Type:        "string",
-							Description: "Agent status text (e.g. idle, working: task-123, blocked: awaiting human input)",
-						},
-					},
-					Required: []string{"status"},
-				},
-			},
-		}
-		s.sendResult(req.ID, map[string]any{"tools": tools})
-
-	case "tools/call":
-		var params CallToolParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			s.sendError(req.ID, -32602, "Invalid params")
-			return
-		}
-
-		result := s.executeTool(ctx, params)
-		s.sendResult(req.ID, result)
-
-	default:
-		s.sendError(req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
-	}
-}
-
-func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) CallToolResult {
-	var args map[string]any
-	if len(params.Arguments) > 0 {
-		_ = json.Unmarshal(params.Arguments, &args)
-	}
-	if args == nil {
-		args = make(map[string]any)
-	}
+func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) mcp.CallToolResult {
+	args := params.ParseArguments()
 
 	switch params.Name {
 	case "fleet_send_message":
@@ -268,10 +147,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 		replyTo, _ := args["reply_to"].(string)
 
 		if recipient == "" || message == "" {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required arguments 'recipient' and 'message'"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required arguments 'recipient' and 'message'")
 		}
 
 		var sentMsg *libbp.Message
@@ -284,36 +160,27 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 		}
 
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error sending fleet message: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error sending fleet message: %v", err))
 		}
 
 		data, _ := json.MarshalIndent(sentMsg, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "fleet_broadcast":
 		message, _ := args["message"].(string)
 		filePath, _ := args["file_path"].(string)
 
 		if message == "" {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required argument 'message'"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required argument 'message'")
 		}
 
 		sentMsg, err := s.bpClient.Say(ctx, message, filePath)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error broadcasting fleet message: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error broadcasting fleet message: %v", err))
 		}
 
 		data, _ := json.MarshalIndent(sentMsg, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "fleet_read_inbox":
 		var blockSeconds int
@@ -327,10 +194,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 
 		msgs, err := s.bpClient.Recv(ctx, blockSeconds)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error reading fleet inbox: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error reading fleet inbox: %v", err))
 		}
 
 		if maxCount > 0 && len(msgs) > maxCount {
@@ -338,67 +202,32 @@ func (s *MCPServer) executeTool(ctx context.Context, params CallToolParams) Call
 		}
 
 		data, _ := json.MarshalIndent(msgs, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "fleet_list_peers":
 		peers, err := s.bpClient.Peers(ctx)
 		if err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error listing fleet peers: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error listing fleet peers: %v", err))
 		}
 
 		data, _ := json.MarshalIndent(peers, "", "  ")
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: string(data)}}}
+		return mcp.TextResult(string(data))
 
 	case "fleet_set_status":
 		status, _ := args["status"].(string)
 		if status == "" {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: "Missing required argument 'status'"}},
-				IsError: true,
-			}
+			return mcp.ErrorResult("Missing required argument 'status'")
 		}
 
 		if err := s.bpClient.SetStatus(ctx, status); err != nil {
-			return CallToolResult{
-				Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Error updating fleet status: %v", err)}},
-				IsError: true,
-			}
+			return mcp.ErrorResult(fmt.Sprintf("Error updating fleet status: %v", err))
 		}
 
-		return CallToolResult{Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Status updated to %q", status)}}}
+		return mcp.TextResult(fmt.Sprintf("Status updated to %q", status))
 
 	default:
-		return CallToolResult{
-			Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("Unknown tool: %s", params.Name)}},
-			IsError: true,
-		}
+		return mcp.ErrorResult(fmt.Sprintf("Unknown tool: %s", params.Name))
 	}
-}
-
-func (s *MCPServer) sendResult(id, result any) {
-	msg := JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
-	}
-	data, _ := json.Marshal(msg)
-	_, _ = s.writer.Write(append(data, '\n'))
-}
-
-func (s *MCPServer) sendError(id any, code int, message string) {
-	msg := JSONRPCMessage{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: &JSONRPCError{
-			Code:    code,
-			Message: message,
-		},
-	}
-	data, _ := json.Marshal(msg)
-	_, _ = s.writer.Write(append(data, '\n'))
 }
 
 // Run executes the MCP server reading from r and writing to w

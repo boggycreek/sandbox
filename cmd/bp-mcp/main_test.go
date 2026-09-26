@@ -10,11 +10,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/libbp"
+	"github.com/boggycreek/sandbox/test/harness"
 )
 
 type mockBPClient struct {
@@ -267,4 +271,32 @@ func TestRunFunctionDialError(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error connecting to unreachable backplane, got nil")
 	}
+}
+
+func TestRunSuccess(t *testing.T) {
+	valkey := harness.StartValkeyHarness(t)
+	t.Setenv("BP_HOST", "127.0.0.1")
+	t.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
+	t.Setenv("BP_AGENT", "agent-1")
+	t.Setenv("BP_PASSWORD", valkey.Agent1Pass)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := Run(ctx, bytes.NewBuffer(nil), &bytes.Buffer{})
+	if err != nil {
+		t.Errorf("expected Run with empty input to return nil, got %v", err)
+	}
+}
+
+func TestMainFunction(t *testing.T) {
+	_ = t
+	if os.Getenv("TEST_RUN_MAIN") == "1" {
+		main()
+		return
+	}
+	// #nosec G204 -- test runner executing itself
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainFunction")
+	cmd.Env = append(os.Environ(), "TEST_RUN_MAIN=1", "BP_HOST=127.0.0.1", "BP_PORT=1")
+	_ = cmd.Run()
 }
