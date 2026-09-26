@@ -88,7 +88,9 @@ func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 	sshKeyPub := filepath.Clean(fmt.Sprintf("%s.pub", paths.IDEKeyFile))
 	// #nosec G304 -- reading controlled IDE public key file
 	if keyData, err := os.ReadFile(sshKeyPub); err == nil && len(keyData) > 0 {
-		_ = client.AddUserSSHKey(ctx, cfg.Name, fmt.Sprintf("%s-ide-key", cfg.Name), string(keyData))
+		if keyErr := client.AddUserSSHKey(ctx, cfg.Name, fmt.Sprintf("%s-ide-key", cfg.Name), string(keyData)); keyErr != nil {
+			return fmt.Errorf("failed registering IDE public key with Gitea: %w", keyErr)
+		}
 	}
 
 	// 3. Add user to default fleet organization
@@ -135,9 +137,48 @@ func RegisterSonarUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 
 	// 2. Generate agent-specific analysis token
 	token, err := client.GenerateUserToken(ctx, cfg.Name, fmt.Sprintf("%s-agent-token", cfg.Name))
-	if err == nil && token != "" {
+	if err != nil {
+		return fmt.Errorf("failed generating SonarQube analysis token: %w", err)
+	}
+	if token != "" {
 		cfg.SonarToken = token
 		return config.SaveAgentConfig(cfg, paths)
 	}
-	return err
+	return nil
+}
+
+// ProvisionAgent performs all infrastructure provisioning steps for an agent and returns a structured ProvisioningReport.
+//
+//nolint:gocritic // paths passed by value for consistency with config package
+func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) *ProvisioningReport {
+	report := NewProvisioningReport(cfg.Name, "provision")
+
+	// 1. Valkey ACL & Identity
+	if err := RegisterValkeyACL(ctx, cfg, paths); err == nil {
+		report.AddStep("Valkey ACL & Identity", StatusOK, "Registered ACL user and backplane identity", nil)
+	} else if IsOfflineError(err) {
+		report.AddStep("Valkey ACL & Identity", StatusSkipped, fmt.Sprintf("Valkey infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+	} else {
+		report.AddStep("Valkey ACL & Identity", StatusError, fmt.Sprintf("Failed registering Valkey ACL: %v", err), err)
+	}
+
+	// 2. Gitea Account & Keys
+	if err := RegisterGiteaUser(ctx, cfg, paths); err == nil {
+		report.AddStep("Gitea User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
+	} else if IsOfflineError(err) {
+		report.AddStep("Gitea User & Keys", StatusSkipped, fmt.Sprintf("Gitea infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+	} else {
+		report.AddStep("Gitea User & Keys", StatusError, fmt.Sprintf("Failed registering Gitea user: %v", err), err)
+	}
+
+	// 3. SonarQube User & Analysis Token
+	if err := RegisterSonarUser(ctx, cfg, paths); err == nil {
+		report.AddStep("SonarQube Account & Token", StatusOK, "Registered user account and generated analysis token", nil)
+	} else if IsOfflineError(err) {
+		report.AddStep("SonarQube Account & Token", StatusSkipped, fmt.Sprintf("SonarQube infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+	} else {
+		report.AddStep("SonarQube Account & Token", StatusError, fmt.Sprintf("Failed registering SonarQube user: %v", err), err)
+	}
+
+	return report
 }

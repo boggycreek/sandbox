@@ -54,6 +54,9 @@ func TestSndbxCLIUsageAndHelp(t *testing.T) {
 func TestSndbxAgentDomain(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("BP_PORT", "65530")
+	t.Setenv("GITEA_URL", "http://127.0.0.1:65531")
+	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65532")
 
 	// Agent help / empty
 	code, _, errOut := runSndbx([]string{"agent"})
