@@ -24,7 +24,7 @@ If multiple agent containers share the host network stack, port collisions occur
 Every agent container executes within an isolated, dedicated Linux network namespace (`netns`) created by rootless Podman.
 
 The networking model mandates:
-- **Rootless Bridge**: Containers attach to a dedicated user-space bridge (`sndbx-net`), providing DHCP and DNS name resolution (`sndbx-<name>`).
+- **Rootless Bridge**: Containers attach to a user-space bridge network (`agent-sandbox-infra`), providing internal DNS name resolution (`sndbx-agent-<name>`).
 - **No Host Network Sharing**: Containers never use `--net=host`.
 - **Dedicated Port Mapping**: Each agent is allocated a dedicated host port (defaulting to the `2222+` port range) bound strictly to `127.0.0.1` for SSH access. Port assignments are persisted in the agent's configuration descriptor.
 - **Inter-Agent Isolation**: Direct container-to-container socket binding is prevented; communication must route through the authorized Valkey backplane or egress gateway.

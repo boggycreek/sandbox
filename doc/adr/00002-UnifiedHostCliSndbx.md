@@ -20,16 +20,15 @@ executive_summary: "A single multi-command binary (sndbx) acts as the sole opera
 Operators and AI agents managing sandboxes require a cohesive, discoverable operational interface. Fragmented scripts and distinct standalone executables create cognitive friction, inconsistent argument parsing, and divergent error reporting.
 
 ## Decision (What)
-A single binary (`sndbx`), deployed to `~/.local/bin/sndbx`, serves as the sole official CLI interface for all Agent Sandbox host operations.
+A single binary (`sndbx`), installed to the user's local binary path (`~/.local/bin/sndbx`), serves as the sole official CLI interface for all Agent Sandbox host operations.
 
-The CLI organizes capabilities under canonical, noun-first subcommand trees:
-- `sndbx agent <create|start|stop|list|status|open|attach|clean|retire>`: Container lifecycle, monitoring, and interactive access.
-- `sndbx infra <start|stop|status>`: Shared fleet service management (Valkey, Gitea).
-- `sndbx doctor [--infra] [--fix]`: Environment, runtime, and infrastructure diagnostic self-healing.
-- `sndbx plugin <add|remove|list>`: IDE extension management for JetBrains Gateway, JetBrains Toolbox, and VS Code.
-- `sndbx update`: End-to-end repository sync, compilation, and container image rebuilding.
+The CLI organizes capabilities under canonical, noun-first domain subcommand hierarchies:
+- **`agent`**: Agent lifecycle management (specification, provisioning, startup, process halting, clean resets, and permanent deprovisioning), interactive terminal attachment (`tmux`), IDE remote-development launching (`open`), SSH configuration emission, and per-agent health diagnostics with autonomous self-healing.
+- **`infra`**: Shared fleet infrastructure management (starting, inspecting, health auditing, and stopping the shared Valkey, Gitea, SonarQube, and PostgreSQL service containers).
+- **`plugin`**: Host IDE integration management, installing and unlinking thin-client remote development configurations for supported IDE families (JetBrains Gateway, JetBrains Toolbox, VS Code).
+- **`update`**: Host environment synchronization, distributing prebuilt native binaries or compiling from source, and rebuilding container images.
 
-All commands enforce consistent POSIX exit codes, standardized JSON or tabular output flags, and actionable error messages.
+All commands adhere to consistent POSIX exit codes, structured output formats (supporting programmatic JSON alongside human-readable tables), and actionable error diagnostics without silent failure modes.
 
 ## Status
 Accepted (Alpha as-built).

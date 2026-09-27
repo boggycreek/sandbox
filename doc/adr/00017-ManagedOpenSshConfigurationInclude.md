@@ -24,10 +24,9 @@ Standard command-line SSH tools, git clients, and IDE remote development extensi
 Agent Sandbox manages host SSH configuration through an isolated, external config file linked via the standard OpenSSH `Include` directive:
 
 1. **Managed File**: All agent host blocks (`Host sndbx-<name>`) are dynamically written to `~/.local/share/agent-sandbox/ssh_config`.
-2. **Standardized Options**: Each block defines `HostName 127.0.0.1`, `Port <allocated-port>`, `User agent`, `IdentityFile ~/.local/share/agent-sandbox/id_ed25519`, `StrictHostKeyChecking accept-new`, and `UserKnownHostsFile ~/.local/share/agent-sandbox/known_hosts`.
-3. **Idempotent Link**: `sndbx` checks `~/.ssh/config` and prepends or appends a single line:
-   `Include ~/.local/share/agent-sandbox/ssh_config`
-4. **Safe Lifecycle**: Adding or removing agents updates only the managed file, never altering the user's primary `~/.ssh/config`.
+2. **Standardized Options**: Each block defines `HostName 127.0.0.1`, `Port <allocated-port>`, `User agent`, `IdentityFile ~/.ssh/agent-sandbox`, `StrictHostKeyChecking accept-new`, and `UserKnownHostsFile ~/.local/share/agent-sandbox/known_hosts`.
+3. **Idempotent Link**: Host SSH configuration ensures an `Include ~/.local/share/agent-sandbox/ssh_config` directive is present in `~/.ssh/config`.
+4. **Safe Lifecycle**: Adding, stopping, or removing agents updates only the managed configuration file, leaving the user's primary `~/.ssh/config` intact.
 
 ## Status
 Accepted (Alpha as-built).

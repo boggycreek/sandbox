@@ -2,7 +2,7 @@
 
 This directory documents the foundational architectural decisions governing the **Agent Sandbox** system for the **v0.1.0-alpha** release.
 
-Records are numbered serially (`00001` through `00031`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
+Records are numbered serially (`00001` through `00035`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
 
 ---
 
@@ -32,6 +32,8 @@ Records are numbered serially (`00001` through `00031`) and organized by topic d
   *Executive Summary:* A single multi-command binary (`sndbx`) acts as the sole operator entry point for fleet management, diagnostics, plugin setup, and orchestration.
 - **[00003 — Podman as Required Container Engine](00003-PodmanAsRequiredContainerEngine.md)**  
   *Executive Summary:* Rootless Podman is the mandatory container runtime dependency, eliminating root-owned daemon requirements and enforcing user-space privilege boundaries.
+- **[00034 — Multi-Version Go Toolchain Management via XDG Standard](00034-MultiVersionGoToolchainManagementViaXdgStandard.md)**  
+  *Executive Summary:* Standardizes automated Go toolchain provisioning and multi-version management under the XDG Base Directory specification (`~/.local/share/go/sdk`), ensuring reproducible builds and quality gate execution across host environments without requiring root/sudo privileges or system-level modifications.
 
 ### Container Runtime & Storage (`THEME-RUNTIME`)
 - **[00004 — Non-Root Container User and Permission Bounds](00004-NonRootContainerUserAndPermissionBounds.md)**  
@@ -52,18 +54,18 @@ Records are numbered serially (`00001` through `00031`) and organized by topic d
   *Executive Summary:* Enforces clear teardown boundaries: `clean` destroys ephemeral container instances while preserving data; `retire` purges volumes, keys, Valkey credentials, and Gitea accounts.
 
 ### Security, Backplane & Messaging (`THEME-SECURITY`)
-- **[00010 — Valkey PubSub Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)**  
-  *Executive Summary:* Inter-agent and telemetry communication utilizes a shared Valkey message bus governed by strict per-agent ACL rules and isolated channel prefixes.
+- **[00010 — Valkey Streams Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)**  
+  *Executive Summary:* Inter-agent and telemetry communication utilizes a shared Valkey Streams message bus governed by strict per-agent ACL rules and isolated stream keys.
 - **[00011 — Ed25519 Cryptographic Message Signing](00011-Ed25519CryptographicMessageSigning.md)**  
   *Executive Summary:* All backplane events and commands require cryptographic Ed25519 signatures verified against the sending agent's public key to guarantee authenticity.
 - **[00012 — libbp Core Client Library and Shared C ABI](00012-LibbpCoreClientLibraryAndCAbi.md)**  
-  *Executive Summary:* Backplane IPC protocol logic is implemented in a native Go library (`libbp`) and exposed as a shared C ABI (`libbp.so`) for polyglot agent runtimes.
+  *Executive Summary:* Backplane IPC protocol logic is implemented in a native Go library (`libbp`) and planned for export as a shared C ABI (`libbp.so`) for polyglot agent runtimes.
 
 ### Network Isolation & Perimeter Defense (`THEME-NETWORKING`)
 - **[00013 — Per-Instance Network Isolation](00013-PerInstanceNetworkIsolation.md)**  
   *Executive Summary:* Sandboxes run in isolated rootless network namespaces with independent bridge interfaces and dedicated localhost SSH port allocations.
 - **[00014 — Default-Deny Network Egress Filtering](00014-DefaultDenyNetworkEgressFiltering.md)**  
-  *Executive Summary:* Outbound container network traffic is restricted by default via a sidecar filter, permitting only approved LLM API endpoints and package repositories.
+  *Executive Summary:* Outbound container network traffic is restricted by default via an egress sidecar filter, permitting only approved LLM API endpoints and package repositories.
 - **[00015 — Rootless Netns Runtime Directory Auto-Healing](00015-RootlessNetnsRuntimeDirectoryAutoHealing.md)**  
   *Executive Summary:* Runtime preflight hooks, transparent failure interception, and test cleanup routines validate directory permissions and reconcile desynchronized rootless network namespace mounts.
 
@@ -73,7 +75,7 @@ Records are numbered serially (`00001` through `00031`) and organized by topic d
 - **[00017 — Managed OpenSSH Configuration Include](00017-ManagedOpenSshConfigurationInclude.md)**  
   *Executive Summary:* `sndbx` maintains a dedicated managed `ssh_config` file and idempotently links it into `~/.ssh/config` via an `Include` directive for zero-configuration host SSH access.
 - **[00018 — Root-Owned IDE Settings Protection](00018-RootOwnedIdeSettingsProtection.md)**  
-  *Executive Summary:* In-container IDE configuration directories (`.vscode`, `.cursor`) are root-owned and read-only to agent UID 1000, preventing unauthorized extensions or policy tampering.
+  *Executive Summary:* In-container IDE configuration directories (`.vscode`, `.cursor`) are planned to be root-owned and read-only to agent UID 1000, preventing unauthorized extensions or policy tampering.
 
 ### IDE Plugin Management (`THEME-PLUGINS`)
 - **[00019 — Explicit Plugin Manager Interface](00019-ExplicitPluginManagerInterface.md)**  
@@ -83,7 +85,7 @@ Records are numbered serially (`00001` through `00031`) and organized by topic d
 
 ### Shared Fleet Services (`THEME-FLEET`)
 - **[00021 — Local Gitea Fleet Collaboration and Memory Backup](00021-LocalGiteaFleetCollaborationAndBackup.md)**  
-  *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, and automated synchronization of agent dotfiles and memory.
+  *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, task tracking backplane, and persistent remote dotfiles and memory repositories.
 - **[00022 — Local OpenAI-Compatible Inference Proxy](00022-LocalOpenAiCompatibleInferenceProxy.md)**  
   *Executive Summary:* Sandboxes access LLM inference through a standardized local OpenAI-compatible HTTP gateway, shielding agents from direct external API credentials.
 - **[00027 — Local SonarQube Deterministic Mechanical Analysis and Quality Gate Infrastructure](00027-LocalSonarQubeDeterministicMechanicalAnalysisAndQualityGateInfra.md)**  
@@ -94,16 +96,20 @@ Records are numbered serially (`00001` through `00031`) and organized by topic d
   *Executive Summary:* Automates the provisioning and deprovisioning of dedicated SonarQube user accounts and analysis tokens for sandbox agents. During agent creation, a scoped analysis token is generated and injected into the container environment as `SONAR_TOKEN`. Agent retirement revokes active analysis tokens and deactivates the SonarQube user account.
 - **[00032 — Fleet Model Context Protocol (MCP) Suite for Agent Workspaces](00032-FleetModelContextProtocolSuiteForAgentWorkspaces.md)**  
   *Executive Summary:* Defines the in-container Model Context Protocol (MCP) suite over STDIO JSON-RPC 2.0, equipping autonomous sandbox agents with schema-validated tools for inter-agent communication (`bp-mcp`), task management, episodic memory, and diagnostics while maintaining Ed25519 cryptographic signing and ACL boundaries.
+- **[00035 — Host-Bridged Local LLM Inference Gateway](00035-HostBridgedLocalLlmInferenceGateway.md)**  
+  *Executive Summary:* Resolves host-bound local LLM inference engines (Ollama, llama.cpp, vLLM, LiteLLM) from unprivileged rootless containers via Podman host-gateway resolution (`--add-host=llm-gateway:host-gateway`) and automatic configuration URL translation.
 
 ### Operations, Diagnostics & Quality (`THEME-OPERATIONS`)
 - **[00023 — Comprehensive Diagnostic Doctor and Self-Healing](00023-ComprehensiveDoctorAndSelfHealing.md)**  
-  *Executive Summary:* A unified diagnostic engine (`sndbx doctor [--infra] [--fix]`) audits permissions, container states, network bridges, and shared daemons with automated remediation.
+  *Executive Summary:* Dedicated diagnostic doctor domains (`sndbx agent doctor` and `sndbx infra doctor`) audit configuration, keys, storage, network bridges, and shared services with intrinsic automated remediation.
 - **[00024 — Unified Update Pipeline (sndbx update)](00024-UnifiedUpdatePipeline.md)**  
   *Executive Summary:* The `sndbx update` command executes an atomic three-stage local deployment: git repository synchronization, native CLI compilation to `~/.local/bin`, and OCI image rebuilding.
 - **[00025 — Quality Gates and Coverage Enforcement](00025-QualityGatesAndCoverageEnforcement.md)**  
   *Executive Summary:* Enforces continuous quality gates requiring >=90% statement test coverage (`make test-coverage`), static analysis (`golangci-lint`), and isolated ephemeral integration test fixtures.
 - **[00031 — Automated Software Bill of Materials (SBOM) Generation and Release Publishing](00031-AutomatedSoftwareBillOfMaterialsAndReleasePublishing.md)**  
   *Executive Summary:* Automates the generation and distribution of machine-readable Software Bill of Materials (SBOM) across release pipelines and local build targets. Leverages Syft to produce both SPDX and CycloneDX JSON formats for source repositories and compiled release archives, publishing them directly as release assets.
+- **[00033 — Host-Side Graph Task Tracking via Dolt-Backed Beads](00033-HostSideGraphTaskTrackingViaDoltBackedBeads.md)**  
+  *Executive Summary:* Adopts Beads (`bd`) backed by a local Dolt database and synchronized with upstream GitHub (`refs/dolt/data`) for host-side platform task tracking (`sndbx-*`), maintaining strict two-plane isolation from in-container fleet task workloads.
 
 ### Compliance, Licensing & Governance (`THEME-GOVERNANCE`)
 - **[00030 — Open Source Attribution and Third-Party Licensing Notices](00030-OpenSourceAttributionAndThirdPartyLicensingNotices.md)**  

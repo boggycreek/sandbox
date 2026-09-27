@@ -1,6 +1,6 @@
 ---
 adr: "00010"
-title: "Valkey PubSub Messaging Bus and ACL Isolation"
+title: "Valkey Streams Messaging Bus and ACL Isolation"
 topic: "Security, Backplane & Messaging"
 theme: "THEME-SECURITY"
 status: "accepted"
@@ -9,34 +9,35 @@ as_built: true
 tags:
   - messaging
   - valkey
+  - streams
   - acl
-  - pubsub
   - security
-executive_summary: "Inter-agent and telemetry communication utilizes a shared Valkey message bus governed by strict per-agent ACL rules and isolated channel prefixes."
+executive_summary: "Inter-agent and telemetry communication utilizes a shared Valkey Streams message bus governed by strict per-agent ACL rules and isolated stream keys."
 ---
 
-# 00010. Valkey PubSub Messaging Bus and ACL Isolation
+# 00010. Valkey Streams Messaging Bus and ACL Isolation
 
 ## Context
-Multi-agent collaboration and host orchestration require a high-throughput, low-latency messaging backbone for events, task distribution, and heartbeats. A naive shared message bus without authorization allows rogue or compromised agents to snoop on fleet traffic, spoof messages, or flood the broker.
+Multi-agent collaboration and host orchestration require a durable, high-throughput, low-latency messaging backbone for events, task distribution, and mailboxes. Transient pub/sub mechanisms drop messages when recipient containers are offline, pausing, or occupied. Furthermore, an unpartitioned message broker allows rogue or compromised agents to snoop on fleet traffic, spoof identity, or truncate mailboxes.
 
 ## Decision (What)
-The messaging backbone is powered by an unprivileged, rootless Valkey instance (`sndbx-valkey`) running on the shared backplane network.
+The messaging backbone is powered by an unprivileged Valkey instance running on the shared infrastructure network (`agent-sandbox-infra`).
 
-Security and channel isolation are strictly enforced via Valkey Access Control Lists (ACLs):
-- **Channel Partitioning**: Each agent has read/write access restricted to its own private channel namespace (`agent:<name>:*`) and designated broadcast ingress channels (`fleet:broadcast`).
-- **Command Restrictions**: Agent accounts are restricted to basic pub/sub commands (`PUBLISH`, `SUBSCRIBE`, `PING`) and barred from administrative commands (`CONFIG`, `FLUSHALL`, `KEYS`, `SHUTDOWN`).
-- **Per-Agent Credentials**: Distinct usernames and high-entropy passwords are generated during `sndbx agent create` and injected into the container environment via `/home/agent/.config/sndbx/backplane.env`.
-- **Administrative Privileges**: Only the host `sndbx` CLI and backplane coordinator possess administrative access.
+Message transport and isolation adhere to the following architectural rules:
+- **Durable Streams over Ephemeral Pub/Sub**: Inter-agent messaging utilizes append-only Valkey Streams (`XADD`, `XREAD`) rather than fire-and-forget pub/sub channels. This provides durable mailboxes (`<agent>:inbox`), public broadcasts (`<agent>:out`), and human operator interactions (`human:inbox`, `human:out`) that tolerate container restarts and scheduling delays.
+- **Stream Key Partitioning & ACL Boundaries**: Each agent is granted full read/write access to its own stream namespace (`~<agent>:*`) and write-only append access to peer mailboxes (`~*:inbox`).
+- **Command Restrictions & Guardrails**: Agent accounts are restricted to non-destructive stream commands (`XADD`, `XREAD`, `XRANGE`, `PING`) and barred from administrative commands (`CONFIG`, `FLUSHALL`, `KEYS`, `SHUTDOWN`). Client-side guards prevent agents from executing destructive truncation (`MAXLEN`, `MINID`) on peer inboxes.
+- **Per-Agent Credentials**: Distinct usernames and high-entropy credentials are generated during agent provisioning and injected into the container environment.
+- **Administrative Privileges**: Only host orchestrator processes possess full ACL and server administration privileges.
 
 ## Status
 Accepted (Alpha as-built).
 
 ## Consequences
 ### Positive
-- Sub-millisecond pub/sub latency supporting dense multi-agent communication.
-- Strict ACL rules prevent eavesdropping or unauthorized message injection across agent boundaries.
-- Uses open-source Valkey without vendor lock-in or external cloud dependencies.
+- Append-only stream durability guarantees messages are preserved across agent container restarts and transient disconnects.
+- Sub-millisecond latency supports dense multi-agent communication without external cloud brokers or daemons.
+- Strict ACL rules prevent eavesdropping, mailbox truncation, or unauthorized message injection across agent boundaries.
 
 ### Negative / Trade-offs
-- Valkey does not provide built-in message persistence or store-and-forward queuing for offline agents out of the box (requires streams or external storage).
+- Stream memory retention must be managed via retention policies on outbound feeds to prevent unbounded memory growth over prolonged fleet operations.

@@ -12,7 +12,7 @@ tags:
   - self-healing
   - operations
   - reliability
-executive_summary: "A unified diagnostic engine (sndbx doctor [--infra] [--fix]) audits permissions, container states, network bridges, and shared daemons with automated remediation."
+executive_summary: "Dedicated diagnostic doctor domains (sndbx agent doctor and sndbx infra doctor) audit configuration, keys, storage, network bridges, and shared services with intrinsic automated remediation."
 ---
 
 # 00023. Comprehensive Diagnostic Doctor and Self-Healing
@@ -21,11 +21,11 @@ executive_summary: "A unified diagnostic engine (sndbx doctor [--infra] [--fix])
 Complex rootless container topologies, SSH key permissions, network bridges, subuid allocations, and shared infrastructure daemons can experience transient drift or corruption due to host updates, reboots, or operator errors. Diagnosing disparate failure modes manually requires deep systems expertise and slows development.
 
 ## Decision (What)
-Agent Sandbox includes a comprehensive, unified diagnostic doctor subsystem accessible via `sndbx doctor`:
+Agent Sandbox provides comprehensive diagnostic and self-healing subsystems integrated into noun-first management domains:
 
-- **Per-Agent Checks (`sndbx doctor [name]`)**: Audits container status, persistent volume integrity, SSH daemon responsiveness, authorized keys permissions (`0600`), and Valkey credentials.
-- **Infrastructure Checks (`sndbx doctor --infra`)**: Audits host Podman versions, `/etc/subuid` and `/etc/subgid` allocations, rootless network namespace paths (`/run/user/$UID/netns`), Valkey broker health, and Gitea responsiveness.
-- **Automated Self-Healing (`--fix`)**: When invoked with the `--fix` flag, the engine automatically remedies identified issues: re-creates missing network directories, resets invalid file permissions, regenerates stale configuration links, and restarts degraded shared services.
+- **Per-Agent Diagnostics & Healing (`sndbx agent doctor <name>`)**: Audits container status, persistent volume integrity, SSH daemon responsiveness, authorized keys permissions (`0600`), and Valkey credentials, automatically repairing configuration inconsistencies and healing degraded container state.
+- **Infrastructure Diagnostics & Healing (`sndbx infra doctor`)**: Audits host Podman engine versions, rootless network namespace paths (`/run/user/$UID/netns`), shared bridge networks, persistent infrastructure volumes, Valkey broker health, and Gitea service responsiveness.
+- **Intrinsic Auto-Healing**: Rather than requiring manual flag toggling, diagnostic doctor routines intrinsically execute idempotent safe remediation: regenerating missing network directories, correcting permission bounds, recreating stale configuration links, and repairing provisioned services.
 
 ## Status
 Accepted (Alpha as-built).
