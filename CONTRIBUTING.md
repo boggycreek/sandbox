@@ -64,7 +64,7 @@ To verify whether your system has all required build tools, rootless Podman conf
    - Permissions of `.beads` directory (verifies `0700` mode).
 3. **Go SDKs & Multi-Version Toolchains**:
    - Active Go binary path and resolved compiler version (`go version`).
-   - Compatibility against the minimum version required by `go.mod` (e.g., Go 1.25.8).
+   - Compatibility against the minimum version required by `go.mod` (e.g., Go 1.27.1).
    - Inventory of all installed XDG Go SDKs, indicating which one is active.
 4. **Core Build Tools**: Presence and versions of `git`, `make`, C compiler (`gcc` or `clang`), `cmake`, and `pkg-config`.
 5. **Container Engine (Podman — ADR 00019)**:
@@ -107,21 +107,21 @@ Standard Go multi-version tools pollute `$HOME/sdk`, and distro package managers
 ├── bin/
 │   ├── go              -> ~/.local/share/go/sdk/current/bin/go       # Active Go binary
 │   ├── gofmt           -> ~/.local/share/go/sdk/current/bin/gofmt    # Active gofmt
-│   ├── go1.25.8        -> ~/.local/share/go/sdk/go1.25.8/bin/go      # Direct version alias
+│   ├── go1.27.1        -> ~/.local/share/go/sdk/go1.27.1/bin/go      # Direct version alias
 │   └── bd                                                            # Beads issue tracker CLI
 │
 └── share/
     └── go/
         └── sdk/
-            ├── current -> go1.25.8                                   # Active SDK pointer
-            └── go1.25.8/                                             # Full Go 1.25.8 SDK
+            ├── current -> go1.27.1                                   # Active SDK pointer
+            └── go1.27.1/                                             # Full Go 1.27.1 SDK
 ```
 
 ### Managing Go Versions
 
-- **Install a specific Go version** (e.g., 1.25.8):
+- **Install a specific Go version** (e.g., 1.27.1):
   ```bash
-  ./setup.sh --go-version 1.25.8
+  ./setup.sh --go-version 1.27.1
   ```
 - **List installed Go versions**:
   ```bash
@@ -129,12 +129,12 @@ Standard Go multi-version tools pollute `$HOME/sdk`, and distro package managers
   ```
 - **Switch active Go version**:
   ```bash
-  ./setup.sh --switch-go 1.25.8
+  ./setup.sh --switch-go 1.27.1
   ```
 - **Invoke a specific version directly**:
   ```bash
-  go1.25.8 version
-  go1.25.8 test ./...
+  go1.27.1 version
+  go1.27.1 test ./...
   ```
 
 ---
@@ -147,7 +147,7 @@ Usage: setup.sh [options]
 Options:
   -y, --yes, --non-interactive   Run without prompting (assumes 'yes' to package installs)
   --doctor                       Run comprehensive development environment diagnostic checks
-  --go-version <version>         Install and activate specific Go SDK version (e.g. 1.25.8)
+  --go-version <version>         Install and activate specific Go SDK version (e.g. 1.27.1)
   --list-go                      List all installed XDG Go SDK versions
   --switch-go <version>          Switch active Go SDK to an already installed version
   --no-sudo                      Do not use sudo (for rootless or unprivileged environments)
