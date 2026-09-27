@@ -21,15 +21,11 @@ executive_summary: "All backplane events and commands require cryptographic Ed25
 While Valkey ACLs isolate channel access, they authenticate connections rather than individual message payloads. In complex multi-hop architectures or relayed communications, messages could theoretically be forged or altered in transit without cryptographic non-repudiation.
 
 ## Decision (What)
-Every message transmitted across the Agent Sandbox backplane must carry a cryptographic digital signature generated using the Ed25519 signature scheme.
+Every message published to the backplane carries an Ed25519 digital signature:
 
-During `sndbx agent create <name>`, an Ed25519 private key is generated and stored securely in `/home/agent/.ssh/id_ed25519`, with the public key recorded in the agent descriptor and published to the fleet registry. Every message envelope published by `bp` or `bpd` includes:
-1. `sender`: Identifier of the sending agent.
-2. `timestamp`: Nanosecond-resolution timestamp to prevent replay attacks.
-3. `payload`: Serialized message body.
-4. `signature`: Base64-encoded Ed25519 signature covering sender, timestamp, and payload.
-
-Receivers (both agents and host monitors) automatically verify the signature against the sender's public key before processing or executing message contents.
+- **Key Generation & Injection**: During `sndbx agent create`, an Ed25519 keypair is generated. The private key is injected into the container environment via `BP_SIGNING_KEY_PEM` (or config file), while the public key is registered in Valkey under `identity:<agent>`.
+- **Canonical Envelope & Signature**: The signature is computed over a canonical payload (`<timestamp>\n<sender>\n<destination>\n<reply_to>\n<content>\n<blob_path>`), guaranteeing authenticity, tamper evidence, and non-repudiation.
+- **Automatic Verification**: `libbp` and `bp` automatically verify inbound signatures against the sender's public key before processing or displaying messages.
 
 ## Status
 Accepted (Alpha as-built).

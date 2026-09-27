@@ -33,7 +33,7 @@ Records are numbered serially (`00001` through `00035`) and organized by topic d
 - **[00003 — Podman as Required Container Engine](00003-PodmanAsRequiredContainerEngine.md)**  
   *Executive Summary:* Rootless Podman is the mandatory container runtime dependency, eliminating root-owned daemon requirements and enforcing user-space privilege boundaries.
 - **[00034 — Multi-Version Go Toolchain Management via XDG Standard](00034-MultiVersionGoToolchainManagementViaXdgStandard.md)**  
-  *Executive Summary:* Standardizes automated Go toolchain provisioning and multi-version management under the XDG Base Directory specification (`~/.local/share/agent-sandbox/go`), ensuring reproducible builds and quality gate execution across host environments without requiring root/sudo privileges or system-level modifications.
+  *Executive Summary:* Standardizes automated Go toolchain provisioning and multi-version management under the XDG Base Directory specification (`~/.local/share/go/sdk`), ensuring reproducible builds and quality gate execution across host environments without requiring root/sudo privileges or system-level modifications.
 
 ### Container Runtime & Storage (`THEME-RUNTIME`)
 - **[00004 — Non-Root Container User and Permission Bounds](00004-NonRootContainerUserAndPermissionBounds.md)**  
@@ -59,13 +59,13 @@ Records are numbered serially (`00001` through `00035`) and organized by topic d
 - **[00011 — Ed25519 Cryptographic Message Signing](00011-Ed25519CryptographicMessageSigning.md)**  
   *Executive Summary:* All backplane events and commands require cryptographic Ed25519 signatures verified against the sending agent's public key to guarantee authenticity.
 - **[00012 — libbp Core Client Library and Shared C ABI](00012-LibbpCoreClientLibraryAndCAbi.md)**  
-  *Executive Summary:* Backplane IPC protocol logic is implemented in a native Go library (`libbp`) and exposed as a shared C ABI (`libbp.so`) for polyglot agent runtimes.
+  *Executive Summary:* Backplane IPC protocol logic is implemented in a native Go library (`libbp`) and planned for export as a shared C ABI (`libbp.so`) for polyglot agent runtimes.
 
 ### Network Isolation & Perimeter Defense (`THEME-NETWORKING`)
 - **[00013 — Per-Instance Network Isolation](00013-PerInstanceNetworkIsolation.md)**  
   *Executive Summary:* Sandboxes run in isolated rootless network namespaces with independent bridge interfaces and dedicated localhost SSH port allocations.
 - **[00014 — Default-Deny Network Egress Filtering](00014-DefaultDenyNetworkEgressFiltering.md)**  
-  *Executive Summary:* Outbound container network traffic is restricted by default via a sidecar filter, permitting only approved LLM API endpoints and package repositories.
+  *Executive Summary:* Outbound container network traffic is restricted by default via an egress sidecar filter, permitting only approved LLM API endpoints and package repositories.
 - **[00015 — Rootless Netns Runtime Directory Auto-Healing](00015-RootlessNetnsRuntimeDirectoryAutoHealing.md)**  
   *Executive Summary:* Runtime preflight hooks, transparent failure interception, and test cleanup routines validate directory permissions and reconcile desynchronized rootless network namespace mounts.
 
@@ -75,7 +75,7 @@ Records are numbered serially (`00001` through `00035`) and organized by topic d
 - **[00017 — Managed OpenSSH Configuration Include](00017-ManagedOpenSshConfigurationInclude.md)**  
   *Executive Summary:* `sndbx` maintains a dedicated managed `ssh_config` file and idempotently links it into `~/.ssh/config` via an `Include` directive for zero-configuration host SSH access.
 - **[00018 — Root-Owned IDE Settings Protection](00018-RootOwnedIdeSettingsProtection.md)**  
-  *Executive Summary:* In-container IDE configuration directories (`.vscode`, `.cursor`) are root-owned and read-only to agent UID 1000, preventing unauthorized extensions or policy tampering.
+  *Executive Summary:* In-container IDE configuration directories (`.vscode`, `.cursor`) are planned to be root-owned and read-only to agent UID 1000, preventing unauthorized extensions or policy tampering.
 
 ### IDE Plugin Management (`THEME-PLUGINS`)
 - **[00019 — Explicit Plugin Manager Interface](00019-ExplicitPluginManagerInterface.md)**  
@@ -85,7 +85,7 @@ Records are numbered serially (`00001` through `00035`) and organized by topic d
 
 ### Shared Fleet Services (`THEME-FLEET`)
 - **[00021 — Local Gitea Fleet Collaboration and Memory Backup](00021-LocalGiteaFleetCollaborationAndBackup.md)**  
-  *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, and automated synchronization of agent dotfiles and memory.
+  *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, task tracking backplane, and persistent remote dotfiles and memory repositories.
 - **[00022 — Local OpenAI-Compatible Inference Proxy](00022-LocalOpenAiCompatibleInferenceProxy.md)**  
   *Executive Summary:* Sandboxes access LLM inference through a standardized local OpenAI-compatible HTTP gateway, shielding agents from direct external API credentials.
 - **[00027 — Local SonarQube Deterministic Mechanical Analysis and Quality Gate Infrastructure](00027-LocalSonarQubeDeterministicMechanicalAnalysisAndQualityGateInfra.md)**  

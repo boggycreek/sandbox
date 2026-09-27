@@ -23,8 +23,8 @@ In containerized agent environments, destructive cleanup operations must strictl
 ## Decision (What)
 Agent Sandbox establishes two distinct, mutually exclusive teardown commands with unambiguous blast radiuses:
 
-1. **`clean` (`sndbx agent clean <name>`)**: Destroys only the ephemeral Podman container instance (`sndbx-<name>`). The persistent named home volume (`sndbx-<name>-home`), configuration descriptor, SSH keypairs, Valkey ACLs, and Gitea accounts remain completely untouched. Running `sndbx agent start <name>` immediately launches a fresh container rebinding the existing state.
-2. **`retire` (`sndbx agent retire <name> [--force]`)**: Permanently deprovisions the agent from the fleet. This purges the container instance, deletes the persistent home volume, revokes and removes Valkey user credentials and ACL rules, deactivates Gitea accounts, deletes host configuration descriptors, and cleans SSH host mappings.
+1. **`clean` (`sndbx agent clean <name>`)**: Destroys only the ephemeral Podman container instance (`sndbx-agent-<name>`). The persistent named home volume (`sndbx-agent-<name>-home`), configuration descriptor, SSH keypairs, Valkey ACLs, and forge accounts remain completely untouched. Running `sndbx agent start <name>` immediately launches a fresh container rebinding the existing state.
+2. **`retire` (`sndbx agent retire <name> [--force]`)**: Permanently deprovisions the agent from the fleet. This purges the container instance, deletes the persistent home volume, revokes and removes Valkey user credentials and ACL rules, deactivates Gitea and SonarQube accounts/tokens, deletes host configuration descriptors, and cleans SSH host mappings.
 
 The deprecated `destroy` verb is fully removed.
 

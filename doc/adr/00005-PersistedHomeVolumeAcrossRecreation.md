@@ -20,7 +20,7 @@ executive_summary: "Agent persistent state and memory reside in a dedicated name
 Container instances are inherently ephemeral and subject to replacement during image upgrades, crash recovery, or diagnostic rebuilds. However, developer agents accumulate valuable context, local git checkouts, shell history, tool configurations, and memory vectors that must persist indefinitely.
 
 ## Decision (What)
-Every agent has a dedicated, named Podman volume (`sndbx-<name>-home`) mounted directly to `/home/agent`.
+Every agent has a dedicated, named Podman volume (`sndbx-agent-<name>-home`) mounted directly to `/home/agent`.
 
 The root filesystem of the container is treated as disposable. All state intended to survive container destruction—including source checkouts (`/home/agent/workspace`), SSH authorized keys, shell configuration, and agent state databases—must reside in `/home/agent`. Container recreation (`sndbx agent clean` followed by `start`) rebinds the existing persistent volume without data loss.
 

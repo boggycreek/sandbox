@@ -127,11 +127,11 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 
 	healed := false
 	if cfg.ContainerName == "" {
-		cfg.ContainerName = fmt.Sprintf("agent-sandbox-%s", name)
+		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
 		healed = true
 	}
 	if cfg.VolumeName == "" {
-		cfg.VolumeName = fmt.Sprintf("agent-sandbox-%s-home", name)
+		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", name)
 		healed = true
 	}
 	if cfg.Image == "" {

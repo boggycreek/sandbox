@@ -3,36 +3,36 @@ adr: "00012"
 title: "libbp Core Client Library and Shared C ABI"
 topic: "Security, Backplane & Messaging"
 theme: "THEME-SECURITY"
-status: "accepted"
+status: "proposed"
 version: "v0.1.0-alpha"
-as_built: true
+as_built: false
 tags:
   - libbp
   - c-abi
   - sdk
   - backplane
   - polyglot
-executive_summary: "Backplane IPC protocol logic is implemented in a native Go library (libbp) and exposed as a shared C ABI (libbp.so) for polyglot agent runtimes."
+executive_summary: "Backplane IPC protocol logic is implemented in a native Go library (libbp) and planned for export as a shared C ABI (libbp.so) for polyglot agent runtimes."
 ---
 
 # 00012. libbp Core Client Library and Shared C ABI
 
 ## Context
-Agents executing in sandboxes are written in various programming languages (Python, TypeScript/Node, Rust, Go). Reimplementing the backplane protocol—including Valkey connection management, ACL authentication, Ed25519 signing/verification, and envelope parsing—in every language introduces divergence, security vulnerabilities, and maintenance drag.
+Agents executing in sandboxes are written in various programming languages (Python, TypeScript/Deno, Rust, Go). Reimplementing the backplane protocol—Valkey connection management, ACL authentication, Ed25519 signing, and envelope parsing—in every language risks divergence and security vulnerabilities.
 
 ## Decision (What)
-The canonical backplane protocol logic is implemented as a core Go package (`pkg/libbp`) and exported via cgo as a shared dynamic C library (`libbp.so`) accompanied by standard C header definitions (`libbp.h`).
+The canonical backplane protocol logic is implemented as a core Go package (`pkg/libbp`) and exported via cgo as a shared dynamic C library (`libbp.so` / `libbp.dylib`) with standard C header definitions (`libbp.h`).
 
-The library provides a zero-dependency, stable C ABI exposing:
-- `bp_client_create`, `bp_client_destroy`: Lifecycle management.
+The planned library provides a stable C ABI exposing:
+- `bp_client_create`, `bp_client_destroy`: Client lifecycle management.
 - `bp_publish_signed`: Message signing and publication.
-- `bp_subscribe`: Event consumption with automatic signature verification.
-- `bp_heartbeat`: Automated background telemetry reporting.
+- `bp_subscribe`: Event consumption with automated signature verification.
+- `bp_heartbeat`: Background telemetry reporting.
 
-Higher-level language bindings (Python ctypes, Node.js FFI, Rust FFI) consume `libbp.so` directly, ensuring identical cryptographic and protocol adherence across all agent implementations.
+Higher-level language bindings (Python ctypes, Node/Deno FFI, Rust FFI) consume `libbp.so` directly, ensuring identical protocol and signing guarantees across all agent harnesses.
 
 ## Status
-Accepted (Alpha as-built).
+Proposed (Core `pkg/libbp` client library is accepted and built; `cmd/libbp-c` wrapper is planned).
 
 ## Consequences
 ### Positive
