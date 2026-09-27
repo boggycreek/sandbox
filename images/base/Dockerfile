@@ -1,6 +1,6 @@
 # Multi-stage build: 
 # Stage 1: Build static bp and bpd CLI binaries
-FROM docker.io/library/golang:1.25-bookworm AS builder
+FROM docker.io/library/golang:1.27-bookworm AS builder
 WORKDIR /src
 COPY go.mod ./
 COPY pkg/ ./pkg/
