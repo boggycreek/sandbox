@@ -27,7 +27,7 @@ When creating agents (`sndbx agent create <name> [as <target>]`):
 - Build CLI binaries: `make build-cli`
 - Build base image: `make build-image-base`
 - Build all images: `make build-images`
-- Remote base images in Dockerfiles must use fully qualified references (e.g. `docker.io/library/golang:1.25-bookworm`) to prevent unqualified-search errors on strict Podman hosts.
+- Remote base images in Dockerfiles must use fully qualified references (e.g. `docker.io/library/golang:1.27-bookworm`) to prevent unqualified-search errors on strict Podman hosts.
 
 Further reading:
 - [ADR 00029 — Flexible Agent Image Resolution and Local Store Support](../adr/00029-FlexibleAgentImageResolutionAndLocalStoreSupport.md)

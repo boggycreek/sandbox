@@ -57,8 +57,8 @@ unset GOROOT
 # Resolve repository root
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Resolve default Go version from go.mod if present, otherwise 1.25.8
-DEFAULT_GO_VER="1.25.8"
+# Resolve default Go version from go.mod if present, otherwise 1.27.1
+DEFAULT_GO_VER="1.27.1"
 if [ -f "${REPO_ROOT}/go.mod" ]; then
   DETECTED_MOD_GO="$(grep -E '^go [0-9]' "${REPO_ROOT}/go.mod" 2>/dev/null | awk '{print $2}' || echo "")"
   if [ -n "${DETECTED_MOD_GO}" ]; then
@@ -75,7 +75,7 @@ Setup development environment dependencies for Agent Sandbox.
 Options:
   -y, --yes, --non-interactive   Run without prompting (assumes 'yes' to package installs)
   --doctor                       Run comprehensive development environment diagnostic checks
-  --go-version <version>         Install and activate specific Go SDK version (e.g. 1.25.8)
+  --go-version <version>         Install and activate specific Go SDK version (e.g. 1.27.1)
   --list-go                      List all installed XDG Go SDK versions
   --switch-go <version>          Switch active Go SDK to an already installed version
   --no-sudo                      Do not use sudo (for rootless or unprivileged environments)
@@ -305,7 +305,7 @@ install_xdg_go() {
     ln -sfn "go${ver}" "${GO_CURRENT_LINK}"
     ln -sfn "${GO_CURRENT_LINK}/bin/go" "${XDG_BIN_HOME}/go"
     ln -sfn "${GO_CURRENT_LINK}/bin/gofmt" "${XDG_BIN_HOME}/gofmt"
-    # Create version-specific alias (e.g. go1.25.8)
+    # Create version-specific alias (e.g. go1.27.1)
     ln -sfn "${target_dir}/bin/go" "${XDG_BIN_HOME}/go${ver}"
     echo "  ✓ Active Go symlinked to ${XDG_BIN_HOME}/go -> $("${XDG_BIN_HOME}/go" version 2>/dev/null || echo "go${ver}")"
     echo "  ✓ Version-specific binary available at ${XDG_BIN_HOME}/go${ver}"
