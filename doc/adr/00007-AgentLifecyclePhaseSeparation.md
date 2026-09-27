@@ -21,12 +21,12 @@ executive_summary: "Decouples agent specification and credential generation (cre
 Combining agent configuration generation, credential issuance, volume creation, and container execution into a single monolithic command hinders orchestration. Multi-agent deployments need to generate configurations and network allocations ahead of time without immediately launching resource-heavy containers.
 
 ## Decision (What)
-The lifecycle of an agent is strictly divided into distinct, stateful operational phases:
+The lifecycle of an agent is strictly decoupled into distinct, stateful operational phases:
 
-- **`create` (`sndbx agent create <name> [--preset ...]`)**: Idempotently initializes the agent's persistent home volume, generates Ed25519 authentication keys, allocates dedicated SSH host ports, provisions Valkey credentials, creates local Gitea accounts, and writes the JSON configuration descriptor (`~/.local/share/agent-sandbox/agents/<name>.json`). Does *not* instantiate the container.
-- **`start` (`sndbx agent start <name>`)**: Validates preflight prerequisites (network namespaces, Valkey bus, images) and starts the container instance (`sndbx-<name>`) bound to its persistent volume and network.
-- **`stop` (`sndbx agent stop <name>`)**: Sends graceful termination signals (`SIGTERM` followed by `SIGKILL`) to the container, cleanly stopping processes while leaving volume and network state intact.
-- **`status` / `list` (`sndbx agent status <name>`, `sndbx agent list`)**: Reports deterministic lifecycle state (`created`, `running`, `stopped`, `degraded`).
+- **Creation Phase (`agent create`)**: Idempotently initializes the agent's persistent home storage volume, generates asymmetric cryptographic keys (Ed25519), allocates dedicated local SSH ports, provisions scoped infrastructure credentials (Valkey ACLs, Gitea accounts, SonarQube tokens), and records the agent configuration descriptor. Crucially, this phase does *not* instantiate compute containers.
+- **Execution Phase (`agent start`)**: Validates preflight prerequisites (rootless network namespaces, backplane connectivity, container image resolution) and launches the container instance bound to its dedicated persistent volume and network perimeter.
+- **Halting Phase (`agent stop`)**: Dispatches graceful termination signals (`SIGTERM` followed by timeout-bounded `SIGKILL`) to in-container processes, stopping compute activity while leaving volume, configuration, and network allocations intact.
+- **State Inspection Phase (`agent list`)**: Inspects runtime container states and ports, reporting deterministic lifecycle status (`running`, `stopped`, `degraded`).
 
 ## Status
 Accepted (Alpha as-built).

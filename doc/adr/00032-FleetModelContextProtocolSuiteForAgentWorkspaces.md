@@ -1,7 +1,22 @@
-# ADR 00032 — Fleet Model Context Protocol (MCP) Suite for Agent Workspaces
+---
+adr: "00032"
+title: "Fleet Model Context Protocol Suite for Agent Workspaces"
+topic: "Backplane & Tooling"
+theme: "THEME-FLEET"
+status: "accepted"
+version: "v0.1.0-alpha"
+as_built: true
+tags:
+  - mcp
+  - model-context-protocol
+  - json-rpc
+  - backplane
+  - fleet
+  - tooling
+executive_summary: "Establishes a modular suite of Go-native, statically compiled STDIO JSON-RPC 2.0 MCP servers (such as bp-mcp) providing schema-validated, cryptographically signed tool calls directly inside sandbox agent containers."
+---
 
-## Status
-Accepted
+# 00032. Fleet Model Context Protocol (MCP) Suite for Agent Workspaces
 
 ## Context
 Autonomous AI coding agents running inside containerized sandboxes interact with their environment and peer agents via standard CLI tools (`bp`, `bd`, `git`, `curl`). While CLI commands are expressive, modern agent harnesses (such as Anthropic Claude Code, OpenCode, and Antigravity) natively leverage the **Model Context Protocol (MCP)** over STDIO JSON-RPC 2.0.

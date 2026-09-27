@@ -53,7 +53,7 @@ We integrate SonarQube Server Community Edition as a first-class shared infrastr
      - `agent-sandbox-sonarqube-data` (SonarQube search indexes)
      - `agent-sandbox-sonarqube-extensions` (community plugins)
      - `agent-sandbox-sonarqube-logs` (service execution logs)
-   - Integrated into `sndbx infra up`, `sndbx infra stop`, and `sndbx doctor --infra` with automated health validation (`/api/system/status`).
+   - Integrated into `sndbx infra up`, `sndbx infra down`, and `sndbx infra doctor` with automated health validation (`/api/system/status`).
 
 3. **Multi-Tier Quality at Depth**:
    Deterministic mechanical analysis is structured in four synergistic layers:
@@ -79,4 +79,4 @@ We integrate SonarQube Server Community Edition as a first-class shared infrastr
 
 ### Negative / Trade-Offs
 - **Resource Footprint**: SonarQube Community Edition and its embedded Elasticsearch engine require approximately 1.5GB to 2GB of host RAM when operational.
-- **Cold-Start Latency**: SonarQube initialization and rule registration takes 30-45 seconds upon initial container start. `sndbx doctor` accounts for this with asynchronous startup reporting.
+- **Cold-Start Latency**: SonarQube initialization and rule registration takes 30-45 seconds upon initial container start. `sndbx infra doctor` accounts for this with asynchronous startup reporting.

@@ -29,7 +29,7 @@ The daemon acts as a lightweight sub-reaper and process supervisor responsible f
 3. Maintaining persistent heartbeat and status telemetry reporting to the Valkey backplane bus.
 4. Handling graceful shutdown propagation upon receiving container stop signals (`SIGTERM`).
 
-Interactive terminal access is decoupled from PID 1; operators attach to running sandboxes on demand via `sndbx agent attach <name>` (or SSH terminal sessions) without altering the container's lifecycle.
+Interactive terminal access is decoupled from PID 1; operators attach to running sandboxes on demand via `sndbx agent tmux <name>` (or SSH terminal sessions) without altering the container's lifecycle.
 
 ## Status
 Accepted (Alpha as-built).
