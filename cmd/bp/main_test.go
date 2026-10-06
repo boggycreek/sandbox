@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,12 @@ import (
 func runCLI(args []string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
 	code := Run(args, &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+func runCLIWithStdin(args []string, stdin io.Reader) (int, string, string) {
+	var stdout, stderr bytes.Buffer
+	code := RunWithIO(args, stdin, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -85,10 +92,44 @@ func TestBPFullCoverage(t *testing.T) {
 		t.Errorf("say with file failed: %s", out)
 	}
 
+	// Say with stdin ('--file -')
+	code, out, _ = runCLIWithStdin([]string{"say", "--file", "-", "Say with stdin payload"}, strings.NewReader("stdin stream content"))
+	if code != 0 || !strings.Contains(out, "Say with stdin payload") {
+		t.Errorf("say with stdin failed: %s", out)
+	}
+
+	// Say with stdin ('--file -') and nil stdin
+	code, _, errOut = runCLIWithStdin([]string{"say", "--file", "-", "Say with nil stdin"}, nil)
+	if code != 1 || !strings.Contains(errOut, "stdin is nil") {
+		t.Errorf("say with nil stdin should fail: %s", errOut)
+	}
+
 	// Say with missing file
 	code, _, errOut = runCLI([]string{"say", "--file", filepath.Join(tmpDir, "missing.txt"), "msg"})
 	if code != 1 || !strings.Contains(errOut, "failed reading file") {
 		t.Errorf("say missing file failed")
+	}
+
+	// Say with invalid flag
+	code, _, _ = runCLI([]string{"say", "--invalid-flag"})
+	if code != 1 {
+		t.Errorf("say invalid flag should return 1")
+	}
+
+	// Say with missing flag argument
+	code, _, errOut = runCLI([]string{"say", "--file"})
+	if code != 1 || !strings.Contains(errOut, "flag needs an argument") {
+		t.Errorf("say missing flag argument failed: %s", errOut)
+	}
+
+	// Say with inline file flag (--file= and -file=)
+	code, out, _ = runCLI([]string{"say", "--file=" + blobPath, "Say inline flag"})
+	if code != 0 || !strings.Contains(out, "Say inline flag") {
+		t.Errorf("say with --file= failed: %s", out)
+	}
+	code, out, _ = runCLI([]string{"say", "-file=" + blobPath, "Say dash file inline flag"})
+	if code != 0 || !strings.Contains(out, "Say dash file inline flag") {
+		t.Errorf("say with -file= failed: %s", out)
 	}
 
 	// 2. Tell
@@ -98,10 +139,74 @@ func TestBPFullCoverage(t *testing.T) {
 		t.Errorf("tell missing args failed")
 	}
 
-	// Success
+	// Tell missing args with file
+	code, _, errOut = runCLI([]string{"tell", "--file", blobPath})
+	if code != 1 || !strings.Contains(errOut, "requires <agent> <message>") {
+		t.Errorf("tell missing recipient with file failed")
+	}
+
+	// Tell with missing flag argument
+	code, _, errOut = runCLI([]string{"tell", "agent-2", "--file"})
+	if code != 1 || !strings.Contains(errOut, "flag needs an argument") {
+		t.Errorf("tell missing flag argument failed: %s", errOut)
+	}
+
+	// Tell with inline file flag (--file= and -file=)
+	code, out, _ = runCLI([]string{"tell", "agent-2", "--file=" + blobPath})
+	if code != 0 || !strings.Contains(out, "file payload") {
+		t.Errorf("tell with --file= failed: %s", out)
+	}
+	code, out, _ = runCLI([]string{"tell", "agent-2", "-file=" + blobPath})
+	if code != 0 || !strings.Contains(out, "file payload") {
+		t.Errorf("tell with -file= failed: %s", out)
+	}
+
+	// Tell with invalid flag
+	code, _, _ = runCLI([]string{"tell", "--invalid-flag"})
+	if code != 1 {
+		t.Errorf("tell invalid flag should return 1")
+	}
+
+	// Success plain
 	code, out, _ = runCLI([]string{"tell", "agent-2", "Direct task"})
 	if code != 0 || !strings.Contains(out, "Direct task") {
 		t.Errorf("tell failed: %s", out)
+	}
+
+	// Tell with file from disk (content only from file)
+	code, out, _ = runCLI([]string{"tell", "agent-2", "--file", blobPath})
+	if code != 0 || !strings.Contains(out, "file payload") {
+		t.Errorf("tell with file failed: %s", out)
+	}
+
+	// Tell with file from disk and extra message text
+	code, out, _ = runCLI([]string{"tell", "agent-2", "--file", blobPath, "Prefix text"})
+	if code != 0 || !strings.Contains(out, "Prefix text\nfile payload") {
+		t.Errorf("tell with file and prefix failed: %s", out)
+	}
+
+	// Tell with stdin ('--file -') alone
+	code, out, _ = runCLIWithStdin([]string{"tell", "agent-2", "--file", "-"}, strings.NewReader("tell stdin body"))
+	if code != 0 || !strings.Contains(out, "tell stdin body") {
+		t.Errorf("tell with stdin failed: %s", out)
+	}
+
+	// Tell with stdin ('--file -') and message text
+	code, out, _ = runCLIWithStdin([]string{"tell", "agent-2", "--file", "-", "Header note:"}, strings.NewReader("piped lines"))
+	if code != 0 || !strings.Contains(out, "Header note:\npiped lines") {
+		t.Errorf("tell with stdin and note failed: %s", out)
+	}
+
+	// Tell with missing file
+	code, _, errOut = runCLI([]string{"tell", "agent-2", "--file", filepath.Join(tmpDir, "missing.txt")})
+	if code != 1 || !strings.Contains(errOut, "failed reading file") {
+		t.Errorf("tell with missing file should fail")
+	}
+
+	// Tell with stdin and nil stdin
+	code, _, errOut = runCLIWithStdin([]string{"tell", "agent-2", "--file", "-"}, nil)
+	if code != 1 || !strings.Contains(errOut, "stdin is nil") {
+		t.Errorf("tell with nil stdin should fail: %s", errOut)
 	}
 
 	// 3. Reply
@@ -397,5 +502,35 @@ func TestMainExecution(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "Usage: bp") {
 		t.Errorf("expected help output from main, got: %s", string(out))
+	}
+}
+
+func TestReadPayload(t *testing.T) {
+	// Stdin reading
+	data, err := readPayload("-", strings.NewReader("hello from stdin"))
+	if err != nil || string(data) != "hello from stdin" {
+		t.Fatalf("unexpected result from readPayload stdin: %v, %s", err, string(data))
+	}
+
+	// Nil stdin reading
+	_, err = readPayload("-", nil)
+	if err == nil {
+		t.Fatalf("expected error for nil stdin")
+	}
+
+	// Disk file reading
+	tmpDir := t.TempDir()
+	fpath := filepath.Join(tmpDir, "test.txt")
+	_ = os.WriteFile(fpath, []byte("file content"), 0600)
+
+	data, err = readPayload(fpath, nil)
+	if err != nil || string(data) != "file content" {
+		t.Fatalf("unexpected result from readPayload file: %v, %s", err, string(data))
+	}
+
+	// Nonexistent disk file reading
+	_, err = readPayload(filepath.Join(tmpDir, "nonexistent.txt"), nil)
+	if err == nil {
+		t.Fatalf("expected error for nonexistent file")
 	}
 }
