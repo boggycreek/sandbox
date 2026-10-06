@@ -37,6 +37,9 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	if img := ResolveImage("agy"); img != "agent-sandbox-agy:latest" {
 		t.Errorf("expected agy preset image, got %s", img)
 	}
+	if img := ResolveImage("pig"); img != "agent-sandbox-pig:latest" {
+		t.Errorf("expected pig preset image, got %s", img)
+	}
 	if img := ResolveImage("egress"); img != "agent-sandbox-egress:latest" {
 		t.Errorf("expected egress preset image, got %s", img)
 	}

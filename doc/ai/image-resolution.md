@@ -14,6 +14,7 @@ When creating agents (`sndbx agent create <name> [as <target>]`):
    - `opencode` -> `agent-sandbox-opencode:latest`
    - `claude` -> `agent-sandbox-claude:latest`
    - `agy` -> `agent-sandbox-agy:latest`
+   - `pig` -> `agent-sandbox-pig:latest`
    *Note*: `base` is an explicit preset target, not an implicit fallback. When `<target>` cannot be resolved, `sndbx agent create` should emit a warning/error.
 2. **Tier 2 (Local Podman Store Discovery)**:
    - Evaluates whether custom images built on the workstation exist locally before querying remote registries.
