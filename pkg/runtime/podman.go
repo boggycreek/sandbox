@@ -296,6 +296,8 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"--add-host", "llm-gateway:host-gateway",
 		"-p", "127.0.0.1::2222",
 		"-e", fmt.Sprintf("AGENT_NAME=%s", cfg.Name),
+		"-e", fmt.Sprintf("AGENT_ROLE=%s", cfg.Role),
+		"-e", fmt.Sprintf("ROLE=%s", cfg.Role),
 		"-e", fmt.Sprintf("BP_AGENT=%s", cfg.Name),
 		"-e", fmt.Sprintf("BP_PASSWORD=%s", cfg.Password),
 		"-e", fmt.Sprintf("BP_HOST=%s", containerBPHost),

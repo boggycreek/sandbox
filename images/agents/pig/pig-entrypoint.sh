@@ -68,7 +68,7 @@ fi
 # Dynamically synthesize role-specialized Piglet manifest if not present
 if [ ! -f "${PIGLET_FILE}" ]; then
   python3 -c "
-import yaml
+import json
 
 role = '${ROLE}'
 model_id = '${MODEL_ID}'
@@ -114,7 +114,7 @@ piglet = {
 }
 
 with open('${PIGLET_FILE}', 'w') as f:
-    yaml.dump(piglet, f, sort_keys=False)
+    json.dump(piglet, f, indent=2)
 "
 fi
 
