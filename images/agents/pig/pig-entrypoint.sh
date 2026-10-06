@@ -56,7 +56,10 @@ except ValueError:
 # If model_id was not explicitly specified, probe inference endpoint for available models
 if not model_id and inference_url:
     try:
-        req = urllib.request.Request(f"{inference_url}/models")
+        headers = {}
+        if model_key:
+            headers["Authorization"] = f"Bearer {model_key}"
+        req = urllib.request.Request(f"{inference_url}/models", headers=headers)
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode())
             if "data" in data and len(data["data"]) > 0:
@@ -120,10 +123,15 @@ try:
 except ValueError:
     model_ctx = 65536
 
+model_key = os.environ.get("MODEL_KEY", "local-key")
+
 # If model_id was not explicitly specified, probe inference endpoint
 if not model_id and inference_url:
     try:
-        req = urllib.request.Request(f"{inference_url}/models")
+        headers = {}
+        if model_key:
+            headers["Authorization"] = f"Bearer {model_key}"
+        req = urllib.request.Request(f"{inference_url}/models", headers=headers)
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode())
             if "data" in data and len(data["data"]) > 0:
