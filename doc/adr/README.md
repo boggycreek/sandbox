@@ -2,7 +2,7 @@
 
 This directory documents the foundational architectural decisions governing the **Agent Sandbox** system for the **v0.1.0-alpha** release.
 
-Records are numbered serially (`00001` through `00035`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
+Records are numbered serially (`00001` through `00038`) and organized by topic domain to reflect the current **as-built** architecture. Each decision record includes machine-readable YAML front matter (with standardized thematic markers, tags, and executive summaries) for consumption by automated agents and tooling.
 
 ---
 
@@ -44,6 +44,8 @@ Records are numbered serially (`00001` through `00035`) and organized by topic d
   *Executive Summary:* Agent images follow a strict inheritance chain (`sndbx-base` -> preset variants) resolved from local storage before falling back to external registries.
 - **[00026 — Deno as Standard JavaScript Runtime for OCI Container Agents](00026-DenoAsStandardJsRuntimeForOciContainerAgents.md)**  
   *Executive Summary:* Deno 2.x replaces Node.js as the standard JavaScript/TypeScript runtime in all agent OCI images, providing native TypeScript execution, granular capability sandboxing, and a leaner container footprint without compromising npm ecosystem compatibility.
+- **[00036 — PiG Derivative Agent OCI Image](00036-PiGDerivativeAgentOciImage.md)**  
+  *Executive Summary:* Introduces PiG (Pi in Go) as a first-class derivative agent harness OCI image (`agent-sandbox-pig:latest`), integrating single-binary Go execution, non-root isolation, tmux session supervision, and native sndbx lifecycle preset management.
 
 ### Agent Lifecycle & Process Model (`THEME-LIFECYCLE`)
 - **[00007 — Agent Lifecycle Phase Separation](00007-AgentLifecyclePhaseSeparation.md)**  
@@ -98,6 +100,10 @@ Records are numbered serially (`00001` through `00035`) and organized by topic d
   *Executive Summary:* Defines the in-container Model Context Protocol (MCP) suite over STDIO JSON-RPC 2.0, equipping autonomous sandbox agents with schema-validated tools for inter-agent communication (`bp-mcp`), task management, episodic memory, and diagnostics while maintaining Ed25519 cryptographic signing and ACL boundaries.
 - **[00035 — Host-Bridged Local LLM Inference Gateway](00035-HostBridgedLocalLlmInferenceGateway.md)**  
   *Executive Summary:* Resolves host-bound local LLM inference engines (Ollama, llama.cpp, vLLM, LiteLLM) from unprivileged rootless containers via Podman host-gateway resolution (`--add-host=llm-gateway:host-gateway`) and automatic configuration URL translation.
+- **[00037 — Dynamic Piglet Synthesis from Hardware Probes](00037-DynamicPigletSynthesisFromHardwareProbes.md)**  
+  *Executive Summary:* Automates the generation of specialized PiG "Piglet" YAML profiles based on dynamic host GPU and inference engine probes, tuning context windows, thinking levels, tool allowlists, and system prompts to physical workstation hardware.
+- **[00038 — Specialized Fleet Bug Probing Ensemble](00038-SpecializedFleetBugProbingEnsemble.md)**  
+  *Executive Summary:* Establishes a three-tier collaborative agent topology (Fuzzer, Auditor, Verifier) inside isolated sandbox containers, coordinating via the Valkey backplane (`bp`) and tracking findings in local Gitea (`bd`).
 
 ### Operations, Diagnostics & Quality (`THEME-OPERATIONS`)
 - **[00023 — Comprehensive Diagnostic Doctor and Self-Healing](00023-ComprehensiveDoctorAndSelfHealing.md)**  

@@ -24,6 +24,7 @@ var WellKnownImages = map[string]string{
 	"opencode": "agent-sandbox-opencode:latest",
 	"claude":   "agent-sandbox-claude:latest",
 	"agy":      "agent-sandbox-agy:latest",
+	"pig":      "agent-sandbox-pig:latest",
 	"egress":   "agent-sandbox-egress:latest",
 }
 

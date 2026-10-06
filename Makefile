@@ -167,7 +167,7 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 # --- OCI Image Build Targets (Podman) ---
 
-build-images: build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress ## Build all OCI images (base + derivatives + egress filter)
+build-images: build-image-base build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
 
 build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
 	@echo "==> Building agent-sandbox-base OCI image..."
@@ -184,6 +184,10 @@ build-image-claude: build-image-base ## Build Claude Code derivative agent OCI i
 build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OCI image with Podman
 	@echo "==> Building agent-sandbox-agy OCI image..."
 	podman build -t agent-sandbox-agy:latest -f images/agents/agy/Dockerfile .
+
+build-image-pig: build-image-base ## Build PiG (Pi in Go) derivative agent OCI image with Podman
+	@echo "==> Building agent-sandbox-pig OCI image..."
+	podman build -t agent-sandbox-pig:latest -f images/agents/pig/Dockerfile .
 
 build-image-egress: ## Build agent-sandbox-egress OCI image with Podman
 	@echo "==> Building agent-sandbox-egress OCI image..."

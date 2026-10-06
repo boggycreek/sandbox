@@ -134,6 +134,10 @@ func TestResolveAgentImage(t *testing.T) {
 	if img != "agent-sandbox-agy:latest" {
 		t.Errorf("expected agy preset, got %s", img)
 	}
+	img, _ = ResolveAgentImage(ctx, "pig")
+	if img != "agent-sandbox-pig:latest" {
+		t.Errorf("expected pig preset, got %s", img)
+	}
 	img, _ = ResolveAgentImage(ctx, "egress")
 	if img != "agent-sandbox-egress:latest" {
 		t.Errorf("expected egress preset, got %s", img)

@@ -34,7 +34,7 @@ func handleUpdate(ctx context.Context, paths config.Paths, args []string, stdout
 Comprehensive update of the Agent Sandbox local environment:
   1. Synchronizes local git repository checkout with remote (git pull)
   2. Updates native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases or source
-  3. Rebuilds all native OCI container images (base, opencode, claude, agy)`)
+  3. Rebuilds all native OCI container images (base, opencode, claude, agy, pig)`)
 			return 0
 		}
 	}

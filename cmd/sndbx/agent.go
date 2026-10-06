@@ -128,7 +128,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	// Flag parsing for overrides
 	fs := flag.NewFlagSet("agent create", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&image, "image", image, "OCI image or preset (base, opencode, claude, agy)")
+	fs.StringVar(&image, "image", image, "OCI image or preset (base, opencode, claude, agy, pig)")
 	fs.StringVar(&role, "role", "coding-agent", "Role metadata description")
 	fs.StringVar(&modelURL, "model-url", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible inference endpoint URL")
 	fs.StringVar(&modelName, "model-name", os.Getenv("OPENAI_MODEL"), "Target model name")
