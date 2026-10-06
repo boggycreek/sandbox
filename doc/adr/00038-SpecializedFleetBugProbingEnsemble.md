@@ -63,9 +63,9 @@ We establish a canonical three-agent collaborative testing topology for probing 
      ```
    - When the `verifier` confirms a genuine bug with a clean reproduction script, it issues a signed public announcement via `bp say` and creates a tracked issue in local Gitea (`bd create`).
 
-3. **Container Sandboxing Boundary**:
-   - Each prober operates within its own dedicated rootless container and home volume.
-   - Malicious inputs, catastrophic process crashes, or destructive code edits remain strictly contained within the test sandbox.
+3. **Container Sandboxing Boundary vs Harness Policy**:
+   - **Client-Side Cognitive Scoping**: Piglet tool allowlists (`read`, `grep`, `find`, `ls` vs `bash`, `write`) serve as harness-level policy constraints that guide and constrain LLM task execution, preventing accidental mutation during audit phases.
+   - **OS Security Perimeter**: Host and container isolation is strictly enforced at the container runtime level: unprivileged non-root user (`agent:1000`), rootless user namespace, zeroed Linux capabilities (`CapEff: 0000000000000000`), read-only kernel sysctls (`/proc/sys`), and isolated named home volumes. Malicious inputs or crashes remain strictly quarantined within the sandbox container.
 
 ## Status
 Accepted (Alpha as-built).

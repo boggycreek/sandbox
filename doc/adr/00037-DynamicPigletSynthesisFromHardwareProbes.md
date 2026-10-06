@@ -33,8 +33,8 @@ Manually crafting static Piglet files for every workstation and agent role creat
 We establish dynamic Piglet manifest synthesis driven by hardware and model capability probing:
 
 1. **Hardware & Engine Probing**:
-   - Inspects host GPU compute devices (`nvidia-smi` / ROCm / Apple Silicon) for total and available VRAM.
-   - Queries active inference engine endpoints (such as `http://127.0.0.1:8080/v1/models` or Ollama on port `11434`) to extract model identifier, maximum context window (`n_ctx`), parameter count, and quantization format.
+   - Workstation compute capacity is parameterized through runtime environment variables (`MODEL_CTX`, `MODEL_NAME`, `MODEL_URL`) mapped to local host GPU limits.
+   - Container entrypoint dynamically probes active OpenAI-compatible inference engine endpoints (such as `http://llm-gateway:<port>/v1/models` or Ollama) to discover active model identifiers and capabilities when explicit model flags are omitted.
 
 2. **Dynamic Manifest Synthesis**:
    - The agent harness or provisioning entrypoint dynamically synthesizes a targeted Piglet manifest (e.g. `~/.pig/piglets/<role>.yaml`):
