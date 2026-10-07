@@ -24,8 +24,24 @@ func main() {
 	os.Exit(Run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
+// readPayload reads message payload data from the specified file path or stdin ('-')
+func readPayload(path string, stdin io.Reader) ([]byte, error) {
+	if path == "-" {
+		if stdin == nil {
+			return nil, fmt.Errorf("stdin is nil")
+		}
+		return io.ReadAll(stdin)
+	}
+	return os.ReadFile(path)
+}
+
 // Run executes the CLI command with the provided args and I/O streams
 func Run(args []string, stdout, stderr io.Writer) int {
+	return RunWithIO(args, os.Stdin, stdout, stderr)
+}
+
+// RunWithIO executes the CLI command with custom stdin, stdout, and stderr
+func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printUsage(stdout)
 		return 1
@@ -48,10 +64,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 
 	case "say":
-		return handleSay(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleSay(ctx, cfg, cmdArgs, stdin, stdout, stderr)
 
 	case "tell":
-		return handleTell(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleTell(ctx, cfg, cmdArgs, stdin, stdout, stderr)
 
 	case "reply":
 		return handleReply(ctx, cfg, cmdArgs, stdout, stderr)
@@ -88,7 +104,7 @@ func printUsage(out io.Writer) {
 
 Commands:
   say <message> [--file <path>]    Broadcast message to the fleet (<id>:out)
-  tell <agent> <message>           Direct point-to-point message (<peer>:inbox)
+  tell <agent> <msg> [--file <path>] Direct point-to-point message (<peer>:inbox)
   reply <msgid> <message>          Reply in-thread to a specific message ID
   recv [--block <sec>] [--json]    Read new messages since last cursor
   human [--count <n>] [--json]     Read authoritative human operator broadcast log
@@ -111,16 +127,40 @@ func getClient(ctx context.Context, cfg libbp.ClientConfig, stderr io.Writer) (*
 	return client, nil
 }
 
-func handleSay(ctx context.Context, cfg libbp.ClientConfig, args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("say", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	filePath := fs.String("file", "", "Path to large payload file to park")
-	if err := fs.Parse(args); err != nil {
+// parseFileFlag extracts the --file argument from args, returning filePath, remaining args, and success flag
+func parseFileFlag(command string, args []string, stderr io.Writer) (string, []string, bool) {
+	var filePath string
+	var remaining []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--file" || arg == "-file" {
+			if i+1 >= len(args) {
+				fmt.Fprintf(stderr, "%s: flag needs an argument: %s\n", command, arg)
+				return "", nil, false
+			}
+			filePath = args[i+1]
+			i++
+		} else if strings.HasPrefix(arg, "--file=") {
+			filePath = strings.TrimPrefix(arg, "--file=")
+		} else if strings.HasPrefix(arg, "-file=") {
+			filePath = strings.TrimPrefix(arg, "-file=")
+		} else if strings.HasPrefix(arg, "-") && arg != "-" {
+			fmt.Fprintf(stderr, "%s: flag provided but not defined: %s\n", command, arg)
+			return "", nil, false
+		} else {
+			remaining = append(remaining, arg)
+		}
+	}
+	return filePath, remaining, true
+}
+
+func handleSay(ctx context.Context, cfg libbp.ClientConfig, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	filePath, remaining, ok := parseFileFlag("say", args, stderr)
+	if !ok {
 		return 1
 	}
 
-	remaining := fs.Args()
-	if len(remaining) == 0 && *filePath == "" {
+	if len(remaining) == 0 && filePath == "" {
 		fmt.Fprintln(stderr, "bp: say requires a message or --file")
 		return 1
 	}
@@ -133,10 +173,10 @@ func handleSay(ctx context.Context, cfg libbp.ClientConfig, args []string, stdou
 	defer client.Close()
 
 	var blobKey string
-	if *filePath != "" {
-		data, err := os.ReadFile(*filePath)
+	if filePath != "" {
+		data, err := readPayload(filePath, stdin)
 		if err != nil {
-			fmt.Fprintf(stderr, "bp error: failed reading file %s: %v\n", *filePath, err)
+			fmt.Fprintf(stderr, "bp error: failed reading file %s: %v\n", filePath, err)
 			return 1
 		}
 		bk, err := client.ParkBlob(ctx, data)
@@ -157,13 +197,32 @@ func handleSay(ctx context.Context, cfg libbp.ClientConfig, args []string, stdou
 	return 0
 }
 
-func handleTell(ctx context.Context, cfg libbp.ClientConfig, args []string, stdout, stderr io.Writer) int {
-	if len(args) < 2 {
+func handleTell(ctx context.Context, cfg libbp.ClientConfig, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	filePath, remaining, ok := parseFileFlag("tell", args, stderr)
+	if !ok {
+		return 1
+	}
+
+	if len(remaining) == 0 || (len(remaining) < 2 && filePath == "") {
 		fmt.Fprintln(stderr, "bp: tell requires <agent> <message>")
 		return 1
 	}
-	recipient := args[0]
-	content := strings.Join(args[1:], " ")
+	recipient := remaining[0]
+	var content string
+	if filePath != "" {
+		data, err := readPayload(filePath, stdin)
+		if err != nil {
+			fmt.Fprintf(stderr, "bp error: failed reading file %s: %v\n", filePath, err)
+			return 1
+		}
+		if len(remaining) > 1 {
+			content = strings.Join(remaining[1:], " ") + "\n" + string(data)
+		} else {
+			content = string(data)
+		}
+	} else {
+		content = strings.Join(remaining[1:], " ")
+	}
 
 	client, err := getClient(ctx, cfg, stderr)
 	if err != nil {
