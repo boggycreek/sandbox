@@ -153,11 +153,11 @@ func TestBPFullCoverage(t *testing.T) {
 
 	// Tell with inline file flag (--file= and -file=)
 	code, out, _ = runCLI([]string{"tell", "agent-2", "--file=" + blobPath})
-	if code != 0 || !strings.Contains(out, "file payload") {
+	if code != 0 || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("tell with --file= failed: %s", out)
 	}
 	code, out, _ = runCLI([]string{"tell", "agent-2", "-file=" + blobPath})
-	if code != 0 || !strings.Contains(out, "file payload") {
+	if code != 0 || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("tell with -file= failed: %s", out)
 	}
 
@@ -165,6 +165,12 @@ func TestBPFullCoverage(t *testing.T) {
 	code, _, _ = runCLI([]string{"tell", "--invalid-flag"})
 	if code != 1 {
 		t.Errorf("tell invalid flag should return 1")
+	}
+
+	// Tell with '--' end-of-options delimiter
+	code, out, _ = runCLI([]string{"tell", "agent-2", "--", "--not-a-flag"})
+	if code != 0 || !strings.Contains(out, "--not-a-flag") {
+		t.Errorf("tell with -- delimiter failed: %s", out)
 	}
 
 	// Success plain
@@ -175,25 +181,25 @@ func TestBPFullCoverage(t *testing.T) {
 
 	// Tell with file from disk (content only from file)
 	code, out, _ = runCLI([]string{"tell", "agent-2", "--file", blobPath})
-	if code != 0 || !strings.Contains(out, "file payload") {
+	if code != 0 || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("tell with file failed: %s", out)
 	}
 
 	// Tell with file from disk and extra message text
 	code, out, _ = runCLI([]string{"tell", "agent-2", "--file", blobPath, "Prefix text"})
-	if code != 0 || !strings.Contains(out, "Prefix text\nfile payload") {
+	if code != 0 || !strings.Contains(out, "Prefix text") || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("tell with file and prefix failed: %s", out)
 	}
 
 	// Tell with stdin ('--file -') alone
 	code, out, _ = runCLIWithStdin([]string{"tell", "agent-2", "--file", "-"}, strings.NewReader("tell stdin body"))
-	if code != 0 || !strings.Contains(out, "tell stdin body") {
+	if code != 0 || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("tell with stdin failed: %s", out)
 	}
 
 	// Tell with stdin ('--file -') and message text
 	code, out, _ = runCLIWithStdin([]string{"tell", "agent-2", "--file", "-", "Header note:"}, strings.NewReader("piped lines"))
-	if code != 0 || !strings.Contains(out, "Header note:\npiped lines") {
+	if code != 0 || !strings.Contains(out, "Header note:") || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("tell with stdin and note failed: %s", out)
 	}
 
@@ -224,8 +230,20 @@ func TestBPFullCoverage(t *testing.T) {
 
 	// Post missing recipient after 'to'
 	code, _, errOut = runCLI([]string{"post", blobPath, "to"})
-	if code != 1 || !strings.Contains(errOut, "post to requires <agent>") {
+	if code != 1 || !strings.Contains(errOut, "post to requires exactly <agent>") {
 		t.Errorf("post to missing recipient failed: %s", errOut)
+	}
+
+	// Post unexpected arguments after 'to <agent>'
+	code, _, errOut = runCLI([]string{"post", blobPath, "to", "agent-2", "extra"})
+	if code != 1 || !strings.Contains(errOut, "post to requires exactly <agent>") {
+		t.Errorf("post to extra args failed: %s", errOut)
+	}
+
+	// Post unexpected arguments after direct <agent>
+	code, _, errOut = runCLI([]string{"post", blobPath, "agent-2", "extra"})
+	if code != 1 || !strings.Contains(errOut, "post unexpected arguments after <file>") {
+		t.Errorf("post direct extra args failed: %s", errOut)
 	}
 
 	// Post missing file
@@ -252,10 +270,53 @@ func TestBPFullCoverage(t *testing.T) {
 
 	// Post valid file (broadcast)
 	postDoc := filepath.Join(tmpDir, "post-broadcast.md")
-	_ = os.WriteFile(postDoc, []byte("# Broadcast Topic\n\nDetailed body line 1\nDetailed body line 2\n"), 0600)
+	postContent := "# Broadcast Topic\n\nDetailed body line 1\nDetailed body line 2\n"
+	_ = os.WriteFile(postDoc, []byte(postContent), 0600)
 	code, out, _ = runCLI([]string{"post", postDoc})
 	if code != 0 || !strings.Contains(out, "-> fleet") || !strings.Contains(out, "# Broadcast Topic") || !strings.Contains(out, "Payload attached:") {
 		t.Errorf("post broadcast failed: %s", out)
+	}
+
+	// Extract blob key from output and test cat / get
+	var blobKey string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Payload attached:") {
+			parts := strings.Split(line, "Payload attached:")
+			blobKey = strings.TrimSpace(parts[len(parts)-1])
+		}
+	}
+	if blobKey == "" {
+		t.Fatalf("failed to parse blob key from post output: %s", out)
+	}
+
+	// Cat blob retrieval
+	code, catOut, _ := runCLI([]string{"cat", blobKey})
+	if code != 0 || catOut != postContent {
+		t.Errorf("cat blob failed: code %d, content %q", code, catOut)
+	}
+
+	// Get blob retrieval (alias for cat)
+	code, getOut, _ := runCLI([]string{"get", blobKey})
+	if code != 0 || getOut != postContent {
+		t.Errorf("get blob failed: code %d, content %q", code, getOut)
+	}
+
+	// Cat missing argument
+	code, _, errOut = runCLI([]string{"cat"})
+	if code != 1 || !strings.Contains(errOut, "requires <blob-key>") {
+		t.Errorf("cat missing arg failed: %s", errOut)
+	}
+
+	// Get missing argument
+	code, _, errOut = runCLI([]string{"get"})
+	if code != 1 || !strings.Contains(errOut, "requires <blob-key>") {
+		t.Errorf("get missing arg failed: %s", errOut)
+	}
+
+	// Cat nonexistent blob key
+	code, _, errOut = runCLI([]string{"cat", "agent-1:blob:nonexistent"})
+	if code != 1 || !strings.Contains(errOut, "bp error:") {
+		t.Errorf("cat nonexistent blob failed: %s", errOut)
 	}
 
 	// Post valid file (direct message with 'to')
@@ -442,6 +503,11 @@ func TestClientConnectionFailure(t *testing.T) {
 	code = Run([]string{"post", "dummy.txt"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected post failure")
+	}
+
+	code = Run([]string{"cat", "agent-1:blob:dummy"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected cat failure")
 	}
 
 	code = Run([]string{"reply", "1-0", "agent-2", "fail"}, &stdout, &stderr)
@@ -652,5 +718,25 @@ func TestExtractSummary(t *testing.T) {
 	s, err = extractSummary([]byte("\n\n  Header Title  \nSecond line"))
 	if err != nil || s != "Header Title" {
 		t.Errorf("unexpected summary for multiline: %v, %s", err, s)
+	}
+
+	// Long line > 256 runes
+	longLine := strings.Repeat("A", 300)
+	s, err = extractSummary([]byte(longLine))
+	if err != nil {
+		t.Fatalf("unexpected error for long line: %v", err)
+	}
+	if len([]rune(s)) != 256 || !strings.HasSuffix(s, "...") {
+		t.Errorf("expected 256 runes ending in ..., got %d runes: %s", len([]rune(s)), s)
+	}
+
+	// Multibyte unicode line > 256 runes
+	unicodeLongLine := strings.Repeat("日", 300)
+	s, err = extractSummary([]byte(unicodeLongLine))
+	if err != nil {
+		t.Fatalf("unexpected error for unicode long line: %v", err)
+	}
+	if len([]rune(s)) != 256 || !strings.HasSuffix(s, "...") {
+		t.Errorf("expected 256 runes ending in ..., got %d runes: %s", len([]rune(s)), s)
 	}
 }

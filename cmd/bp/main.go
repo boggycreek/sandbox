@@ -6,7 +6,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -38,17 +37,19 @@ func readPayload(path string, stdin io.Reader) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-// extractSummary finds the first non-empty line of the payload as a summary
+const maxSummaryRunes = 256
+
+// extractSummary finds the first non-empty line of the payload as a summary, capped at maxSummaryRunes
 func extractSummary(data []byte) (string, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" {
-			return line, nil
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		trimmed := strings.TrimSpace(string(line))
+		if trimmed != "" {
+			runes := []rune(trimmed)
+			if len(runes) > maxSummaryRunes {
+				return string(runes[:maxSummaryRunes-3]) + "...", nil
+			}
+			return trimmed, nil
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", err
 	}
 	return "", errors.New("file is empty or contains only whitespace")
 }
@@ -86,6 +87,9 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "post":
 		return handlePost(ctx, cfg, cmdArgs, stdin, stdout, stderr)
+
+	case "cat", "get":
+		return handleCat(ctx, cfg, cmdArgs, stdout, stderr)
 
 	case "tell":
 		return handleTell(ctx, cfg, cmdArgs, stdin, stdout, stderr)
@@ -126,7 +130,8 @@ func printUsage(out io.Writer) {
 Commands:
   say <message> [--file <path>]    Broadcast message to the fleet (<id>:out)
   post <file> [to <agent>]         Publish long-form message with first line as summary
-  tell <agent> <msg> [--file <path>] Direct point-to-point message (<peer>:inbox)
+  cat <blob-key>                   Output parked payload blob to stdout (alias: get)
+  tell <agent> [<msg>] [--file <path>] Direct point-to-point message (<peer>:inbox)
   reply <msgid> <message>          Reply in-thread to a specific message ID
   recv [--block <sec>] [--json]    Read new messages since last cursor
   human [--count <n>] [--json]     Read authoritative human operator broadcast log
@@ -155,6 +160,10 @@ func parseFileFlag(command string, args []string, stderr io.Writer) (string, []s
 	var remaining []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--" {
+			remaining = append(remaining, args[i+1:]...)
+			break
+		}
 		if arg == "--file" || arg == "-file" {
 			if i+1 >= len(args) {
 				fmt.Fprintf(stderr, "%s: flag needs an argument: %s\n", command, arg)
@@ -246,13 +255,16 @@ func handlePost(ctx context.Context, cfg libbp.ClientConfig, args []string, stdi
 	var recipient string
 	if len(remaining) > 0 {
 		if remaining[0] == "to" {
-			if len(remaining) < 2 {
-				fmt.Fprintln(stderr, "bp: post to requires <agent>")
+			if len(remaining) != 2 {
+				fmt.Fprintln(stderr, "bp: post to requires exactly <agent>")
 				return 1
 			}
 			recipient = remaining[1]
-		} else {
+		} else if len(remaining) == 1 {
 			recipient = remaining[0]
+		} else {
+			fmt.Fprintln(stderr, "bp: post unexpected arguments after <file>")
+			return 1
 		}
 	}
 
@@ -291,6 +303,28 @@ func handlePost(ctx context.Context, cfg libbp.ClientConfig, args []string, stdi
 	return 0
 }
 
+func handleCat(ctx context.Context, cfg libbp.ClientConfig, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "bp: cat requires <blob-key>")
+		return 1
+	}
+
+	client, err := getClient(ctx, cfg, stderr)
+	if err != nil {
+		return 1
+	}
+	defer client.Close()
+
+	data, err := client.GetBlob(ctx, args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "bp error: %v\n", err)
+		return 1
+	}
+
+	_, _ = stdout.Write(data)
+	return 0
+}
+
 func handleTell(ctx context.Context, cfg libbp.ClientConfig, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	filePath, remaining, ok := parseFileFlag("tell", args, stderr)
 	if !ok {
@@ -303,18 +337,7 @@ func handleTell(ctx context.Context, cfg libbp.ClientConfig, args []string, stdi
 	}
 	recipient := remaining[0]
 	var content string
-	if filePath != "" {
-		data, err := readPayload(filePath, stdin)
-		if err != nil {
-			fmt.Fprintf(stderr, "bp error: failed reading file %s: %v\n", filePath, err)
-			return 1
-		}
-		if len(remaining) > 1 {
-			content = strings.Join(remaining[1:], " ") + "\n" + string(data)
-		} else {
-			content = string(data)
-		}
-	} else {
+	if len(remaining) > 1 {
 		content = strings.Join(remaining[1:], " ")
 	}
 
@@ -324,13 +347,31 @@ func handleTell(ctx context.Context, cfg libbp.ClientConfig, args []string, stdi
 	}
 	defer client.Close()
 
-	msg, err := client.Tell(ctx, recipient, content)
+	var blobKey string
+	if filePath != "" {
+		data, err := readPayload(filePath, stdin)
+		if err != nil {
+			fmt.Fprintf(stderr, "bp error: failed reading file %s: %v\n", filePath, err)
+			return 1
+		}
+		bk, err := client.ParkBlob(ctx, data)
+		if err != nil {
+			fmt.Fprintf(stderr, "bp error: failed parking blob: %v\n", err)
+			return 1
+		}
+		blobKey = bk
+	}
+
+	msg, err := client.TellWithBlob(ctx, recipient, content, blobKey)
 	if err != nil {
 		fmt.Fprintf(stderr, "bp error: %v\n", err)
 		return 1
 	}
 
 	fmt.Fprintf(stdout, "[%s -> %s] %s\n", msg.Citation, recipient, msg.Content)
+	if msg.BlobPath != "" {
+		fmt.Fprintf(stdout, "  └── Payload attached: %s\n", msg.BlobPath)
+	}
 	return 0
 }
 
