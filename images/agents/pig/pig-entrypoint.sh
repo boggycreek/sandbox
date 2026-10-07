@@ -193,24 +193,13 @@ if piglet_file:
 '
 fi
 
-# Run base entrypoint initialization (sshd, host keys, valkey announce) in background
+# Run base entrypoint initialization (sshd, host keys, bpd, valkey announce) in background
 /usr/local/bin/entrypoint.sh true &
 
-# Start backplane daemon (bpd) in background if available and configured (ADR 00039)
-if command -v bpd >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
-  if ! pgrep -x bpd >/dev/null 2>&1; then
-    bpd &
-  fi
-fi
-
-# Start PiG session in tmux with synthesized Piglet
+# Start Deep Lobe worker session in tmux (ADR 00040)
 if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
   tmux new-session -d -s "${TMUX_SESSION}" -c "/home/agent/workspace" bash
-  if [ -f "${PIGLET_FILE}" ]; then
-    tmux send-keys -t "${TMUX_SESSION}" "pig --piglet '${PIGLET_FILE}'" C-m
-  else
-    tmux send-keys -t "${TMUX_SESSION}" "pig" C-m
-  fi
+  tmux send-keys -t "${TMUX_SESSION}" "agent-worker-loop" C-m
 fi
 
 echo "PiG Sandbox container initialized [$(hostname)]. Session: ${TMUX_SESSION} (Piglet: ${ROLE})"

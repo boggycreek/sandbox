@@ -56,6 +56,8 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Enforces clear teardown boundaries: `clean` destroys ephemeral container instances while preserving data; `retire` purges volumes, keys, Valkey credentials, and Gitea accounts.
 - **[00039 — Harness-Agnostic Agent Runner Dispatch Contract](00039-HarnessAgnosticAgentRunnerDispatchContract.md)**  
   *Executive Summary:* Decouples `bpd` from harness-specific CLI invocation by establishing a canonical in-container `/usr/local/bin/agent-runner` dispatch contract across derivative agent images.
+- **[00040 — Dual-Lobe Single-Identity Agent Architecture](00040-DualLobeSingleIdentityAgentArchitecture.md)**  
+  *Executive Summary:* Establishes a dual-lobe cognitive model for containerized agents: a Fast-Reflex Front Lobe (`bpd` + minimal triage context) for immediate signed backplane communication, and a Deep-Focus Worker (24/7 persistent session) for heavy multi-turn execution, sharing state via `~/.agent/state.json` under a single cryptographic identity.
 
 ### Security, Backplane & Messaging (`THEME-SECURITY`)
 - **[00010 — Valkey Streams Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)**  

@@ -39,10 +39,11 @@ RUN case "${TARGETARCH:-amd64}" in \
     chmod +x /usr/local/bin/pig && \
     rm -rf /tmp/pig*
 
-# Copy derivative entrypoint and dispatch agent-runner (ADR 00039)
+# Copy derivative entrypoint and dispatch scripts (ADR 00039, ADR 00040)
 COPY images/agents/pig/pig-entrypoint.sh /usr/local/bin/pig-entrypoint.sh
 COPY images/agents/pig/agent-runner /usr/local/bin/agent-runner
-RUN chmod +x /usr/local/bin/pig-entrypoint.sh /usr/local/bin/agent-runner
+COPY images/agents/pig/agent-worker-loop /usr/local/bin/agent-worker-loop
+RUN chmod +x /usr/local/bin/pig-entrypoint.sh /usr/local/bin/agent-runner /usr/local/bin/agent-worker-loop
 
 # Ensure home directory ownership belongs to agent
 RUN chown -R agent:agent /home/agent
