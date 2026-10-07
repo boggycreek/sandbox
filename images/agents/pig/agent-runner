@@ -65,8 +65,16 @@ if not content:
 if sender.lower() == current_agent:
     sys.exit(0)
 
-# Only process messages explicitly targeted to this agent (inbox), ignore public broadcasts
-if target != current_agent:
+human_name = os.environ.get("HUMAN_NAME", "brian").strip().lower()
+is_from_human = sender.lower() in [human_name, "brian", "operator"]
+
+# If message has no explicit target (public broadcast):
+# Process if sent by human operator; ignore peer broadcasts to avoid feedback loops.
+if not target:
+    if not is_from_human:
+        sys.exit(0)
+elif target != current_agent:
+    # Message was directed to a different agent's inbox
     sys.exit(0)
 
 lower_content = content.lower()
