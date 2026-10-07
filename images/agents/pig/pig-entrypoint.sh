@@ -196,6 +196,13 @@ fi
 # Run base entrypoint initialization (sshd, host keys, valkey announce) in background
 /usr/local/bin/entrypoint.sh true &
 
+# Start backplane daemon (bpd) in background if available and configured (ADR 00039)
+if command -v bpd >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
+  if ! pgrep -x bpd >/dev/null 2>&1; then
+    bpd &
+  fi
+fi
+
 # Start PiG session in tmux with synthesized Piglet
 if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
   tmux new-session -d -s "${TMUX_SESSION}" -c "/home/agent/workspace" bash

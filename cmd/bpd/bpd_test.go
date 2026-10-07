@@ -88,6 +88,10 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	os.Unsetenv("BPD_ATTACH_LOCK_FILE")
 	os.Unsetenv("BPD_RUNNER_CMD")
 
+	oldRunnerPath := defaultAgentRunnerPath
+	defaultAgentRunnerPath = "/nonexistent/test/agent-runner"
+	defer func() { defaultAgentRunnerPath = oldRunnerPath }()
+
 	cfg, err := LoadConfigFromEnv()
 	if err != nil {
 		t.Fatalf("LoadConfigFromEnv failed: %v", err)
@@ -114,8 +118,22 @@ func TestLoadConfigFromEnv(t *testing.T) {
 		t.Errorf("expected RunnerCmd 'claude -p', got %q", cfg.RunnerCmd)
 	}
 
-	// 3. Custom values
+	// 2b. Default runner discovery when defaultAgentRunnerPath exists
 	tmpDir := t.TempDir()
+	dummyRunner := filepath.Join(tmpDir, "agent-runner")
+	_ = os.WriteFile(dummyRunner, []byte("#!/bin/sh\nexit 0\n"), 0755)
+	defaultAgentRunnerPath = dummyRunner
+
+	cfgRunner, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("LoadConfigFromEnv failed with agent-runner on disk: %v", err)
+	}
+	if cfgRunner.RunnerCmd != dummyRunner {
+		t.Errorf("expected RunnerCmd %q, got %q", dummyRunner, cfgRunner.RunnerCmd)
+	}
+	defaultAgentRunnerPath = "/nonexistent/test/agent-runner"
+
+	// 3. Custom values
 	os.Setenv("BPD_STATE_DIR", filepath.Join(tmpDir, "custom-state"))
 	os.Setenv("BPD_DEFAULT_INTERVAL_SECS", "45")
 	os.Setenv("BPD_CLAUDE_TIMEOUT_SECS", "300")
@@ -313,6 +331,12 @@ func TestDaemonSessionIdLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(passedStdin, "Do work") {
 		t.Errorf("expected stdin to contain message content, got %q", passedStdin)
+	}
+	if os.Getenv("AGENT_SESSION_ID") != sessionID {
+		t.Errorf("expected AGENT_SESSION_ID %q, got %q", sessionID, os.Getenv("AGENT_SESSION_ID"))
+	}
+	if os.Getenv("AGENT_NAME") != "test-agent" {
+		t.Errorf("expected AGENT_NAME 'test-agent', got %q", os.Getenv("AGENT_NAME"))
 	}
 
 	// Verify session-id is stored on disk

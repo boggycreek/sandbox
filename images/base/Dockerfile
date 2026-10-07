@@ -73,7 +73,8 @@ COPY --from=builder /build/bpd /usr/local/bin/bpd
 COPY --from=builder /build/bp-mcp /usr/local/bin/bp-mcp
 COPY --from=builder /build/gitea-mcp /usr/local/bin/gitea-mcp
 COPY --from=builder /build/beads-mcp /usr/local/bin/beads-mcp
-RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp
+COPY images/base/agent-runner /usr/local/bin/agent-runner
+RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp /usr/local/bin/agent-runner
 
 # Install in-container documentation
 COPY images/base/doc/ /usr/local/share/doc/agent-sandbox/

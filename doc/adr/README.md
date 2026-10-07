@@ -54,6 +54,8 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Sandboxes run `bpd` as PID 1 entrypoint managing background workers; interactive `tmux` is an on-demand debug attachment tool rather than the container entrypoint.
 - **[00009 — Deprovisioning and Retirement Phases](00009-DeprovisioningAndRetirementPhases.md)**  
   *Executive Summary:* Enforces clear teardown boundaries: `clean` destroys ephemeral container instances while preserving data; `retire` purges volumes, keys, Valkey credentials, and Gitea accounts.
+- **[00039 — Harness-Agnostic Agent Runner Dispatch Contract](00039-HarnessAgnosticAgentRunnerDispatchContract.md)**  
+  *Executive Summary:* Decouples `bpd` from harness-specific CLI invocation by establishing a canonical in-container `/usr/local/bin/agent-runner` dispatch contract across derivative agent images.
 
 ### Security, Backplane & Messaging (`THEME-SECURITY`)
 - **[00010 — Valkey Streams Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)**  
