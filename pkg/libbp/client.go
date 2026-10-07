@@ -197,6 +197,11 @@ func (c *Client) Say(ctx context.Context, content string, blobPath string) (*Mes
 
 // Tell sends a direct point-to-point message to an agent's inbox (<recipient>:inbox)
 func (c *Client) Tell(ctx context.Context, recipient string, content string) (*Message, error) {
+	return c.TellWithBlob(ctx, recipient, content, "")
+}
+
+// TellWithBlob sends a direct point-to-point message with an optional parked blob attachment
+func (c *Client) TellWithBlob(ctx context.Context, recipient string, content string, blobPath string) (*Message, error) {
 	seq, err := c.NextSeq(ctx)
 	if err != nil {
 		seq = 1
@@ -207,6 +212,7 @@ func (c *Client) Tell(ctx context.Context, recipient string, content string) (*M
 		Sender:      c.cfg.AgentID,
 		Destination: recipient,
 		Content:     content,
+		BlobPath:    blobPath,
 		Timestamp:   now,
 		Seq:         seq,
 		Citation:    FormatCitation(c.cfg.AgentID, seq),
@@ -231,6 +237,20 @@ func (c *Client) Tell(ctx context.Context, recipient string, content string) (*M
 	}
 	msg.ID = msgID
 	return msg, nil
+}
+
+// Post publishes a long-form message by parking the payload as a blob and setting the summary as content.
+// If recipient is empty, it broadcasts to the fleet; otherwise it sends a direct point-to-point message.
+func (c *Client) Post(ctx context.Context, recipient string, summary string, payload []byte) (*Message, error) {
+	blobKey, err := c.ParkBlob(ctx, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed parking payload blob: %w", err)
+	}
+
+	if recipient == "" {
+		return c.Say(ctx, summary, blobKey)
+	}
+	return c.TellWithBlob(ctx, recipient, summary, blobKey)
 }
 
 // Reply sends a threaded direct message citing a parent message ID

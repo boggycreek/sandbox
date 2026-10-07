@@ -310,6 +310,33 @@ func TestClientOperations(t *testing.T) {
 		t.Errorf("unexpected tell message: %+v", tellMsg)
 	}
 
+	// 3b. TellWithBlob
+	tellBlobMsg, err := client.TellWithBlob(ctx, "agent-2", "Direct with blob", "agent-1:blob:123")
+	if err != nil {
+		t.Fatalf("TellWithBlob error: %v", err)
+	}
+	if tellBlobMsg.Destination != "agent-2" || tellBlobMsg.BlobPath != "agent-1:blob:123" {
+		t.Errorf("unexpected tellBlob message: %+v", tellBlobMsg)
+	}
+
+	// 3c. Post broadcast
+	postBroadcast, err := client.Post(ctx, "", "Broadcast post summary", []byte("full broadcast payload"))
+	if err != nil {
+		t.Fatalf("Post broadcast error: %v", err)
+	}
+	if postBroadcast.Content != "Broadcast post summary" || postBroadcast.BlobPath == "" {
+		t.Errorf("unexpected post broadcast message: %+v", postBroadcast)
+	}
+
+	// 3d. Post direct to agent
+	postDirect, err := client.Post(ctx, "agent-2", "Direct post summary", []byte("full direct payload"))
+	if err != nil {
+		t.Fatalf("Post direct error: %v", err)
+	}
+	if postDirect.Destination != "agent-2" || postDirect.Content != "Direct post summary" || postDirect.BlobPath == "" {
+		t.Errorf("unexpected post direct message: %+v", postDirect)
+	}
+
 	// 4. Reply (Threaded direct message)
 	replyMsg, err := client.Reply(ctx, tellMsg.ID, "agent-2", "Reply to direct message")
 	if err != nil {
@@ -640,6 +667,12 @@ func TestClientClosedOperations(t *testing.T) {
 	}
 	if _, err := client.Tell(ctx, "agent-2", "test"); err == nil {
 		t.Errorf("expected error on Tell after Close")
+	}
+	if _, err := client.TellWithBlob(ctx, "agent-2", "test", ""); err == nil {
+		t.Errorf("expected error on TellWithBlob after Close")
+	}
+	if _, err := client.Post(ctx, "agent-2", "test", []byte("data")); err == nil {
+		t.Errorf("expected error on Post after Close")
 	}
 	if _, err := client.Reply(ctx, "100-0", "agent-2", "test"); err == nil {
 		t.Errorf("expected error on Reply after Close")
