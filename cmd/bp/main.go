@@ -6,8 +6,11 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,6 +36,21 @@ func readPayload(path string, stdin io.Reader) ([]byte, error) {
 		return io.ReadAll(stdin)
 	}
 	return os.ReadFile(path)
+}
+
+// extractSummary finds the first non-empty line of the payload as a summary
+func extractSummary(data []byte) (string, error) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			return line, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", errors.New("file is empty or contains only whitespace")
 }
 
 // Run executes the CLI command with the provided args and I/O streams
@@ -65,6 +83,9 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "say":
 		return handleSay(ctx, cfg, cmdArgs, stdin, stdout, stderr)
+
+	case "post":
+		return handlePost(ctx, cfg, cmdArgs, stdin, stdout, stderr)
 
 	case "tell":
 		return handleTell(ctx, cfg, cmdArgs, stdin, stdout, stderr)
@@ -104,6 +125,7 @@ func printUsage(out io.Writer) {
 
 Commands:
   say <message> [--file <path>]    Broadcast message to the fleet (<id>:out)
+  post <file> [to <agent>]         Publish long-form message with first line as summary
   tell <agent> <msg> [--file <path>] Direct point-to-point message (<peer>:inbox)
   reply <msgid> <message>          Reply in-thread to a specific message ID
   recv [--block <sec>] [--json]    Read new messages since last cursor
@@ -194,6 +216,78 @@ func handleSay(ctx context.Context, cfg libbp.ClientConfig, args []string, stdin
 	}
 
 	fmt.Fprintf(stdout, "[%s] %s\n", msg.Citation, msg.Content)
+	return 0
+}
+
+func handlePost(ctx context.Context, cfg libbp.ClientConfig, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "bp: post requires <file> [to <agent>]")
+		return 1
+	}
+
+	var filePath string
+	var remaining []string
+
+	if args[0] == "--file" {
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "bp: post flag --file needs an argument")
+			return 1
+		}
+		filePath = args[1]
+		remaining = args[2:]
+	} else if strings.HasPrefix(args[0], "--file=") {
+		filePath = strings.TrimPrefix(args[0], "--file=")
+		remaining = args[1:]
+	} else {
+		filePath = args[0]
+		remaining = args[1:]
+	}
+
+	var recipient string
+	if len(remaining) > 0 {
+		if remaining[0] == "to" {
+			if len(remaining) < 2 {
+				fmt.Fprintln(stderr, "bp: post to requires <agent>")
+				return 1
+			}
+			recipient = remaining[1]
+		} else {
+			recipient = remaining[0]
+		}
+	}
+
+	data, err := readPayload(filePath, stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "bp error: failed reading file %s: %v\n", filePath, err)
+		return 1
+	}
+
+	summary, err := extractSummary(data)
+	if err != nil {
+		fmt.Fprintf(stderr, "bp error: %v\n", err)
+		return 1
+	}
+
+	client, err := getClient(ctx, cfg, stderr)
+	if err != nil {
+		return 1
+	}
+	defer client.Close()
+
+	msg, err := client.Post(ctx, recipient, summary, data)
+	if err != nil {
+		fmt.Fprintf(stderr, "bp error: %v\n", err)
+		return 1
+	}
+
+	target := "fleet"
+	if recipient != "" {
+		target = recipient
+	}
+	fmt.Fprintf(stdout, "[%s -> %s] %s\n", msg.Citation, target, msg.Content)
+	if msg.BlobPath != "" {
+		fmt.Fprintf(stdout, "  └── Payload attached: %s\n", msg.BlobPath)
+	}
 	return 0
 }
 

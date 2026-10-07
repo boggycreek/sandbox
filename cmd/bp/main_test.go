@@ -209,6 +209,97 @@ func TestBPFullCoverage(t *testing.T) {
 		t.Errorf("tell with nil stdin should fail: %s", errOut)
 	}
 
+	// 2b. Post
+	// Post missing args
+	code, _, errOut = runCLI([]string{"post"})
+	if code != 1 || !strings.Contains(errOut, "requires <file> [to <agent>]") {
+		t.Errorf("post missing args failed: %s", errOut)
+	}
+
+	// Post --file missing argument
+	code, _, errOut = runCLI([]string{"post", "--file"})
+	if code != 1 || !strings.Contains(errOut, "flag --file needs an argument") {
+		t.Errorf("post --file missing argument failed: %s", errOut)
+	}
+
+	// Post missing recipient after 'to'
+	code, _, errOut = runCLI([]string{"post", blobPath, "to"})
+	if code != 1 || !strings.Contains(errOut, "post to requires <agent>") {
+		t.Errorf("post to missing recipient failed: %s", errOut)
+	}
+
+	// Post missing file
+	code, _, errOut = runCLI([]string{"post", filepath.Join(tmpDir, "missing.txt")})
+	if code != 1 || !strings.Contains(errOut, "failed reading file") {
+		t.Errorf("post missing file failed: %s", errOut)
+	}
+
+	// Post empty file
+	emptyFile := filepath.Join(tmpDir, "empty.txt")
+	_ = os.WriteFile(emptyFile, []byte(""), 0600)
+	code, _, errOut = runCLI([]string{"post", emptyFile})
+	if code != 1 || !strings.Contains(errOut, "file is empty or contains only whitespace") {
+		t.Errorf("post empty file failed: %s", errOut)
+	}
+
+	// Post whitespace-only file
+	wsFile := filepath.Join(tmpDir, "whitespace.txt")
+	_ = os.WriteFile(wsFile, []byte("  \n\t  \n  "), 0600)
+	code, _, errOut = runCLI([]string{"post", wsFile})
+	if code != 1 || !strings.Contains(errOut, "file is empty or contains only whitespace") {
+		t.Errorf("post whitespace file failed: %s", errOut)
+	}
+
+	// Post valid file (broadcast)
+	postDoc := filepath.Join(tmpDir, "post-broadcast.md")
+	_ = os.WriteFile(postDoc, []byte("# Broadcast Topic\n\nDetailed body line 1\nDetailed body line 2\n"), 0600)
+	code, out, _ = runCLI([]string{"post", postDoc})
+	if code != 0 || !strings.Contains(out, "-> fleet") || !strings.Contains(out, "# Broadcast Topic") || !strings.Contains(out, "Payload attached:") {
+		t.Errorf("post broadcast failed: %s", out)
+	}
+
+	// Post valid file (direct message with 'to')
+	code, out, _ = runCLI([]string{"post", postDoc, "to", "agent-2"})
+	if code != 0 || !strings.Contains(out, "-> agent-2") || !strings.Contains(out, "# Broadcast Topic") || !strings.Contains(out, "Payload attached:") {
+		t.Errorf("post direct to agent-2 failed: %s", out)
+	}
+
+	// Post valid file (direct message without 'to')
+	code, out, _ = runCLI([]string{"post", postDoc, "agent-2"})
+	if code != 0 || !strings.Contains(out, "-> agent-2") || !strings.Contains(out, "# Broadcast Topic") {
+		t.Errorf("post direct without 'to' failed: %s", out)
+	}
+
+	// Post with --file flag
+	code, out, _ = runCLI([]string{"post", "--file", postDoc, "to", "agent-2"})
+	if code != 0 || !strings.Contains(out, "-> agent-2") || !strings.Contains(out, "# Broadcast Topic") {
+		t.Errorf("post --file failed: %s", out)
+	}
+
+	// Post with --file= inline flag
+	code, out, _ = runCLI([]string{"post", "--file=" + postDoc})
+	if code != 0 || !strings.Contains(out, "-> fleet") || !strings.Contains(out, "# Broadcast Topic") {
+		t.Errorf("post --file= failed: %s", out)
+	}
+
+	// Post from stdin ('-') broadcast
+	code, out, _ = runCLIWithStdin([]string{"post", "-"}, strings.NewReader("Stdin Heading Summary\n\nBody content from stdin."))
+	if code != 0 || !strings.Contains(out, "-> fleet") || !strings.Contains(out, "Stdin Heading Summary") {
+		t.Errorf("post stdin broadcast failed: %s", out)
+	}
+
+	// Post from stdin ('-') direct to agent
+	code, out, _ = runCLIWithStdin([]string{"post", "-", "to", "agent-2"}, strings.NewReader("Direct Stdin Summary\n\nBody for agent-2."))
+	if code != 0 || !strings.Contains(out, "-> agent-2") || !strings.Contains(out, "Direct Stdin Summary") {
+		t.Errorf("post stdin direct failed: %s", out)
+	}
+
+	// Post from stdin with '--file -'
+	code, out, _ = runCLIWithStdin([]string{"post", "--file", "-"}, strings.NewReader("Flag Stdin Summary\n\nBody."))
+	if code != 0 || !strings.Contains(out, "Flag Stdin Summary") {
+		t.Errorf("post --file - failed: %s", out)
+	}
+
 	// 3. Reply
 	// Missing args
 	code, _, errOut = runCLI([]string{"reply", "1-0"})
@@ -346,6 +437,11 @@ func TestClientConnectionFailure(t *testing.T) {
 	code = Run([]string{"tell", "agent-2", "fail"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected tell failure")
+	}
+
+	code = Run([]string{"post", "dummy.txt"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected post failure")
 	}
 
 	code = Run([]string{"reply", "1-0", "agent-2", "fail"}, &stdout, &stderr)
@@ -532,5 +628,29 @@ func TestReadPayload(t *testing.T) {
 	_, err = readPayload(filepath.Join(tmpDir, "nonexistent.txt"), nil)
 	if err == nil {
 		t.Fatalf("expected error for nonexistent file")
+	}
+}
+
+func TestExtractSummary(t *testing.T) {
+	// Empty
+	if _, err := extractSummary([]byte{}); err == nil {
+		t.Errorf("expected error on empty slice")
+	}
+
+	// Whitespace only
+	if _, err := extractSummary([]byte("   \n\t  \n  ")); err == nil {
+		t.Errorf("expected error on whitespace only")
+	}
+
+	// Single line
+	s, err := extractSummary([]byte("Simple line"))
+	if err != nil || s != "Simple line" {
+		t.Errorf("unexpected summary for single line: %v, %s", err, s)
+	}
+
+	// Multiline with leading empty lines
+	s, err = extractSummary([]byte("\n\n  Header Title  \nSecond line"))
+	if err != nil || s != "Header Title" {
+		t.Errorf("unexpected summary for multiline: %v, %s", err, s)
 	}
 }
