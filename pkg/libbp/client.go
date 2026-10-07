@@ -698,7 +698,9 @@ func LoadClientFromEnv() ClientConfig {
 	var username, password string
 	var agentID string
 
-	if mode == "human" {
+	// Auto-detect human operator mode when not running as an explicit agent container
+	isAgent := os.Getenv("BP_AGENT") != "" || os.Getenv("AGENT_NAME") != "" || os.Getenv("BP_PASSWORD") != ""
+	if mode == "human" || (mode == "" && !isAgent && os.Getenv("HUMAN_BACKPLANE_PASSWORD") != "") {
 		username = os.Getenv("HUMAN_NAME")
 		if username == "" {
 			username = "operator"
