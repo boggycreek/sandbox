@@ -24,6 +24,8 @@ import (
 	"github.com/boggycreek/sandbox/pkg/libbp"
 )
 
+var defaultAgentRunnerPath = "/usr/local/bin/agent-runner"
+
 // BackplaneClient defines the operations required by bpd from the backplane client.
 type BackplaneClient interface {
 	Recv(ctx context.Context, blockSeconds int) ([]*libbp.Message, error)
@@ -121,7 +123,11 @@ func LoadConfigFromEnv() (*Config, error) {
 
 	runnerCmd := os.Getenv("BPD_RUNNER_CMD")
 	if runnerCmd == "" {
-		runnerCmd = "claude -p"
+		if fi, err := os.Stat(defaultAgentRunnerPath); err == nil && !fi.IsDir() {
+			runnerCmd = defaultAgentRunnerPath
+		} else {
+			runnerCmd = "claude -p"
+		}
 	}
 
 	return &Config{
@@ -326,6 +332,9 @@ func (d *Daemon) Tick(ctx context.Context) error {
 		sessionArgs = []string{"--resume", sessionID}
 		fmt.Fprintf(d.stdout, "[bpd] Resuming existing session: %s\n", sessionID)
 	}
+
+	_ = os.Setenv("AGENT_SESSION_ID", sessionID)
+	_ = os.Setenv("AGENT_NAME", d.cfg.AgentName)
 
 	// 5. Build runner invocation
 	runnerParts := strings.Fields(d.cfg.RunnerCmd)

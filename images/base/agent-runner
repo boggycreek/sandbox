@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Boggy Creek Software LLC
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file.
+
+# Base In-Container Dispatch Wrapper (ADR 00039)
+# Probes installed agent CLIs on PATH and dispatches non-interactively.
+
+set -euo pipefail
+
+PROMPT="$(cat)"
+if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
+  exit 0
+fi
+
+if command -v claude >/dev/null 2>&1; then
+  exec claude -p "$@" <<< "${PROMPT}"
+elif command -v pig >/dev/null 2>&1; then
+  exec pig -p "${PROMPT}"
+elif command -v opencode >/dev/null 2>&1; then
+  exec opencode run "$@" <<< "${PROMPT}"
+elif command -v agy >/dev/null 2>&1; then
+  exec agy -p "$@" <<< "${PROMPT}"
+else
+  echo "agent-runner: No supported agent CLI found on PATH" >&2
+  exit 1
+fi
