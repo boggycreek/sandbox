@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
@@ -807,12 +808,21 @@ func handleState(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintf(stderr, "bp error: %v\n", err)
 				return 1
 			}
-			f, err := os.OpenFile(queueFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			f, err := os.OpenFile(queueFile, os.O_CREATE|os.O_RDWR, 0600)
 			if err != nil {
 				fmt.Fprintf(stderr, "bp error: %v\n", err)
 				return 1
 			}
 			defer f.Close()
+			if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+				fmt.Fprintf(stderr, "bp error: flock failed: %v\n", err)
+				return 1
+			}
+			defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			if _, err := f.Seek(0, io.SeekEnd); err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
 			if _, err := f.WriteString(directive + "\n"); err != nil {
 				fmt.Fprintf(stderr, "bp error: %v\n", err)
 				return 1
@@ -821,7 +831,17 @@ func handleState(args []string, stdout, stderr io.Writer) int {
 			return 0
 
 		case "pop":
-			data, err := os.ReadFile(queueFile)
+			f, err := os.OpenFile(queueFile, os.O_CREATE|os.O_RDWR, 0600)
+			if err != nil {
+				return 1
+			}
+			defer f.Close()
+			if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+				return 1
+			}
+			defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+
+			data, err := io.ReadAll(f)
 			if err != nil || len(bytes.TrimSpace(data)) == 0 {
 				return 1
 			}
@@ -845,7 +865,15 @@ func handleState(args []string, stdout, stderr io.Writer) int {
 				newContent.Write(r)
 				newContent.WriteByte('\n')
 			}
-			if err := os.WriteFile(queueFile, newContent.Bytes(), 0600); err != nil {
+			if err := f.Truncate(0); err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
+			if _, err := f.Write(newContent.Bytes()); err != nil {
 				fmt.Fprintf(stderr, "bp error: %v\n", err)
 				return 1
 			}
@@ -853,14 +881,26 @@ func handleState(args []string, stdout, stderr io.Writer) int {
 			return 0
 
 		case "list":
-			data, err := os.ReadFile(queueFile)
+			f, err := os.OpenFile(queueFile, os.O_RDONLY, 0600)
 			if err != nil {
 				return 0
 			}
-			_, _ = stdout.Write(data)
+			defer f.Close()
+			if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
+				return 0
+			}
+			defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			_, _ = io.Copy(stdout, f)
 			return 0
 
 		case "clear":
+			f, err := os.OpenFile(queueFile, os.O_CREATE|os.O_RDWR, 0600)
+			if err == nil {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+				_ = f.Truncate(0)
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				_ = f.Close()
+			}
 			_ = os.Remove(queueFile)
 			fmt.Fprintln(stdout, "queue cleared")
 			return 0

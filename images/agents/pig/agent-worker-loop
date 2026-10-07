@@ -47,12 +47,13 @@ update_state() {
 echo "Starting Deep Lobe Worker Loop for ${AGENT_NAME:-agent} (${ROLE})..."
 update_state "idle" "none" "idle, waiting for task"
 
-# If in a repo checkout, cd to it
-if [ -d "/home/agent/workspace/sandbox" ]; then
-  cd "/home/agent/workspace/sandbox"
-elif [ -d "/home/agent/workspace" ]; then
-  cd "/home/agent/workspace"
+WORKDIR="${AGENT_WORKDIR:-/home/agent/workspace}"
+if [ -d "${WORKDIR}" ]; then
+  cd "${WORKDIR}"
 fi
+
+CURRENT_STATE="idle"
+LAST_STATUS_REFRESH=$(date +%s)
 
 while true; do
   DIRECTIVE="$(bp state queue pop 2>/dev/null || true)"
@@ -90,7 +91,9 @@ PYEOF
     fi
 
     TASK_SUMMARY="$(echo "${PROMPT}" | head -n 1 | cut -c1-60)"
+    CURRENT_STATE="working"
     update_state "working" "${TASK_SUMMARY}" "Executing: ${TASK_SUMMARY}"
+    LAST_STATUS_REFRESH=$(date +%s)
 
     PIG_ARGS=("-p" "${PROMPT}" "--continue")
     if [ -f "${PIGLET_FILE}" ]; then
@@ -101,22 +104,29 @@ PYEOF
     EXIT_CODE=0
     pig "${PIG_ARGS[@]}" || EXIT_CODE=$?
 
+    CURRENT_STATE="idle"
+    LAST_STATUS_REFRESH=$(date +%s)
+
     if [ ${EXIT_CODE} -eq 0 ]; then
       echo "[$(date -u +%FT%TZ)] Turn completed successfully."
       update_state "idle" "none" "Completed task: ${TASK_SUMMARY}"
-      if [[ -n "${SENDER}" && -n "${SEQ}" && "${SENDER}" != "operator" ]]; then
+      if [[ -n "${SENDER}" && -n "${SEQ}" && "${SENDER}" != "operator" && "${SENDER}" != "${AGENT_NAME:-}" ]]; then
         bp reply "${SENDER}#${SEQ}" "${SENDER}" "Completed directive: ${TASK_SUMMARY}" >/dev/null 2>&1 || true
       fi
     else
       echo "[$(date -u +%FT%TZ)] Turn exited with status ${EXIT_CODE}"
       update_state "error" "none" "Failed task (${EXIT_CODE}): ${TASK_SUMMARY}"
-      if [[ -n "${SENDER}" && -n "${SEQ}" && "${SENDER}" != "operator" ]]; then
+      if [[ -n "${SENDER}" && -n "${SEQ}" && "${SENDER}" != "operator" && "${SENDER}" != "${AGENT_NAME:-}" ]]; then
         bp reply "${SENDER}#${SEQ}" "${SENDER}" "Execution failed (code ${EXIT_CODE}) for: ${TASK_SUMMARY}" >/dev/null 2>&1 || true
       fi
     fi
   else
-    # Queue is empty, refresh idle status and sleep briefly
-    bp status set "idle" >/dev/null 2>&1 || true
+    # Queue is empty, refresh Valkey status every 60 seconds without busy-spamming
+    NOW=$(date +%s)
+    if [ $((NOW - LAST_STATUS_REFRESH)) -ge 60 ]; then
+      bp status set "${CURRENT_STATE}" >/dev/null 2>&1 || true
+      LAST_STATUS_REFRESH=${NOW}
+    fi
     sleep 2
   fi
 done

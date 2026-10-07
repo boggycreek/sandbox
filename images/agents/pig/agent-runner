@@ -41,22 +41,48 @@ while IFS= read -r line; do
 import sys, re, subprocess, json, os
 
 line = sys.argv[1]
-m = re.match(r'^\S+\s+\[([a-zA-Z0-9_-]+)#(\d+)(?:\s+->\s+[a-zA-Z0-9_-]+)?(?:\s+\[[^\]]+\])?\]:\s*(.*)$', line)
+current_agent = os.environ.get("AGENT_NAME", os.environ.get("BP_AGENT", "")).strip().lower()
+
+# Format: HH:MM:SS [sender#seq -> target [verified]]: message
+m = re.match(r'^\S+\s+\[([a-zA-Z0-9_-]+)#(\d+)(?:\s+->\s+([a-zA-Z0-9_-]+))?(?:\s+\[[^\]]+\])?\]:\s*(.*)$', line)
 if not m:
     sender = "operator"
     seq = "0"
+    target = current_agent
     citation = "operator#0"
     content = line.strip()
 else:
-    sender = m.group(1)
-    seq = m.group(2)
+    sender = m.group(1).strip()
+    seq = m.group(2).strip()
+    target = m.group(3).strip().lower() if m.group(3) else ""
     citation = f"{sender}#{seq}"
-    content = m.group(3).strip()
+    content = m.group(4).strip()
 
 if not content:
     sys.exit(0)
 
+# Ignore self-messages
+if sender.lower() == current_agent:
+    sys.exit(0)
+
+# Only process messages explicitly targeted to this agent (inbox), ignore public broadcasts
+if target != current_agent:
+    sys.exit(0)
+
 lower_content = content.lower()
+
+# Suppress automated feedback loops, acknowledgments, completions, and status broadcasts
+automated_prefixes = [
+    "understood. directive queued",
+    "completed directive:",
+    "execution failed",
+    "status:",
+    "online (container started)",
+    "ok ("
+]
+if any(lower_content.startswith(p) for p in automated_prefixes):
+    sys.exit(0)
+
 state_file = os.path.expanduser("~/.agent/state.json")
 current_state = {}
 try:

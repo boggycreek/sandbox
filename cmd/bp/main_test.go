@@ -895,3 +895,49 @@ func TestBPStateAndQueueSubcommands(t *testing.T) {
 		t.Errorf("expected empty queue list after clear: %q", out)
 	}
 }
+
+func TestBPStateQueueConcurrent(t *testing.T) {
+	tmpDir := t.TempDir()
+	queuePath := filepath.Join(tmpDir, "queue.jsonl")
+	t.Setenv("AGENT_QUEUE_FILE", queuePath)
+
+	const numWorkers = 10
+	const itemsPerWorker = 20
+	errChan := make(chan error, numWorkers*itemsPerWorker)
+
+	for w := 0; w < numWorkers; w++ {
+		go func(workerID int) {
+			for i := 0; i < itemsPerWorker; i++ {
+				directive := fmt.Sprintf("worker-%d-task-%d", workerID, i)
+				code, _, errOut := runCLI([]string{"state", "queue", "push", directive})
+				if code != 0 {
+					errChan <- fmt.Errorf("worker %d push failed: %s", workerID, errOut)
+					return
+				}
+				errChan <- nil
+			}
+		}(w)
+	}
+
+	for i := 0; i < numWorkers*itemsPerWorker; i++ {
+		if err := <-errChan; err != nil {
+			t.Fatalf("concurrent push error: %v", err)
+		}
+	}
+
+	poppedCount := 0
+	for {
+		code, out, _ := runCLI([]string{"state", "queue", "pop"})
+		if code != 0 {
+			break
+		}
+		if strings.TrimSpace(out) != "" {
+			poppedCount++
+		}
+	}
+
+	expectedCount := numWorkers * itemsPerWorker
+	if poppedCount != expectedCount {
+		t.Fatalf("expected %d popped items, got %d", expectedCount, poppedCount)
+	}
+}
