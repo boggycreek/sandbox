@@ -740,3 +740,158 @@ func TestExtractSummary(t *testing.T) {
 		t.Errorf("expected 256 runes ending in ..., got %d runes: %s", len([]rune(s)), s)
 	}
 }
+
+func TestBPStateAndQueueSubcommands(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+	queuePath := filepath.Join(tmpDir, "queue.jsonl")
+
+	t.Setenv("AGENT_STATE_FILE", statePath)
+	t.Setenv("AGENT_QUEUE_FILE", queuePath)
+
+	// Missing args
+	code, _, errOut := runCLI([]string{"state"})
+	if code != 1 || !strings.Contains(errOut, "requires subcommand") {
+		t.Errorf("expected error on empty state subcommand: %s", errOut)
+	}
+
+	// Unknown subcommand
+	code, _, errOut = runCLI([]string{"state", "unknown"})
+	if code != 1 || !strings.Contains(errOut, "unknown state subcommand") {
+		t.Errorf("expected error on unknown state subcommand: %s", errOut)
+	}
+
+	// Get before file exists
+	code, _, errOut = runCLI([]string{"state", "get"})
+	if code != 1 || !strings.Contains(errOut, "does not exist") {
+		t.Errorf("expected error getting nonexistent state: %s", errOut)
+	}
+
+	// Show before file exists
+	code, _, errOut = runCLI([]string{"state", "show"})
+	if code != 1 || !strings.Contains(errOut, "does not exist") {
+		t.Errorf("expected error showing nonexistent state: %s", errOut)
+	}
+
+	// Set missing args
+	code, _, errOut = runCLI([]string{"state", "set", "key"})
+	if code != 1 || !strings.Contains(errOut, "requires <key> <value>") {
+		t.Errorf("expected error on missing set value: %s", errOut)
+	}
+
+	// Set activity
+	code, out, _ := runCLI([]string{"state", "set", "activity", "working on refactoring"})
+	if code != 0 || !strings.Contains(out, "state.activity = working on refactoring") {
+		t.Errorf("state set failed: %s", out)
+	}
+
+	// Set task
+	code, out, _ = runCLI([]string{"state", "set", "current_task", "sndbx-d46.7"})
+	if code != 0 || !strings.Contains(out, "state.current_task = sndbx-d46.7") {
+		t.Errorf("state set task failed: %s", out)
+	}
+
+	// Get activity
+	code, out, _ = runCLI([]string{"state", "get", "activity"})
+	if code != 0 || strings.TrimSpace(out) != "working on refactoring" {
+		t.Errorf("state get activity failed: %q", out)
+	}
+
+	// Get missing field
+	code, _, errOut = runCLI([]string{"state", "get", "nonexistent"})
+	if code != 1 || !strings.Contains(errOut, "not found") {
+		t.Errorf("state get missing field should fail: %s", errOut)
+	}
+
+	// Get entire JSON
+	code, out, _ = runCLI([]string{"state", "get"})
+	if code != 0 || !strings.Contains(out, "working on refactoring") || !strings.Contains(out, "sndbx-d46.7") {
+		t.Errorf("state get all failed: %s", out)
+	}
+
+	// Show
+	code, out, _ = runCLI([]string{"state", "show"})
+	if code != 0 || !strings.Contains(out, "working on refactoring") {
+		t.Errorf("state show failed: %s", out)
+	}
+
+	// Invalid state JSON on get
+	_ = os.WriteFile(statePath, []byte("invalid-json"), 0600)
+	code, _, errOut = runCLI([]string{"state", "get", "activity"})
+	if code != 1 || !strings.Contains(errOut, "invalid state JSON") {
+		t.Errorf("expected error on invalid state JSON: %s", errOut)
+	}
+	_ = os.Remove(statePath)
+
+	// Queue missing args
+	code, _, errOut = runCLI([]string{"state", "queue"})
+	if code != 1 || !strings.Contains(errOut, "requires subcommand") {
+		t.Errorf("expected error on empty queue subcommand: %s", errOut)
+	}
+
+	// Queue unknown subcommand
+	code, _, errOut = runCLI([]string{"state", "queue", "unknown"})
+	if code != 1 || !strings.Contains(errOut, "unknown queue subcommand") {
+		t.Errorf("expected error on unknown queue subcommand: %s", errOut)
+	}
+
+	// Queue push missing args
+	code, _, errOut = runCLI([]string{"state", "queue", "push"})
+	if code != 1 || !strings.Contains(errOut, "requires <directive>") {
+		t.Errorf("expected error on empty queue push: %s", errOut)
+	}
+
+	// Queue pop on empty queue
+	code, _, _ = runCLI([]string{"state", "queue", "pop"})
+	if code != 1 {
+		t.Errorf("expected code 1 on empty queue pop, got %d", code)
+	}
+
+	// Queue push item 1 and item 2
+	code, out, _ = runCLI([]string{"state", "queue", "push", "directive one"})
+	if code != 0 || !strings.Contains(out, "queued directive") {
+		t.Errorf("queue push 1 failed: %s", out)
+	}
+	code, out, _ = runCLI([]string{"state", "queue", "push", "directive two"})
+	if code != 0 || !strings.Contains(out, "queued directive") {
+		t.Errorf("queue push 2 failed: %s", out)
+	}
+
+	// Queue list
+	code, out, _ = runCLI([]string{"state", "queue", "list"})
+	if code != 0 || !strings.Contains(out, "directive one") || !strings.Contains(out, "directive two") {
+		t.Errorf("queue list failed: %s", out)
+	}
+
+	// Queue pop item 1
+	code, out, _ = runCLI([]string{"state", "queue", "pop"})
+	if code != 0 || strings.TrimSpace(out) != "directive one" {
+		t.Errorf("queue pop 1 failed: %q", out)
+	}
+
+	// Queue pop item 2
+	code, out, _ = runCLI([]string{"state", "queue", "pop"})
+	if code != 0 || strings.TrimSpace(out) != "directive two" {
+		t.Errorf("queue pop 2 failed: %q", out)
+	}
+
+	// Queue pop now empty
+	code, _, _ = runCLI([]string{"state", "queue", "pop"})
+	if code != 1 {
+		t.Errorf("expected code 1 on empty queue pop after popping all")
+	}
+
+	// Queue clear
+	code, out, _ = runCLI([]string{"state", "queue", "push", "temporary directive"})
+	if code != 0 {
+		t.Errorf("queue push failed")
+	}
+	code, out, _ = runCLI([]string{"state", "queue", "clear"})
+	if code != 0 || !strings.Contains(out, "queue cleared") {
+		t.Errorf("queue clear failed: %s", out)
+	}
+	code, out, _ = runCLI([]string{"state", "queue", "list"})
+	if code != 0 || strings.TrimSpace(out) != "" {
+		t.Errorf("expected empty queue list after clear: %q", out)
+	}
+}

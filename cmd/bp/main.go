@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -118,6 +119,9 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "interval":
 		return handleInterval(ctx, cfg, cmdArgs, stdout, stderr)
 
+	case "state":
+		return handleState(cmdArgs, stdout, stderr)
+
 	default:
 		fmt.Fprintf(stderr, "bp: unknown command %q (see 'bp help')\n", cmd)
 		return 1
@@ -142,6 +146,10 @@ Commands:
   liaison set <agent>              Appoint an agent as fleet liaison (operator only)
   interval [get]                   Show current backplane poll interval in seconds
   interval set <seconds>           Set shared poll interval in seconds (5-3600)
+  state get [<key>]                Read field from shared synaptic state (ADR 00040)
+  state set <key> <val>            Update field in shared synaptic state (ADR 00040)
+  state show                       Display entire shared synaptic state JSON (ADR 00040)
+  state queue <push|pop|list>      Manage shared inter-lobe directive queue (ADR 00040)
   help                             Show this help message`)
 }
 
@@ -672,4 +680,198 @@ func handleInterval(ctx context.Context, cfg libbp.ClientConfig, args []string, 
 
 	fmt.Fprintln(stderr, "Usage: bp interval [get|set <seconds>]")
 	return 1
+}
+
+func agentStatePath() string {
+	if p := os.Getenv("AGENT_STATE_FILE"); p != "" {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/tmp"
+	}
+	return filepath.Join(home, ".agent", "state.json")
+}
+
+func agentQueuePath() string {
+	if p := os.Getenv("AGENT_QUEUE_FILE"); p != "" {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/tmp"
+	}
+	return filepath.Join(home, ".agent", "queue.jsonl")
+}
+
+func handleState(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "bp: state requires subcommand (get, set, show, queue)")
+		return 1
+	}
+
+	sub := strings.ToLower(args[0])
+	stateFile := agentStatePath()
+	queueFile := agentQueuePath()
+
+	switch sub {
+	case "get":
+		data, err := os.ReadFile(stateFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Fprintln(stderr, "bp: state file does not exist")
+				return 1
+			}
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		if len(args) > 1 {
+			var m map[string]interface{}
+			if err := json.Unmarshal(data, &m); err != nil {
+				fmt.Fprintf(stderr, "bp error: invalid state JSON: %v\n", err)
+				return 1
+			}
+			key := args[1]
+			if val, ok := m[key]; ok {
+				fmt.Fprintf(stdout, "%v\n", val)
+				return 0
+			}
+			fmt.Fprintf(stderr, "bp: state field %q not found\n", key)
+			return 1
+		}
+		_, _ = stdout.Write(data)
+		return 0
+
+	case "set":
+		if len(args) < 3 {
+			fmt.Fprintln(stderr, "bp: state set requires <key> <value>")
+			return 1
+		}
+		key := args[1]
+		val := strings.Join(args[2:], " ")
+
+		var m map[string]interface{}
+		data, err := os.ReadFile(stateFile)
+		if err == nil {
+			_ = json.Unmarshal(data, &m)
+		}
+		if m == nil {
+			m = make(map[string]interface{})
+		}
+		m[key] = val
+		m["updated_at"] = time.Now().UTC().Format(time.RFC3339)
+
+		if err := os.MkdirAll(filepath.Dir(stateFile), 0700); err != nil {
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		outData, err := json.MarshalIndent(m, "", "  ")
+		if err != nil {
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		if err := os.WriteFile(stateFile, append(outData, '\n'), 0600); err != nil {
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "state.%s = %s\n", key, val)
+		return 0
+
+	case "show":
+		data, err := os.ReadFile(stateFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Fprintln(stderr, "bp: state file does not exist")
+				return 1
+			}
+			fmt.Fprintf(stderr, "bp error: %v\n", err)
+			return 1
+		}
+		_, _ = stdout.Write(data)
+		return 0
+
+	case "queue":
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "bp: state queue requires subcommand (push, pop, list, clear)")
+			return 1
+		}
+		qSub := strings.ToLower(args[1])
+		switch qSub {
+		case "push":
+			if len(args) < 3 {
+				fmt.Fprintln(stderr, "bp: state queue push requires <directive>")
+				return 1
+			}
+			directive := strings.Join(args[2:], " ")
+			if err := os.MkdirAll(filepath.Dir(queueFile), 0700); err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
+			f, err := os.OpenFile(queueFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
+			defer f.Close()
+			if _, err := f.WriteString(directive + "\n"); err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, "queued directive")
+			return 0
+
+		case "pop":
+			data, err := os.ReadFile(queueFile)
+			if err != nil || len(bytes.TrimSpace(data)) == 0 {
+				return 1
+			}
+			lines := bytes.Split(data, []byte("\n"))
+			var firstLine []byte
+			var remaining [][]byte
+			for _, l := range lines {
+				if len(bytes.TrimSpace(l)) > 0 {
+					if firstLine == nil {
+						firstLine = l
+					} else {
+						remaining = append(remaining, l)
+					}
+				}
+			}
+			if firstLine == nil {
+				return 1
+			}
+			var newContent bytes.Buffer
+			for _, r := range remaining {
+				newContent.Write(r)
+				newContent.WriteByte('\n')
+			}
+			if err := os.WriteFile(queueFile, newContent.Bytes(), 0600); err != nil {
+				fmt.Fprintf(stderr, "bp error: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(stdout, "%s\n", string(firstLine))
+			return 0
+
+		case "list":
+			data, err := os.ReadFile(queueFile)
+			if err != nil {
+				return 0
+			}
+			_, _ = stdout.Write(data)
+			return 0
+
+		case "clear":
+			_ = os.Remove(queueFile)
+			fmt.Fprintln(stdout, "queue cleared")
+			return 0
+
+		default:
+			fmt.Fprintf(stderr, "bp: unknown queue subcommand %q\n", qSub)
+			return 1
+		}
+
+	default:
+		fmt.Fprintf(stderr, "bp: unknown state subcommand %q\n", sub)
+		return 1
+	}
 }

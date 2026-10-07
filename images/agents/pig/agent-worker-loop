@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Boggy Creek Software LLC
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file.
+
+# Deep Lobe: Heavy Focus Execution Worker Loop (ADR 00040)
+# Runs 24/7 inside tmux.
+# Continuously checks ~/.agent/queue.jsonl (via `bp state queue pop`).
+# Executes directives via `pig -p "<directive>" --piglet "${PIGLET_FILE}"`.
+# Updates shared state (~/.agent/state.json) and Valkey status.
+
+set -euo pipefail
+
+STATE_FILE="${HOME:-/home/agent}/.agent/state.json"
+PIGLET_DIR="/home/agent/.pig/piglets"
+ROLE="${AGENT_ROLE:-${ROLE:-fuzzer}}"
+PIGLET_FILE="${PIGLET_DIR}/${ROLE}.yaml"
+
+mkdir -p "$(dirname "${STATE_FILE}")"
+mkdir -p "${PIGLET_DIR}"
+
+# Initialize state if not present
+if [ ! -f "${STATE_FILE}" ]; then
+  cat <<EOF > "${STATE_FILE}"
+{
+  "agent_id": "${AGENT_NAME:-agent}",
+  "status": "idle",
+  "current_task": "none",
+  "activity": "idle, waiting for task",
+  "active_branch": "main",
+  "updated_at": "$(date -u +%FT%TZ)"
+}
+EOF
+fi
+
+update_state() {
+  local status="$1"
+  local task="$2"
+  local activity="$3"
+  bp state set status "${status}" >/dev/null 2>&1 || true
+  bp state set current_task "${task}" >/dev/null 2>&1 || true
+  bp state set activity "${activity}" >/dev/null 2>&1 || true
+  bp status set "${status}" >/dev/null 2>&1 || true
+}
+
+echo "Starting Deep Lobe Worker Loop for ${AGENT_NAME:-agent} (${ROLE})..."
+update_state "idle" "none" "idle, waiting for task"
+
+# If in a repo checkout, cd to it
+if [ -d "/home/agent/workspace/sandbox" ]; then
+  cd "/home/agent/workspace/sandbox"
+elif [ -d "/home/agent/workspace" ]; then
+  cd "/home/agent/workspace"
+fi
+
+while true; do
+  DIRECTIVE="$(bp state queue pop 2>/dev/null || true)"
+
+  if [[ -n "${DIRECTIVE//[[:space:]]/}" ]]; then
+    echo "[$(date -u +%FT%TZ)] Popped directive from queue: ${DIRECTIVE}"
+
+    # Extract metadata using python3
+    PARSED="$(python3 - <<PYEOF "${DIRECTIVE}"
+import sys, re
+
+line = sys.argv[1]
+m = re.match(r'^\S+\s+\[([a-zA-Z0-9_-]+)#(\d+)(?:\s+->\s+[a-zA-Z0-9_-]+)?(?:\s+\[[^\]]+\])?\]:\s*(.*)$', line)
+if not m:
+    sender = "operator"
+    seq = "0"
+    content = line.strip()
+else:
+    sender = m.group(1)
+    seq = m.group(2)
+    content = m.group(3).strip()
+
+print(sender)
+print(seq)
+print(content)
+PYEOF
+)"
+
+    SENDER="$(echo "${PARSED}" | sed -n '1p')"
+    SEQ="$(echo "${PARSED}" | sed -n '2p')"
+    PROMPT="$(echo "${PARSED}" | sed -n '3,$p')"
+
+    if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
+      PROMPT="${DIRECTIVE}"
+    fi
+
+    TASK_SUMMARY="$(echo "${PROMPT}" | head -n 1 | cut -c1-60)"
+    update_state "working" "${TASK_SUMMARY}" "Executing: ${TASK_SUMMARY}"
+
+    PIG_ARGS=("-p" "${PROMPT}" "--continue")
+    if [ -f "${PIGLET_FILE}" ]; then
+      PIG_ARGS+=("--piglet" "${PIGLET_FILE}")
+    fi
+
+    echo "[$(date -u +%FT%TZ)] Executing turn: pig ${PIG_ARGS[*]}"
+    EXIT_CODE=0
+    pig "${PIG_ARGS[@]}" || EXIT_CODE=$?
+
+    if [ ${EXIT_CODE} -eq 0 ]; then
+      echo "[$(date -u +%FT%TZ)] Turn completed successfully."
+      update_state "idle" "none" "Completed task: ${TASK_SUMMARY}"
+      if [[ -n "${SENDER}" && -n "${SEQ}" && "${SENDER}" != "operator" ]]; then
+        bp reply "${SENDER}#${SEQ}" "${SENDER}" "Completed directive: ${TASK_SUMMARY}" >/dev/null 2>&1 || true
+      fi
+    else
+      echo "[$(date -u +%FT%TZ)] Turn exited with status ${EXIT_CODE}"
+      update_state "error" "none" "Failed task (${EXIT_CODE}): ${TASK_SUMMARY}"
+      if [[ -n "${SENDER}" && -n "${SEQ}" && "${SENDER}" != "operator" ]]; then
+        bp reply "${SENDER}#${SEQ}" "${SENDER}" "Execution failed (code ${EXIT_CODE}) for: ${TASK_SUMMARY}" >/dev/null 2>&1 || true
+      fi
+    fi
+  else
+    # Queue is empty, refresh idle status and sleep briefly
+    bp status set "idle" >/dev/null 2>&1 || true
+    sleep 2
+  fi
+done

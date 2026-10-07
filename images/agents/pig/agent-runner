@@ -4,26 +4,81 @@
 # Use of this source code is governed by an MIT-style
 # license that can be found in the LICENSE file.
 
-# In-Container Dispatch Wrapper for PiG (Pi in Go) Agent
-# Adheres to the /usr/local/bin/agent-runner dispatch contract (ADR 00039).
+# Front Lobe: Fast Reflex Dispatcher (ADR 00040)
 # Invoked non-interactively by bpd upon draining backplane messages.
+# Evaluates message against shared state (~/.agent/state.json).
+# Directly answers status inquiries, or enqueues actionable directives.
 
 set -euo pipefail
 
-ROLE="${AGENT_ROLE:-${ROLE:-fuzzer}}"
-PIGLET_FILE="${PIGLET_FILE:-/home/agent/.pig/piglets/${ROLE}.yaml}"
-
-# Consume prompt from standard input
-PROMPT="$(cat)"
-
-# If prompt is empty or whitespace only, nothing to process
-if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
+RAW_INPUT="$(cat)"
+if [[ -z "${RAW_INPUT//[[:space:]]/}" ]]; then
   exit 0
 fi
 
-# Execute PiG non-interactively (-p)
-if [ -f "${PIGLET_FILE}" ]; then
-  exec pig --piglet "${PIGLET_FILE}" -p "${PROMPT}"
-else
-  exec pig -p "${PROMPT}"
+STATE_FILE="${HOME:-/home/agent}/.agent/state.json"
+mkdir -p "$(dirname "${STATE_FILE}")"
+
+# Initialize state if not present
+if [ ! -f "${STATE_FILE}" ]; then
+  cat <<EOF > "${STATE_FILE}"
+{
+  "agent_id": "${AGENT_NAME:-agent}",
+  "status": "idle",
+  "current_task": "none",
+  "activity": "idle, waiting for task",
+  "active_branch": "main",
+  "updated_at": "$(date -u +%FT%TZ)"
+}
+EOF
 fi
+
+# Process lines in batch
+while IFS= read -r line; do
+  [[ -z "${line//[[:space:]]/}" ]] && continue
+
+  python3 - <<PYEOF "${line}"
+import sys, re, subprocess, json, os
+
+line = sys.argv[1]
+m = re.match(r'^\S+\s+\[([a-zA-Z0-9_-]+)#(\d+)(?:\s+->\s+[a-zA-Z0-9_-]+)?(?:\s+\[[^\]]+\])?\]:\s*(.*)$', line)
+if not m:
+    sender = "operator"
+    seq = "0"
+    citation = "operator#0"
+    content = line.strip()
+else:
+    sender = m.group(1)
+    seq = m.group(2)
+    citation = f"{sender}#{seq}"
+    content = m.group(3).strip()
+
+if not content:
+    sys.exit(0)
+
+lower_content = content.lower()
+state_file = os.path.expanduser("~/.agent/state.json")
+current_state = {}
+try:
+    with open(state_file, "r") as f:
+        current_state = json.load(f)
+except Exception:
+    current_state = {"status": "idle", "activity": "idle", "current_task": "none"}
+
+activity = current_state.get("activity", "idle")
+task = current_state.get("current_task", "none")
+status = current_state.get("status", "idle")
+
+is_inquiry = any(k in lower_content for k in ["status", "what are you", "what're you", "how are you", "progress", "doing?", "check in"])
+
+if is_inquiry:
+    reply_msg = f"Status: {status} | Current task: {task} | Activity: {activity}"
+    subprocess.run(["bp", "reply", citation, sender, reply_msg], check=False)
+else:
+    subprocess.run(["bp", "state", "queue", "push", line], check=False)
+    ack_msg = f"Understood. Directive queued for execution (Task: {task})"
+    subprocess.run(["bp", "reply", citation, sender, ack_msg], check=False)
+
+PYEOF
+
+done <<< "${RAW_INPUT}"
