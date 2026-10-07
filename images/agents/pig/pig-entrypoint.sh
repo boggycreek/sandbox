@@ -142,31 +142,22 @@ if not model_id and inference_url:
 if not model_id:
     model_id = "default-model"
 
-tools_by_role = {
-    "fuzzer": ["bash", "read", "write", "edit"],
-    "auditor": ["read", "grep", "find", "ls"],
-    "verifier": ["bash", "read", "write"],
-    "coder": ["bash", "read", "write", "edit"],
-    "coding-agent": ["bash", "read", "write", "edit"]
-}
+standard_tools = ["bash", "read", "write", "edit"]
 
 prompts_by_role = {
     "fuzzer": """You are an autonomous fuzzing and boundary-probing specialist running inside an isolated sandbox container.
-Your mission is to probe the target software for runtime panics, boundary errors, unexpected crashes, and invalid states.
-Generate targeted test vectors, execute them using bash, and report anomalous exits or crash dumps.""",
-    "auditor": """You are a static code and logic auditor running inside an isolated sandbox container.
-Your mission is to inspect the codebase for security vulnerabilities, concurrency race conditions, unhandled errors, and memory leaks.
-Use read-only discovery tools (read, grep, find, ls) to pinpoint defects without mutating files.""",
-    "verifier": """You are a triage and defect verification specialist running inside an isolated sandbox container.
-Your mission is to ingest suspected anomalies, isolate the root cause, and produce minimal, standalone reproducible test cases.
-Verify that the failure reliably triggers, document the defect, and prepare reports for the team.""",
+Collaborate with peer agents using 'bp tell' and 'bp say'. Probe software for edge cases, runtime panics, boundary errors, and invalid states.""",
+    "auditor": """You are an autonomous software engineering and logic auditing specialist running inside an isolated sandbox container.
+Collaborate with peer agents using 'bp tell' and 'bp say'. Audit code, propose architectures, and implement robust software components.""",
+    "verifier": """You are an autonomous defect verification and triage specialist running inside an isolated sandbox container.
+Collaborate with peer agents using 'bp tell' and 'bp say'. Reproduce defects, run test suites, verify fixes, and report results.""",
     "coder": """You are an autonomous software engineering assistant running inside an isolated sandbox container.
-Collaborate with peer agents to build, test, and refine software components.""",
+Collaborate with peer agents using 'bp tell' and 'bp say' to build, test, and refine software components.""",
     "coding-agent": """You are an autonomous software engineering assistant running inside an isolated sandbox container.
-Collaborate with peer agents to build, test, and refine software components."""
+Collaborate with peer agents using 'bp tell' and 'bp say' to build, test, and refine software components."""
 }
 
-selected_tools = tools_by_role.get(role, tools_by_role["coder"])
+selected_tools = standard_tools
 selected_prompt = prompts_by_role.get(role, prompts_by_role["coder"])
 
 piglet = {
