@@ -142,7 +142,7 @@ if not model_id and inference_url:
 if not model_id:
     model_id = "default-model"
 
-standard_tools = ["bash", "read", "write", "edit"]
+standard_tools = ["bash", "read", "write", "edit", "grep", "find", "ls"]
 
 prompts_by_role = {
     "fuzzer": """You are an autonomous fuzzing and boundary-probing specialist running inside an isolated sandbox container.
