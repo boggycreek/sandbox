@@ -160,8 +160,13 @@ func getEnvOr(key, fallback string) string {
 	return fallback
 }
 
-// StartZombieReaper reaps orphaned child processes asynchronously if running as PID 1 or if requested.
+// StartZombieReaper reaps orphaned child processes asynchronously if running as PID 1.
 func StartZombieReaper(ctx context.Context, logger *Logger) {
+	// Only run zombie reaper when running as container PID 1 or if explicitly forced for testing
+	if os.Getpid() != 1 && os.Getenv("FORCE_ZOMBIE_REAPER") != "1" {
+		return
+	}
+
 	sigCh := make(chan os.Signal, 32)
 	signal.Notify(sigCh, syscall.SIGCHLD)
 
@@ -172,17 +177,22 @@ func StartZombieReaper(ctx context.Context, logger *Logger) {
 			case <-ctx.Done():
 				return
 			case <-sigCh:
-				// Reap all terminated child processes non-blockingly
+				// Reap terminated child processes non-blockingly
 				for {
 					var ws syscall.WaitStatus
 					pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
 					if err != nil || pid <= 0 {
 						break
 					}
+					isManaged := runtime.IsManagedChildPID(pid)
+					if isManaged {
+						runtime.RecordReapedExit(pid, ws.ExitStatus())
+					}
 					if logger != nil {
 						logger.Log("DEBUG", "Reaped child process", map[string]any{
 							"pid":      pid,
 							"exitCode": ws.ExitStatus(),
+							"managed":  isManaged,
 						})
 					}
 				}
@@ -193,6 +203,9 @@ func StartZombieReaper(ctx context.Context, logger *Logger) {
 
 // Run executes the agent runtime with configured subsystems.
 func Run(ctx context.Context, cfg *Config, out io.Writer) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	logger := NewLogger(out, cfg.LogFormat)
 	logger.Log("INFO", "Starting sndbx-agent runtime", map[string]any{
 		"agentName":    cfg.AgentName,
@@ -204,7 +217,7 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 	})
 
 	// Start zombie reaper
-	StartZombieReaper(ctx, logger)
+	StartZombieReaper(runCtx, logger)
 
 	// Initialize runtime core
 	bus := runtime.NewEventBus()
@@ -219,12 +232,12 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 
 	// Register any configured MCP server binaries
 	for _, binPath := range cfg.MCPBinaries {
-		mcpClient, err := tools.NewProcessMCPClient(ctx, binPath)
+		mcpClient, err := tools.NewProcessMCPClient(runCtx, binPath)
 		if err != nil {
 			logger.Log("WARN", "Failed to start MCP server", map[string]any{"binary": binPath, "error": err.Error()})
 			continue
 		}
-		initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
+		initCtx, initCancel := context.WithTimeout(runCtx, 5*time.Second)
 		if err := mcpClient.Initialize(initCtx); err != nil {
 			initCancel()
 			_ = mcpClient.Close()
@@ -233,7 +246,7 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 		}
 		initCancel()
 
-		discCtx, discCancel := context.WithTimeout(ctx, 5*time.Second)
+		discCtx, discCancel := context.WithTimeout(runCtx, 5*time.Second)
 		mcpTools, err := mcpClient.DiscoverTools(discCtx)
 		discCancel()
 		if err != nil {
@@ -267,7 +280,7 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 		} else {
 			host = cfg.ValkeyAddr
 		}
-		dialCtx, dialCancel := context.WithTimeout(ctx, 5*time.Second)
+		dialCtx, dialCancel := context.WithTimeout(runCtx, 5*time.Second)
 		bpClient, dialErr := libbp.Dial(dialCtx, libbp.ClientConfig{
 			Host:     host,
 			Port:     port,
@@ -278,16 +291,19 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 		if dialErr != nil {
 			logger.Log("WARN", "Failed to connect to Valkey", map[string]any{"addr": cfg.ValkeyAddr, "error": dialErr.Error()})
 		} else {
-			gw := gateway.NewValkeyGateway(cfg.AgentName, bpClient, nil, 1)
+			resolver := gateway.NewBackplaneKeyResolver(bpClient)
+			verifier := gateway.NewVerifier(resolver)
+			gw := gateway.NewValkeyGateway(cfg.AgentName, bpClient, verifier, 1)
+			gw.SetCancelFunc(cancel)
 			_ = supervisor.Register(gw)
-			logger.Log("INFO", "Configured Valkey gateway subsystem", map[string]any{"addr": cfg.ValkeyAddr})
+			logger.Log("INFO", "Configured Valkey gateway subsystem with verified signatures", map[string]any{"addr": cfg.ValkeyAddr})
 		}
 	}
 
 	logger.Log("INFO", "Starting supervisor workers", map[string]any{"workerCount": len(supervisor.Subsystems())})
 
 	// Run supervisor until context cancellation or worker error
-	err := supervisor.Start(ctx)
+	err := supervisor.Start(runCtx)
 	if err != nil && err != context.Canceled {
 		logger.Log("ERROR", "Supervisor exited with error", map[string]any{"error": err.Error()})
 		return err

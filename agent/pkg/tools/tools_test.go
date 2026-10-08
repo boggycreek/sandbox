@@ -289,7 +289,8 @@ func TestToolsParametersAndDescriptions(t *testing.T) {
 	reg := NewRegistry()
 	RegisterBuiltinTools(reg, tmpDir)
 
-	for _, name := range []string{"bash", "read_file", "write_file", "edit_file"} {
+	expectedOrder := []string{"bash", "edit_file", "list_dir", "read_file", "write_file"}
+	for _, name := range expectedOrder {
 		tool, ok := reg.Get(name)
 		if !ok {
 			t.Fatalf("tool %s not registered", name)
@@ -303,10 +304,24 @@ func TestToolsParametersAndDescriptions(t *testing.T) {
 		}
 	}
 
-	// Schema conversion should succeed and contain 4 definitions
+	// Schema conversion should succeed and contain 5 definitions in alphabetical order
 	openAITools := reg.ToOpenAITools()
-	if len(openAITools) != 4 {
-		t.Errorf("expected 4 openAI tools, got %d", len(openAITools))
+	if len(openAITools) != 5 {
+		t.Fatalf("expected 5 openAI tools, got %d", len(openAITools))
+	}
+	for i, ot := range openAITools {
+		fn := ot["function"].(map[string]any)
+		if fn["name"] != expectedOrder[i] {
+			t.Errorf("expected tool %d to be %s, got %s", i, expectedOrder[i], fn["name"])
+		}
+	}
+
+	// List() should also return sorted
+	listed := reg.List()
+	for i, lt := range listed {
+		if lt.Name() != expectedOrder[i] {
+			t.Errorf("expected listed tool %d to be %s, got %s", i, expectedOrder[i], lt.Name())
+		}
 	}
 }
 
@@ -428,7 +443,24 @@ func TestMCPProcessAndEdgeCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to spawn cat process MCP client: %v", err)
 	}
+	if procClient.Stderr() != "" {
+		t.Errorf("expected empty stderr for clean process, got: %s", procClient.Stderr())
+	}
 	_ = procClient.Close()
+
+	// 2b. Process client with stderr output on termination
+	shClient, err := NewProcessMCPClient(ctx, "sh", "-c", "echo 'mcp startup fatal' >&2; exit 1")
+	if err == nil {
+		defer shClient.Close()
+		time.Sleep(20 * time.Millisecond)
+		_, reqErr := shClient.Request(ctx, "test", nil)
+		if reqErr == nil || !strings.Contains(reqErr.Error(), "mcp startup fatal") {
+			t.Errorf("expected stderr in request error, got: %v", reqErr)
+		}
+		if !strings.Contains(shClient.Stderr(), "mcp startup fatal") {
+			t.Errorf("expected Stderr() to contain output, got: %s", shClient.Stderr())
+		}
+	}
 
 	// 3. MCPClient Notify error on closed writer
 	r, w := io.Pipe()
@@ -560,3 +592,46 @@ func TestMCPClientNotifyEdgeCases(t *testing.T) {
 		t.Error("expected error notifying closed client")
 	}
 }
+
+func TestListDirTool(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+	ld := &ListDirTool{workspaceDir: tmpDir}
+
+	// 1. Empty directory
+	out, err := ld.Execute(ctx, map[string]any{})
+	if err != nil || out != "(empty directory)" {
+		t.Errorf("expected empty directory message, got %q, err=%v", out, err)
+	}
+
+	// 2. Directory with file and subfolder
+	_ = os.WriteFile(filepath.Join(tmpDir, "file.txt"), []byte("hello world"), 0644)
+	_ = os.Mkdir(filepath.Join(tmpDir, "subfolder"), 0755)
+
+	out, err = ld.Execute(ctx, map[string]any{"path": "."})
+	if err != nil {
+		t.Fatalf("list_dir failed: %v", err)
+	}
+	if !strings.Contains(out, "[FILE] 11         file.txt") || !strings.Contains(out, "[DIR ] 0          subfolder") {
+		t.Errorf("unexpected directory listing format: %s", out)
+	}
+
+	// 3. Stat non-existent path
+	_, err = ld.Execute(ctx, map[string]any{"path": "does-not-exist"})
+	if err == nil {
+		t.Error("expected error listing non-existent directory")
+	}
+
+	// 4. Listing a regular file instead of directory
+	_, err = ld.Execute(ctx, map[string]any{"path": "file.txt"})
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("expected not a directory error, got: %v", err)
+	}
+
+	// 5. Escaping path traversal
+	_, err = ld.Execute(ctx, map[string]any{"path": "../escape"})
+	if err == nil {
+		t.Error("expected traversal error on list_dir")
+	}
+}
+

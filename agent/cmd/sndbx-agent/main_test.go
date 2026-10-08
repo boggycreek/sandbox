@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/boggycreek/sandbox/agent/pkg/engine"
+	"github.com/boggycreek/sandbox/agent/pkg/runtime"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -129,6 +130,7 @@ func TestLoggerOutput(t *testing.T) {
 }
 
 func TestStartZombieReaper(t *testing.T) {
+	// 1. By default when not PID 1, StartZombieReaper exits immediately
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -137,13 +139,20 @@ func TestStartZombieReaper(t *testing.T) {
 
 	StartZombieReaper(ctx, logger)
 
-	// Spawn a short-lived subprocess to ensure reaper doesn't panic
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("failed to run true command: %v", err)
-	}
+	// 2. Forced mode activates the reaper
+	t.Setenv("FORCE_ZOMBIE_REAPER", "1")
+	StartZombieReaper(ctx, logger)
 
-	time.Sleep(20 * time.Millisecond)
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start true command: %v", err)
+	}
+	runtime.RegisterChildPID(cmd.Process.Pid)
+	defer runtime.UnregisterChildPID(cmd.Process.Pid)
+
+	if err := runtime.WaitManagedCmd(cmd); err != nil {
+		t.Fatalf("expected clean exit from WaitManagedCmd: %v", err)
+	}
 }
 
 func TestRunCleanShutdown(t *testing.T) {

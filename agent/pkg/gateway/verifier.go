@@ -58,6 +58,40 @@ func (r *MemoryKeyResolver) ResolvePublicKey(_ context.Context, senderID string)
 	return key, nil
 }
 
+// IdentityFetcher defines the interface to fetch identity records from the backplane.
+type IdentityFetcher interface {
+	GetIdentity(ctx context.Context, id string) (*libbp.IdentityRecord, error)
+}
+
+// BackplaneKeyResolver resolves public keys by looking up identity records in Valkey.
+type BackplaneKeyResolver struct {
+	fetcher IdentityFetcher
+}
+
+// NewBackplaneKeyResolver creates a KeyResolver backed by the backplane.
+func NewBackplaneKeyResolver(fetcher IdentityFetcher) *BackplaneKeyResolver {
+	return &BackplaneKeyResolver{fetcher: fetcher}
+}
+
+// ResolvePublicKey resolves the Ed25519 public key for a sender via backplane identity record.
+func (r *BackplaneKeyResolver) ResolvePublicKey(ctx context.Context, senderID string) (ed25519.PublicKey, error) {
+	if r.fetcher == nil {
+		return nil, ErrPublicKeyNotFound
+	}
+	rec, err := r.fetcher.GetIdentity(ctx, senderID)
+	if err != nil {
+		return nil, fmt.Errorf("%w for sender %s: %v", ErrPublicKeyNotFound, senderID, err)
+	}
+	if rec == nil || rec.PubKey == "" {
+		return nil, fmt.Errorf("%w for sender %s: empty public key", ErrPublicKeyNotFound, senderID)
+	}
+	pub, err := libbp.DecodePublicKeyBase64(rec.PubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode public key for %s: %w", senderID, err)
+	}
+	return pub, nil
+}
+
 // Verifier validates cryptographic signatures with a thread-safe cache.
 type Verifier struct {
 	resolver KeyResolver

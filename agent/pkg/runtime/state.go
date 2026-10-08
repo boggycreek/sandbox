@@ -31,6 +31,7 @@ type AgentState struct {
 type SharedState struct {
 	mu            sync.RWMutex
 	workspaceMu   sync.RWMutex
+	fileMu        sync.Mutex
 	data          AgentState
 	stateFilePath string
 }
@@ -65,6 +66,9 @@ func (s *SharedState) Update(fn func(data *AgentState)) error {
 
 // FlushToDisk persists the current state atomically to disk if stateFilePath is configured.
 func (s *SharedState) FlushToDisk() error {
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+
 	s.mu.RLock()
 	if s.stateFilePath == "" {
 		s.mu.RUnlock()
@@ -94,6 +98,9 @@ func (s *SharedState) FlushToDisk() error {
 
 // LoadFromDisk populates the state from stateFilePath if it exists on disk.
 func (s *SharedState) LoadFromDisk() error {
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

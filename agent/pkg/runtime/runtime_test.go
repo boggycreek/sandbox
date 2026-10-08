@@ -9,8 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -186,6 +189,34 @@ func TestSharedStateWorkspaceLocking(t *testing.T) {
 	wg.Wait()
 	if counter != 5 {
 		t.Errorf("expected counter 5, got %d", counter)
+	}
+}
+
+func TestSharedStateConcurrentDiskWrites(t *testing.T) {
+	tmpDir := t.TempDir()
+	stateFile := filepath.Join(tmpDir, "concurrent_state.json")
+	state := NewSharedState(stateFile, "agent-concurrent")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			_ = state.Update(func(s *AgentState) {
+				s.CurrentActivity = fmt.Sprintf("Activity-%d", idx)
+			})
+		}()
+	}
+	wg.Wait()
+
+	// Verify the final written file is valid JSON
+	reloaded := NewSharedState(stateFile, "agent-concurrent")
+	if err := reloaded.LoadFromDisk(); err != nil {
+		t.Fatalf("failed to load state after concurrent writes: %v", err)
+	}
+	if !strings.HasPrefix(reloaded.Read().CurrentActivity, "Activity-") {
+		t.Errorf("unexpected activity: %s", reloaded.Read().CurrentActivity)
 	}
 }
 
@@ -523,3 +554,61 @@ func TestSupervisorResilientSubsystemPanicRecovery(t *testing.T) {
 		t.Fatal("timed out waiting for sup.Stop()")
 	}
 }
+
+func TestProcessTrackingAndManagedWait(t *testing.T) {
+	// 1. Invalid / edge cases
+	RegisterChildPID(0)
+	RegisterChildPID(-1)
+	UnregisterChildPID(0)
+	UnregisterChildPID(-1)
+
+	if IsManagedChildPID(999999) {
+		t.Error("unexpected managed status for unmanaged PID")
+	}
+
+	if _, ok := PopReapedExit(999999); ok {
+		t.Error("unexpected reaped status for unknown PID")
+	}
+
+	if err := WaitManagedCmd(nil); err == nil {
+		t.Error("expected error waiting on nil cmd")
+	}
+	if err := WaitManagedCmd(&exec.Cmd{}); err == nil {
+		t.Error("expected error waiting on cmd with nil Process")
+	}
+
+	// 2. Normal execution
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start cmd: %v", err)
+	}
+	pid := cmd.Process.Pid
+	RegisterChildPID(pid)
+	if !IsManagedChildPID(pid) {
+		t.Errorf("expected PID %d to be managed", pid)
+	}
+
+	if err := WaitManagedCmd(cmd); err != nil {
+		t.Fatalf("expected successful WaitManagedCmd: %v", err)
+	}
+	UnregisterChildPID(pid)
+	if IsManagedChildPID(pid) {
+		t.Errorf("expected PID %d to be unmanaged after unregister", pid)
+	}
+
+	// 3. Simulated reaped exit with code 0 and non-zero code
+	RecordReapedExit(12345, 0)
+	if code, ok := PopReapedExit(12345); !ok || code != 0 {
+		t.Errorf("expected code 0, got %d, %v", code, ok)
+	}
+	// Second pop should return false
+	if _, ok := PopReapedExit(12345); ok {
+		t.Error("expected second pop to return false")
+	}
+
+	RecordReapedExit(12346, 42)
+	if code, ok := PopReapedExit(12346); !ok || code != 42 {
+		t.Errorf("expected code 42, got %d, %v", code, ok)
+	}
+}
+

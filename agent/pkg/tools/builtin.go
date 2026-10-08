@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/boggycreek/sandbox/agent/pkg/runtime"
 )
 
 var (
@@ -123,7 +125,14 @@ func (t *BashTool) Execute(ctx context.Context, args map[string]any) (string, er
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &outBuf
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("command start failed: %w", err)
+	}
+
+	runtime.RegisterChildPID(cmd.Process.Pid)
+	defer runtime.UnregisterChildPID(cmd.Process.Pid)
+
+	err := runtime.WaitManagedCmd(cmd)
 	output := outBuf.String()
 
 	const maxOutput = 10000
@@ -330,7 +339,71 @@ func (t *EditFileTool) Execute(_ context.Context, args map[string]any) (string, 
 	return fmt.Sprintf("Successfully edited %s", path), nil
 }
 
-// RegisterBuiltinTools registers bash, read_file, write_file, and edit_file to registry.
+// ListDirTool lists files and directories within a directory inside the workspace.
+type ListDirTool struct {
+	workspaceDir string
+}
+
+func (t *ListDirTool) Name() string { return "list_dir" }
+func (t *ListDirTool) Description() string {
+	return "List entries (files and directories) within a workspace directory"
+}
+func (t *ListDirTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{
+				"type":        "string",
+				"description": "Relative directory path to list (default: workspace root '.')",
+			},
+		},
+	}
+}
+
+func (t *ListDirTool) Execute(_ context.Context, args map[string]any) (string, error) {
+	relPath := "."
+	if p, ok := args["path"].(string); ok && strings.TrimSpace(p) != "" {
+		relPath = strings.TrimSpace(p)
+	}
+
+	resolved, err := ResolveWorkspacePath(t.workspaceDir, relPath)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat directory %s: %w", relPath, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", relPath)
+	}
+
+	entries, err := os.ReadDir(resolved)
+	if err != nil {
+		return "", fmt.Errorf("failed to read directory %s: %w", relPath, err)
+	}
+
+	if len(entries) == 0 {
+		return "(empty directory)", nil
+	}
+
+	var sb strings.Builder
+	for _, entry := range entries {
+		info, err := entry.Info()
+		entryType := "FILE"
+		size := int64(0)
+		if entry.IsDir() {
+			entryType = "DIR "
+		} else if err == nil {
+			size = info.Size()
+		}
+		sb.WriteString(fmt.Sprintf("[%s] %-10d %s\n", entryType, size, entry.Name()))
+	}
+	return strings.TrimRight(sb.String(), "\n"), nil
+}
+
+// RegisterBuiltinTools registers bash, read_file, write_file, edit_file, and list_dir to registry.
 func RegisterBuiltinTools(r *Registry, workspaceDir string) error {
 	if r == nil {
 		return errors.New("registry cannot be nil")
@@ -340,6 +413,7 @@ func RegisterBuiltinTools(r *Registry, workspaceDir string) error {
 		&ReadFileTool{workspaceDir: workspaceDir},
 		&WriteFileTool{workspaceDir: workspaceDir},
 		&EditFileTool{workspaceDir: workspaceDir},
+		&ListDirTool{workspaceDir: workspaceDir},
 	}
 	for _, tool := range tools {
 		if err := r.Register(tool); err != nil {

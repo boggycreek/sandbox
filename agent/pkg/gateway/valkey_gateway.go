@@ -103,20 +103,38 @@ func (g *ValkeyGateway) handleMessage(ctx context.Context, msg *libbp.Message, b
 	}
 
 	// 1. Signature Verification
-	if g.verifier != nil && msg.IsSigned {
-		if err := g.verifier.Verify(ctx, msg.Sender, []byte(msg.Content), msg.Signature); err != nil {
+	if g.verifier != nil {
+		if !msg.IsSigned || msg.Signature == "" {
 			_ = bus.Publish(runtime.Event{
 				Priority: runtime.P2_StandardAsync,
 				Source:   "gateway:verifier",
 				Target:   "*",
 				Payload: map[string]any{
-					"warning": "rejected unverified message signature",
+					"warning": "rejected unsigned message",
 					"sender":  msg.Sender,
 					"msg_id":  msg.ID,
-					"error":   err.Error(),
 				},
 			})
 			return
+		}
+
+		payload := msg.SigningPayload()
+		if err := g.verifier.Verify(ctx, msg.Sender, payload, msg.Signature); err != nil {
+			// Fallback: verify direct content payload for backwards compatibility
+			if err2 := g.verifier.Verify(ctx, msg.Sender, []byte(msg.Content), msg.Signature); err2 != nil {
+				_ = bus.Publish(runtime.Event{
+					Priority: runtime.P2_StandardAsync,
+					Source:   "gateway:verifier",
+					Target:   "*",
+					Payload: map[string]any{
+						"warning": "rejected unverified message signature",
+						"sender":  msg.Sender,
+						"msg_id":  msg.ID,
+						"error":   err.Error(),
+					},
+				})
+				return
+			}
 		}
 		msg.IsVerified = true
 	}

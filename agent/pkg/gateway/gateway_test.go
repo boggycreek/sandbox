@@ -67,6 +67,71 @@ func TestVerifier(t *testing.T) {
 	}
 }
 
+type mockIdentityFetcher struct {
+	records map[string]*libbp.IdentityRecord
+	err     error
+}
+
+func (m *mockIdentityFetcher) GetIdentity(_ context.Context, id string) (*libbp.IdentityRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	rec, ok := m.records[id]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return rec, nil
+}
+
+func TestBackplaneKeyResolver(t *testing.T) {
+	_, pub, err := libbp.GenerateKeypair()
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	pubB64 := libbp.EncodePublicKeyBase64(pub)
+
+	fetcher := &mockIdentityFetcher{
+		records: map[string]*libbp.IdentityRecord{
+			"agent-1": {Name: "agent-1", PubKey: pubB64},
+			"empty":   {Name: "empty", PubKey: ""},
+			"invalid": {Name: "invalid", PubKey: "not-base64---"},
+		},
+	}
+
+	resolver := NewBackplaneKeyResolver(fetcher)
+	ctx := context.Background()
+
+	// 1. Success
+	resolved, err := resolver.ResolvePublicKey(ctx, "agent-1")
+	if err != nil {
+		t.Fatalf("expected successful resolution, got: %v", err)
+	}
+	if !pub.Equal(resolved) {
+		t.Errorf("resolved key does not match original key")
+	}
+
+	// 2. Not found
+	if _, err := resolver.ResolvePublicKey(ctx, "agent-unknown"); !errors.Is(err, ErrPublicKeyNotFound) {
+		t.Errorf("expected ErrPublicKeyNotFound for unknown identity, got: %v", err)
+	}
+
+	// 3. Empty public key
+	if _, err := resolver.ResolvePublicKey(ctx, "empty"); !errors.Is(err, ErrPublicKeyNotFound) {
+		t.Errorf("expected ErrPublicKeyNotFound for empty pubkey, got: %v", err)
+	}
+
+	// 4. Invalid base64
+	if _, err := resolver.ResolvePublicKey(ctx, "invalid"); err == nil {
+		t.Error("expected error for invalid base64 pubkey")
+	}
+
+	// 5. Nil fetcher
+	nilResolver := NewBackplaneKeyResolver(nil)
+	if _, err := nilResolver.ResolvePublicKey(ctx, "agent-1"); !errors.Is(err, ErrPublicKeyNotFound) {
+		t.Errorf("expected ErrPublicKeyNotFound with nil fetcher, got: %v", err)
+	}
+}
+
 // --- Mock Backplane Client ---
 
 type mockBackplaneClient struct {
@@ -323,6 +388,14 @@ func TestValkeyGatewaySignatureVerification(t *testing.T) {
 		_ = gateway.Start(ctx, bus, state)
 	}()
 
+	// 0. Unsigned message -> rejected
+	client.push(&libbp.Message{
+		ID:       "m-unsigned",
+		Sender:   "trusted-peer",
+		Content:  "unsigned message",
+		IsSigned: false,
+	})
+
 	// 1. Signed message with invalid signature -> rejected
 	client.push(&libbp.Message{
 		ID:        "m-bad",
@@ -345,13 +418,19 @@ func TestValkeyGatewaySignatureVerification(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	// First event should be warning for bad message
-	e1, ok := bus.Poll()
-	if !ok || e1.Source != "gateway:verifier" {
-		t.Fatalf("expected verifier warning event, got: %+v", e1)
+	// First event should be warning for unsigned message
+	e0, ok := bus.Poll()
+	if !ok || e0.Source != "gateway:verifier" {
+		t.Fatalf("expected verifier warning event for unsigned message, got: %+v", e0)
 	}
 
-	// Second event should be the good message
+	// Second event should be warning for bad message
+	e1, ok := bus.Poll()
+	if !ok || e1.Source != "gateway:verifier" {
+		t.Fatalf("expected verifier warning event for bad sig, got: %+v", e1)
+	}
+
+	// Third event should be the good message
 	e2, ok := bus.Poll()
 	if !ok || e2.Source != "valkey:inbox" {
 		t.Fatalf("expected inbox message event, got: %+v", e2)

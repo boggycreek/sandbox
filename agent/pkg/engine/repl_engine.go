@@ -36,6 +36,7 @@ type REPLEngine struct {
 	maxTurns           int
 	maxToolIterations  int
 	history            []ChatMessage
+	inboundQueue       []runtime.Event
 }
 
 // NewREPLEngine constructs a new REPLEngine instance.
@@ -49,7 +50,26 @@ func NewREPLEngine(llm *LLMClient, registry *tools.Registry, workspaceDir, role 
 		maxTurns:          DefaultMaxTurns,
 		maxToolIterations: DefaultMaxToolIterations,
 		history:           make([]ChatMessage, 0),
+		inboundQueue:      make([]runtime.Event, 0),
 	}
+}
+
+func (e *REPLEngine) enqueueInbound(evt runtime.Event) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.inboundQueue = append(e.inboundQueue, evt)
+}
+
+func (e *REPLEngine) drainInboundQueue() []runtime.Event {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.inboundQueue) == 0 {
+		return nil
+	}
+	events := make([]runtime.Event, len(e.inboundQueue))
+	copy(events, e.inboundQueue)
+	e.inboundQueue = e.inboundQueue[:0]
+	return events
 }
 
 // ID returns the unique subsystem identifier.
@@ -132,11 +152,6 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 		return errors.New("event bus and shared state cannot be nil")
 	}
 
-	_, unsub1 := bus.Subscribe("repl-main", 64)
-	defer unsub1()
-	_, unsub2 := bus.Subscribe("*", 64)
-	defer unsub2()
-
 	agentID := state.Read().AgentID
 	if agentID == "" {
 		agentID = "sndbx-agent"
@@ -167,6 +182,10 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 
 		// 1. Drain pending events
 		hasNewDirective := false
+		for _, evt := range e.drainInboundQueue() {
+			e.AppendMessage(FormatEventMessage(evt))
+			hasNewDirective = true
+		}
 		for {
 			evt, ok := bus.Poll()
 			if !ok {
@@ -266,6 +285,9 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			if evt.Priority == runtime.P1_HighPriority {
 				// Inject high-priority directive immediately into history
 				e.AppendMessage(FormatEventMessage(evt))
+			} else if evt.Priority == runtime.P2_StandardAsync {
+				// Buffer P2 events into inbound queue without dropping
+				e.enqueueInbound(evt)
 			}
 		}
 
@@ -301,6 +323,9 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 
 		// If no tools were invoked, turn execution is finished
 		if len(assistantMsg.ToolCalls) == 0 {
+			for _, queuedEvt := range e.drainInboundQueue() {
+				e.AppendMessage(FormatEventMessage(queuedEvt))
+			}
 			_ = state.Update(func(s *runtime.AgentState) {
 				s.Status = "idle"
 				s.CurrentActivity = "Ready"
@@ -343,11 +368,15 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 		}
 	}
 
-	// Tool iteration limit reached
+	// Tool iteration limit reached: append assistant message so hasPendingUserTurn is false
 	e.AppendMessage(ChatMessage{
-		Role:    "user",
-		Content: "Tool execution limit reached for this turn. Please summarize your progress and next steps.",
+		Role:    "assistant",
+		Content: "Tool execution limit reached for this turn. Summary: max tool iterations reached. Execution paused until further instructions.",
 	})
+
+	for _, queuedEvt := range e.drainInboundQueue() {
+		e.AppendMessage(FormatEventMessage(queuedEvt))
+	}
 
 	_ = state.Update(func(s *runtime.AgentState) {
 		s.Status = "idle"

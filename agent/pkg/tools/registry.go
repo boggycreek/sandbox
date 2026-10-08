@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -66,25 +67,39 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return tool, exists
 }
 
-// List returns all registered tools.
+// List returns all registered tools sorted deterministically by name.
 func (r *Registry) List() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	result := make([]Tool, 0, len(r.tools))
-	for _, tool := range r.tools {
-		result = append(result, tool)
+	for _, name := range names {
+		result = append(result, r.tools[name])
 	}
 	return result
 }
 
-// ToOpenAITools formats all registered tools into OpenAI function definitions.
+// ToOpenAITools formats all registered tools into OpenAI function definitions
+// sorted deterministically by name to preserve prompt prefix caching.
 func (r *Registry) ToOpenAITools() []map[string]any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	names := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	tools := make([]map[string]any, 0, len(r.tools))
-	for _, tool := range r.tools {
+	for _, name := range names {
+		tool := r.tools[name]
 		tools = append(tools, map[string]any{
 			"type": "function",
 			"function": map[string]any{

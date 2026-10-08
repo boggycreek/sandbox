@@ -7,6 +7,7 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,8 +18,26 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/boggycreek/sandbox/agent/pkg/runtime"
 	"github.com/boggycreek/sandbox/mcp/pkg/mcp"
 )
+
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (n int, err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // MCPClient connects to an MCP server over STDIO JSON-RPC 2.0.
 type MCPClient struct {
@@ -26,6 +45,7 @@ type MCPClient struct {
 	writer  io.Writer
 	closer  io.Closer
 	cmd     *exec.Cmd
+	stderr  *safeBuffer
 	reqSeq  atomic.Int64
 	mu      sync.Mutex
 	pending map[int64]chan *mcp.JSONRPCMessage
@@ -44,6 +64,14 @@ func NewMCPClient(r io.Reader, w io.Writer, closer io.Closer) *MCPClient {
 	return c
 }
 
+// Stderr returns any stderr output captured from the managed MCP subprocess.
+func (c *MCPClient) Stderr() string {
+	if c.stderr == nil {
+		return ""
+	}
+	return c.stderr.String()
+}
+
 // NewProcessMCPClient spawns an MCP server subprocess and connects over STDIO.
 func NewProcessMCPClient(ctx context.Context, command string, args ...string) (*MCPClient, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
@@ -57,14 +85,24 @@ func NewProcessMCPClient(ctx context.Context, command string, args ...string) (*
 		return nil, fmt.Errorf("failed to open stdout pipe: %w", err)
 	}
 
+	stderrBuf := &safeBuffer{}
+	cmd.Stderr = stderrBuf
+
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
+		errDetail := strings.TrimSpace(stderrBuf.String())
+		if errDetail != "" {
+			return nil, fmt.Errorf("failed to start MCP process %s: %w (stderr: %s)", command, err, errDetail)
+		}
 		return nil, fmt.Errorf("failed to start MCP process %s: %w", command, err)
 	}
 
+	runtime.RegisterChildPID(cmd.Process.Pid)
+
 	client := NewMCPClient(stdout, stdin, stdin)
 	client.cmd = cmd
+	client.stderr = stderrBuf
 	return client, nil
 }
 
@@ -159,6 +197,11 @@ func (c *MCPClient) Request(ctx context.Context, method string, params any) (*mc
 		c.mu.Lock()
 		delete(c.pending, reqID)
 		c.mu.Unlock()
+		if c.stderr != nil {
+			if stderrStr := strings.TrimSpace(c.stderr.String()); stderrStr != "" {
+				return nil, fmt.Errorf("failed to write request: %w (stderr: %s)", writeErr, stderrStr)
+			}
+		}
 		return nil, fmt.Errorf("failed to write request: %w", writeErr)
 	}
 
@@ -170,6 +213,11 @@ func (c *MCPClient) Request(ctx context.Context, method string, params any) (*mc
 		return nil, ctx.Err()
 	case resp, ok := <-respChan:
 		if !ok || resp == nil {
+			if c.stderr != nil {
+				if stderrStr := strings.TrimSpace(c.stderr.String()); stderrStr != "" {
+					return nil, fmt.Errorf("connection closed before response received (stderr: %s)", stderrStr)
+				}
+			}
 			return nil, errors.New("connection closed before response received")
 		}
 		if resp.Error != nil {
@@ -276,7 +324,8 @@ func (c *MCPClient) Close() error {
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
 		_ = c.cmd.Process.Kill()
-		_ = c.cmd.Wait()
+		_ = runtime.WaitManagedCmd(c.cmd)
+		runtime.UnregisterChildPID(c.cmd.Process.Pid)
 	}
 	return firstErr
 }

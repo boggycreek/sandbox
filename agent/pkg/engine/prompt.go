@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/boggycreek/sandbox/agent/pkg/runtime"
+	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 )
 
 const (
@@ -84,7 +85,17 @@ func extractPayloadString(payload any) string {
 	case runtime.BackplaneEnvelope:
 		return fmt.Sprintf("From: %s | Payload: %s", v.Sender, v.Payload)
 	case *runtime.BackplaneEnvelope:
+		if v == nil {
+			return ""
+		}
 		return fmt.Sprintf("From: %s | Payload: %s", v.Sender, v.Payload)
+	case libbp.Message:
+		return fmt.Sprintf("From: %s | Message: %s", v.Sender, v.Content)
+	case *libbp.Message:
+		if v == nil {
+			return ""
+		}
+		return fmt.Sprintf("From: %s | Message: %s", v.Sender, v.Content)
 	default:
 		if b, err := json.Marshal(v); err == nil {
 			return string(b)

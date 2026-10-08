@@ -19,6 +19,7 @@ import (
 
 	"github.com/boggycreek/sandbox/agent/pkg/runtime"
 	"github.com/boggycreek/sandbox/agent/pkg/tools"
+	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 )
 
 // --- LLMClient Tests ---
@@ -211,6 +212,26 @@ func TestPromptAssemblyAndFormatting(t *testing.T) {
 	envelopePtr := extractPayloadString(&runtime.BackplaneEnvelope{Sender: "bob", Payload: "hi"})
 	if !strings.Contains(envelopePtr, "From: bob") {
 		t.Errorf("unexpected envelope pointer string: %s", envelopePtr)
+	}
+
+	var nilEnv *runtime.BackplaneEnvelope
+	if extractPayloadString(nilEnv) != "" {
+		t.Errorf("expected empty string for nil envelope pointer")
+	}
+
+	msgVal := extractPayloadString(libbp.Message{Sender: "alice", Content: "hello world"})
+	if msgVal != "From: alice | Message: hello world" {
+		t.Errorf("unexpected Message value string: %s", msgVal)
+	}
+
+	msgPtr := extractPayloadString(&libbp.Message{Sender: "alice", Content: "hello world"})
+	if msgPtr != "From: alice | Message: hello world" {
+		t.Errorf("unexpected Message pointer string: %s", msgPtr)
+	}
+
+	var nilMsg *libbp.Message
+	if extractPayloadString(nilMsg) != "" {
+		t.Errorf("expected empty string for nil Message pointer")
 	}
 }
 
@@ -617,6 +638,101 @@ func TestREPLEngineIterationLimit(t *testing.T) {
 	}
 	if !hasLimitMsg {
 		t.Error("expected iteration limit notification in history")
+	}
+}
+
+func TestREPLEngineP2BufferingDuringTurn(t *testing.T) {
+	bus := runtime.NewEventBus()
+	defer bus.Close()
+
+	var turnCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&turnCount, 1)
+		if count == 1 {
+			// First turn: invoke a dummy tool and concurrently publish P2 event to bus
+			_ = bus.Publish(runtime.Event{
+				Priority:  runtime.P2_StandardAsync,
+				Source:    "peer-agent",
+				Target:    "*",
+				Payload:   "async notification while tools run",
+				Timestamp: time.Now(),
+			})
+			resp := ChatCompletionResponse{
+				ID: "resp-turn-1",
+				Choices: []ChatChoice{
+					{
+						Message: ChatMessage{
+							Role: "assistant",
+							ToolCalls: []ToolCall{
+								{
+									ID:       "tc-1",
+									Type:     "function",
+									Function: ToolFunctionCall{Name: "read_file", Arguments: `{"path":"sample.txt"}`},
+								},
+							},
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// Second turn: conclude turn
+		resp := ChatCompletionResponse{
+			ID: "resp-turn-2",
+			Choices: []ChatChoice{
+				{
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Finished tool run.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmpDir, "sample.txt"), []byte("sample content"), 0644)
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	_ = tools.RegisterBuiltinTools(reg, tmpDir)
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-01")
+	eng.AppendMessage(ChatMessage{Role: "user", Content: "Start turn"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- eng.Start(ctx, bus, state)
+	}()
+
+	// Wait for processing to complete
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if atomic.LoadInt32(&turnCount) >= 2 && state.Read().Status == "idle" {
+			break
+		}
+	}
+	cancel()
+	_ = <-errChan
+
+	// Verify that the P2 async notification was NOT dropped and exists in history
+	hasP2Msg := false
+	for _, m := range eng.GetHistory() {
+		if strings.Contains(m.Content, "async notification while tools run") {
+			hasP2Msg = true
+			break
+		}
+	}
+	if !hasP2Msg {
+		t.Errorf("expected P2 buffered event in history, got history: %+v", eng.GetHistory())
 	}
 }
 
