@@ -48,7 +48,7 @@ We establish a uniform, engine-agnostic dispatch contract between `bpd` and deri
      - **Claude (`images/agents/claude`)**: Executes `claude -p "$@"`.
      - **OpenCode (`images/agents/opencode`)**: Executes `opencode run "$@"`.
      - **Agy (`images/agents/agy`)**: Executes `agy -p "$@"`.
-     - **Base (`images/base`)**: Provides a dynamic fallback script probing available CLIs on `$PATH`.
+     - **Base (`images/agent-base`)**: Provides a dynamic fallback script probing available CLIs on `$PATH`.
 
 4. **Background Daemon Supervision in Derivative Entrypoints**:
    - All derivative entrypoints (including `images/agents/pig/pig-entrypoint.sh`) supervise `bpd` in the background when `BP_HOST` is configured, ensuring agents react to `bp say` and `bp tell` without human terminal interaction.

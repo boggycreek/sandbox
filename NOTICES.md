@@ -20,12 +20,19 @@ This file contains legal notices, copyright statements, and license texts for th
 | **tmux** | Nicholas Marriott | [ISC](https://spdx.org/licenses/ISC.html) | In-Container Terminal Multiplexer |
 | **OpenSSH** | The OpenBSD Project | [BSD-2-Clause / MIT](https://spdx.org/licenses/BSD-2-Clause.html) | In-Container Unprivileged SSH Daemon |
 | **Debian GNU/Linux** | Software in the Public Interest, Inc. | [DFSG / Various](https://www.debian.org/legal/licenses/) | Base OCI Container Operating System |
+| **Deno** | Deno Land Inc. / The Deno Authors | [MIT](https://spdx.org/licenses/MIT.html) | In-Container JavaScript/TypeScript Execution Engine |
+| **golangci-lint** | golangci-lint Authors | [GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html) | Code Quality & Multi-Linter Runner |
+| **govulncheck** | The Go Authors | [BSD-3-Clause](https://spdx.org/licenses/BSD-3-Clause.html) | Software Composition & Vulnerability Scanner |
+| **gosec** | Secure Go Community | [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html) | AST Security Vulnerability Scanner |
+| **deadcode** | The Go Authors | [BSD-3-Clause](https://spdx.org/licenses/BSD-3-Clause.html) | Whole-Program Reachability Analysis Tool |
+| **ShellCheck** | Vidar Holen | [GPL-3.0-or-later](https://spdx.org/licenses/GPL-3.0-or-later.html) | Shell Script Static Analysis & Portability |
+| **Syft** | Anchore, Inc. | [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html) | Software Bill of Materials (SBOM) Generation |
 
 ---
 
 ## Third-Party License Texts
 
-### 1. Go Standard Library
+### 1. Go Standard Library, govulncheck & deadcode (BSD 3-Clause)
 **Copyright (c) 2009 The Go Authors. All rights reserved.**
 
 Redistribution and use in source and binary forms, with or without
@@ -87,9 +94,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
 
-### 3. Gitea & Beads (MIT License)
+### 3. Gitea, Beads & Deno (MIT License)
 **Copyright (c) 2016-2026 The Gitea Authors**  
-**Copyright (c) 2025-2026 Gas Town Hall**
+**Copyright (c) 2025-2026 Gas Town Hall**  
+**Copyright (c) 2018-2026 the Deno authors**
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -111,8 +119,8 @@ SOFTWARE.
 
 ---
 
-### 4. Apache License, Version 2.0 (Podman, Conmon, Dolt)
-**Copyright (c) Red Hat, Inc., Containers Organization, DoltHub, Inc.**
+### 4. Apache License, Version 2.0 (Podman, Conmon, Dolt, gosec, Syft)
+**Copyright (c) Red Hat, Inc., Containers Organization, DoltHub, Inc., Secure Go, Anchore, Inc.**
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

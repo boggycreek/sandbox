@@ -28,7 +28,7 @@ In-container IDE workspace configuration directories are planned to be protected
 3. **Pre-Authorized Extensions**: Approved IDE extensions (language servers, debuggers) are pre-installed into system directories during container image build time.
 
 ## Status
-Proposed (Design accepted; root-owned scaffolding in `images/base/Dockerfile` planned).
+Proposed (Design accepted; root-owned scaffolding in `images/agent-base/Dockerfile` planned).
 
 ## Consequences
 ### Positive

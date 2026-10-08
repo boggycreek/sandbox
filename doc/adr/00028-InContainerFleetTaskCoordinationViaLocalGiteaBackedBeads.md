@@ -87,7 +87,7 @@ flowchart TD
 
 ### 2. In-Container Runtime Provisioning
 
-1. **Static Binary Inclusion**: The static `bd` binary (v1.3.0+) is bundled into `/usr/local/bin/bd` in the base agent OCI image (`images/base/Dockerfile`).
+1. **Static Binary Inclusion**: The static `bd` binary (v1.3.0+) is bundled into `/usr/local/bin/bd` in the base agent OCI image (`images/agent-base/Dockerfile`).
 2. **Gitea Auto-Bootstrap**: When `sndbx infra up` initializes shared infrastructure, `pkg/runtime/gitea.go` ensures the `fleet` organization exists and automatically creates the bare `fleet/tasks.git` repository if absent.
 3. **Workspace Initialization**: During container bootstrap or agent onboarding, the workspace configures its Dolt remote to point directly to the internal Gitea service:
    ```bash

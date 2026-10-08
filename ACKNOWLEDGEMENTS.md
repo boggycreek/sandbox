@@ -6,7 +6,7 @@ The **Agent Sandbox** platform is developed by **Boggy Creek Software LLC**. We 
 
 ## Zero-Dependency Core Architecture
 
-The core native binaries (`sndbx`, `bp`, `bpd`, `sonar-mcp`) and shared Go libraries (`pkg/...`) are engineered intentionally with **zero external Go module dependencies**. We build exclusively on the standard library of the **Go Programming Language**, maintained by the Go Authors and Google:
+The native binaries across the workspace (`sndbx`, `bp`, `bpd`, `bp-mcp`, `gitea-mcp`, `beads-mcp`, `sonar-mcp`) and internal Go libraries (`sandbox/pkg/...`, `backplane/pkg/...`, `mcp/pkg/...`) are engineered intentionally with **zero external Go module dependencies**. We build exclusively on the standard library of the **Go Programming Language**, maintained by the Go Authors and Google:
 
 - **[The Go Programming Language](https://go.dev/)** — BSD-3-Clause License  
   *Provided the robust concurrency model, cryptographic primitives (`crypto/ed25519`), networking, and tooling enabling reliable, cross-platform static binaries.*
@@ -23,7 +23,9 @@ We express our sincere gratitude to the following open-source projects, tools, a
 - **[Conmon & crun](https://github.com/containers)** (Containers Community / Red Hat) — Apache-2.0 & GPL-2.0 Licenses  
   *Provides lightweight OCI container monitoring and low-level container execution.*
 - **[Debian GNU/Linux](https://www.debian.org/)** (The Debian Project) — Debian Free Software Guidelines (DFSG)  
-  *Serves as the solid, predictable base operating system layer for our `agent-sandbox-base` container image.*
+  *Serves as the solid, predictable base operating system layer for our `agent-sandbox-base` container image (`images/agent-base`).*
+- **[Deno](https://deno.land/)** (Deno Land Inc. / The Deno Authors) — MIT License  
+  *Modern, secure JavaScript and TypeScript runtime bundled into the base agent image for headless automation.*
 
 ### 2. High-Performance Messaging & Shared Infrastructure
 - **[Valkey](https://valkey.io/)** (Linux Foundation / Valkey Community) — BSD-3-Clause License  
@@ -54,6 +56,20 @@ We express our sincere gratitude to the following open-source projects, tools, a
   *Enables desktop Remote-SSH development and agent pair-programming.*
 - **[JetBrains](https://www.jetbrains.com/) Gateway & Toolbox** — JetBrains API Ecosystem  
   *Enables remote IDE backend attaching to in-container agent development environments.*
+
+### 6. Developer Quality Gates, Security & Composition Analysis
+- **[golangci-lint](https://golangci-lint.run/)** (golangci-lint Authors) — GPL-3.0 License  
+  *Fast, extensible Go linters runner ensuring strict codebase quality standards.*
+- **[govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck)** (The Go Authors) — BSD-3-Clause License  
+  *Official Go vulnerability analysis scanner against the national Go Vulnerability Database.*
+- **[gosec](https://github.com/securego/gosec)** (Secure Go Community) — Apache-2.0 License  
+  *Go AST security scanner inspecting source trees for security vulnerabilities.*
+- **[deadcode](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode)** (The Go Authors) — BSD-3-Clause License  
+  *Reachability analysis detecting dead and unreachable code across the monorepo.*
+- **[ShellCheck](https://www.shellcheck.net/)** (Vidar Holen) — GPL-3.0 License  
+  *Static analysis tool for shell script safety and POSIX/bash portability.*
+- **[Syft](https://github.com/anchore/syft)** (Anchore, Inc.) — Apache-2.0 License  
+  *CLI generator for Software Bill of Materials (SBOM) in SPDX and CycloneDX specifications.*
 
 ---
 

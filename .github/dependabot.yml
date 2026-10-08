@@ -17,7 +17,7 @@ updates:
 
   # Maintain Base & Agent OCI container image dependencies
   - package-ecosystem: "docker"
-    directory: "/images/base"
+    directory: "/images/agent-base"
     schedule:
       interval: "weekly"
     labels:
