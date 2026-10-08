@@ -34,7 +34,9 @@ secrets/
 /scratch/
 
 # Beads / Dolt files
-.beads/
+.beads/*
+!.beads/metadata.json
+!.beads/config.yaml
 .dolt/
 *.db
 .beads-credential-key

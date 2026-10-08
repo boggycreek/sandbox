@@ -38,7 +38,7 @@ lint: lint-go lint-shell ## Run all Go and shell linter checks
 lint-go: ## Run golangci-lint on Go code
 	@echo "==> Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
+		golangci-lint run ./backplane/... ./mcp/... ./sandbox/...; \
 	else \
 		echo "Warning: golangci-lint not installed. Run ./setup.sh to install."; \
 	fi
@@ -61,17 +61,17 @@ format: ## Auto-format Go code and scripts
 
 test: ## Run unit tests with race detection
 	@echo "==> Running Go unit tests..."
-	@if [ -f go.mod ]; then \
-		$(GO) test -race -v ./...; \
+	@if [ -f go.work ] || [ -f go.mod ]; then \
+		$(GO) test -race -v ./backplane/... ./mcp/... ./sandbox/...; \
 	else \
-		echo "Notice: go.mod not yet initialized. Skipping test run."; \
+		echo "Notice: go.work not yet initialized. Skipping test run."; \
 	fi
 
 test-coverage: ## Run tests and enforce >90% code coverage threshold
 	@echo "==> Running unit tests with coverage analysis..."
 	@mkdir -p $(COVERAGE_DIR)
-	@if [ -f go.mod ]; then \
-		$(GO) test -race -covermode=atomic -coverprofile=$(COVERAGE_PROFILE) ./pkg/... ./cmd/...; \
+	@if [ -f go.work ] || [ -f go.mod ]; then \
+		$(GO) test -race -covermode=atomic -coverprofile=$(COVERAGE_PROFILE) ./backplane/pkg/... ./backplane/cmd/... ./mcp/pkg/... ./mcp/cmd/... ./sandbox/pkg/... ./sandbox/cmd/...; \
 		$(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML); \
 		TOTAL_COV=$$($(GO) tool cover -func=$(COVERAGE_PROFILE) | grep total: | awk '{print substr($$3, 1, length($$3)-1)}'); \
 		echo "==> Total Test Coverage: $${TOTAL_COV}% (Required: >= $(COVERAGE_THRESHOLD)%)"; \
@@ -82,7 +82,7 @@ test-coverage: ## Run tests and enforce >90% code coverage threshold
 		fi; \
 		echo "==> Coverage check PASSED."; \
 	else \
-		echo "Notice: go.mod not yet initialized. Skipping coverage check."; \
+		echo "Notice: go.work not yet initialized. Skipping coverage check."; \
 	fi
 
 test-install: ## Run containerized installation and bootstrap smoke test in isolated Podman container
@@ -96,8 +96,8 @@ sca: vulncheck gosec ## Run all SCA and security vulnerability scanners
 vulncheck: ## Run govulncheck on Go dependencies
 	@echo "==> Running govulncheck (Software Composition Analysis)..."
 	@if command -v govulncheck >/dev/null 2>&1; then \
-		if [ -f go.mod ]; then \
-			govulncheck ./...; \
+		if [ -f go.work ] || [ -f go.mod ]; then \
+			govulncheck ./backplane/... ./mcp/... ./sandbox/...; \
 		fi; \
 	else \
 		echo "Notice: govulncheck not installed. Install via: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
@@ -106,8 +106,8 @@ vulncheck: ## Run govulncheck on Go dependencies
 gosec: ## Run gosec static security analysis
 	@echo "==> Running gosec security analyzer..."
 	@if command -v gosec >/dev/null 2>&1; then \
-		if [ -f go.mod ]; then \
-			gosec -quiet ./...; \
+		if [ -f go.work ] || [ -f go.mod ]; then \
+			gosec -quiet ./backplane/... ./mcp/... ./sandbox/...; \
 		fi; \
 	else \
 		echo "Notice: gosec not installed. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
@@ -137,30 +137,27 @@ check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) +
 
 build: build-cli build-libbp ## Build all CLI binaries and libraries
 
-build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, retention-sweep)
+build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 	@echo "==> Building CLI binaries..."
 	@mkdir -p $(BIN_DIR)
-	@if [ -f go.mod ]; then \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./cmd/sndbx; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./cmd/bp; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./cmd/bpd; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./cmd/bp-mcp; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/gitea-mcp ./cmd/gitea-mcp; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/beads-mcp ./cmd/beads-mcp; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./cmd/sonar-mcp; \
-		if [ -d ./cmd/retention-sweep ]; then \
-			$(GO) build $(GOFLAGS) -o $(BIN_DIR)/retention-sweep ./cmd/retention-sweep; \
-		fi; \
+	@if [ -f go.work ] || [ -f go.mod ]; then \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./sandbox/cmd/sndbx; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./mcp/cmd/bp-mcp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/gitea-mcp ./mcp/cmd/gitea-mcp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/beads-mcp ./mcp/cmd/beads-mcp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./mcp/cmd/sonar-mcp; \
 		echo "Binaries built in $(BIN_DIR)/"; \
 	else \
-		echo "Notice: go.mod not yet initialized. Skipping build."; \
+		echo "Notice: go.work not yet initialized. Skipping build."; \
 	fi
 
 build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 	@echo "==> Building C-shared libbp library..."
 	@mkdir -p $(DIST_DIR)/lib $(DIST_DIR)/include
-	@if [ -f go.mod ] && [ -d cmd/libbp-c ]; then \
-		$(GO) build -buildmode=c-shared -o $(DIST_DIR)/lib/libbp.so ./cmd/libbp-c; \
+	@if ([ -f go.work ] || [ -f go.mod ]) && [ -d backplane/cmd/libbp-c ]; then \
+		$(GO) build -buildmode=c-shared -o $(DIST_DIR)/lib/libbp.so ./backplane/cmd/libbp-c; \
 		mv $(DIST_DIR)/lib/libbp.h $(DIST_DIR)/include/ 2>/dev/null || true; \
 		echo "libbp shared library built in $(DIST_DIR)/"; \
 	fi
@@ -171,7 +168,7 @@ build-images: build-image-base build-image-opencode build-image-claude build-ima
 
 build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
 	@echo "==> Building agent-sandbox-base OCI image..."
-	podman build -t agent-sandbox-base:latest -f images/base/Dockerfile .
+	podman build -t agent-sandbox-base:latest -f images/agent-base/Dockerfile .
 
 build-image-opencode: build-image-base ## Build OpenCode derivative agent OCI image with Podman
 	@echo "==> Building agent-sandbox-opencode OCI image..."

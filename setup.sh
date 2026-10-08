@@ -59,7 +59,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve default Go version from go.mod if present, otherwise 1.27.1
 DEFAULT_GO_VER="1.27.1"
-if [ -f "${REPO_ROOT}/go.mod" ]; then
+if [ -f "${REPO_ROOT}/go.work" ]; then
+  DETECTED_MOD_GO="$(grep -E '^go [0-9]' "${REPO_ROOT}/go.work" 2>/dev/null | awk '{print $2}' || echo "")"
+  if [ -n "${DETECTED_MOD_GO}" ]; then
+    DEFAULT_GO_VER="${DETECTED_MOD_GO}"
+  fi
+elif [ -f "${REPO_ROOT}/go.mod" ]; then
   DETECTED_MOD_GO="$(grep -E '^go [0-9]' "${REPO_ROOT}/go.mod" 2>/dev/null | awk '{print $2}' || echo "")"
   if [ -n "${DETECTED_MOD_GO}" ]; then
     DEFAULT_GO_VER="${DETECTED_MOD_GO}"
@@ -566,6 +571,9 @@ run_environment_doctor() {
         gosec)
           remediation+=("go install github.com/securego/gosec/v2/cmd/gosec@latest")
           ;;
+        deadcode)
+          remediation+=("go install golang.org/x/tools/cmd/deadcode@latest")
+          ;;
         syft)
           remediation+=("curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b \${HOME}/.local/bin")
           ;;
@@ -727,7 +735,7 @@ case "${PKG_MGR}" in
       xcode-select --install || true
     fi
 
-    BREW_PACKAGES=(git curl make pkg-config)
+    BREW_PACKAGES=(git curl make pkg-config shellcheck)
     if [ "${SKIP_CMAKE}" = false ]; then
       BREW_PACKAGES+=(cmake)
     fi
@@ -751,7 +759,7 @@ case "${PKG_MGR}" in
     echo "  Updating APT package lists..."
     if [ -n "${SUDO}" ] || [ "$(id -u)" -eq 0 ]; then
       run_privileged apt-get update -y
-      APT_PACKAGES=(curl git make build-essential pkg-config tar gzip ca-certificates)
+      APT_PACKAGES=(curl git make build-essential pkg-config tar gzip ca-certificates shellcheck)
       if [ "${SKIP_CMAKE}" = false ]; then
         APT_PACKAGES+=(cmake)
       fi
@@ -769,7 +777,7 @@ case "${PKG_MGR}" in
   dnf|yum)
     echo "  Installing RPM packages with ${PKG_MGR}..."
     if [ -n "${SUDO}" ] || [ "$(id -u)" -eq 0 ]; then
-      RPM_PACKAGES=(curl git make gcc gcc-c++ pkgconfig tar gzip ca-certificates)
+      RPM_PACKAGES=(curl git make gcc gcc-c++ pkgconfig tar gzip ca-certificates ShellCheck)
       if [ "${SKIP_CMAKE}" = false ]; then
         RPM_PACKAGES+=(cmake)
       fi
@@ -833,33 +841,43 @@ else
   echo "  Skipping Beads CLI setup (--skip-beads)."
 fi
 
-# 5. Developer Quality & Linting Tools (golangci-lint)
+# 5. Developer Quality & Linting Tools (golangci-lint, govulncheck, gosec, deadcode)
 echo
 echo "[5/7] Setting up developer quality and linting tools..."
 if [ "${SKIP_TOOLS}" = false ]; then
-  if [ -x "${XDG_BIN_HOME}/golangci-lint" ]; then
-    echo "  ✓ Found golangci-lint at: ${XDG_BIN_HOME}/golangci-lint"
-  elif command -v golangci-lint >/dev/null 2>&1; then
-    echo "  ✓ Found golangci-lint at: $(command -v golangci-lint)"
-  else
-    echo "  Installing golangci-lint into ${XDG_BIN_HOME}..."
-    if [ "${DRY_RUN}" = true ]; then
-      echo "  [DRY-RUN] GOBIN=${XDG_BIN_HOME} go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+  install_go_tool() {
+    local name="$1"
+    local pkg="$2"
+
+    if [ -x "${XDG_BIN_HOME}/${name}" ]; then
+      echo "  ✓ Found ${name} at: ${XDG_BIN_HOME}/${name}"
+    elif command -v "${name}" >/dev/null 2>&1; then
+      echo "  ✓ Found ${name} at: $(command -v "${name}")"
     else
-      ACTIVE_GO="${XDG_BIN_HOME}/go"
-      if ! [ -x "${ACTIVE_GO}" ] && command -v go >/dev/null 2>&1; then
-        ACTIVE_GO="$(command -v go)"
-      fi
-      if [ -x "${ACTIVE_GO}" ]; then
-        GOBIN="${XDG_BIN_HOME}" "${ACTIVE_GO}" install github.com/golangci/golangci-lint/cmd/golangci-lint@latest >/dev/null 2>&1 || true
-      fi
-      if [ -x "${XDG_BIN_HOME}/golangci-lint" ]; then
-        echo "  ✓ Installed golangci-lint to ${XDG_BIN_HOME}/golangci-lint"
+      echo "  Installing ${name} into ${XDG_BIN_HOME}..."
+      if [ "${DRY_RUN}" = true ]; then
+        echo "  [DRY-RUN] GOBIN=${XDG_BIN_HOME} go install ${pkg}"
       else
-        echo "  ⚠️  Could not automatically install golangci-lint."
+        local active_go="${XDG_BIN_HOME}/go"
+        if ! [ -x "${active_go}" ] && command -v go >/dev/null 2>&1; then
+          active_go="$(command -v go)"
+        fi
+        if [ -x "${active_go}" ]; then
+          GOBIN="${XDG_BIN_HOME}" "${active_go}" install "${pkg}" >/dev/null 2>&1 || true
+        fi
+        if [ -x "${XDG_BIN_HOME}/${name}" ]; then
+          echo "  ✓ Installed ${name} to ${XDG_BIN_HOME}/${name}"
+        else
+          echo "  ⚠️  Could not automatically install ${name}."
+        fi
       fi
     fi
-  fi
+  }
+
+  install_go_tool "golangci-lint" "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+  install_go_tool "govulncheck" "golang.org/x/vuln/cmd/govulncheck@latest"
+  install_go_tool "gosec" "github.com/securego/gosec/v2/cmd/gosec@latest"
+  install_go_tool "deadcode" "golang.org/x/tools/cmd/deadcode@latest"
 else
   echo "  Skipping developer tools setup (--skip-tools)."
 fi
@@ -895,12 +913,21 @@ if ! [ -x "${ACTIVE_GO_BIN}" ] && command -v go >/dev/null 2>&1; then
   ACTIVE_GO_BIN="$(command -v go)"
 fi
 
-if [ -x "${ACTIVE_GO_BIN}" ] && [ -f "${REPO_ROOT}/go.mod" ]; then
-  echo "  Fetching Go dependencies (${ACTIVE_GO_BIN} mod download)..."
-  if [ "${DRY_RUN}" = true ]; then
-    echo "  [DRY-RUN] ${ACTIVE_GO_BIN} mod download"
+if [ -x "${ACTIVE_GO_BIN}" ] && ([ -f "${REPO_ROOT}/go.work" ] || [ -f "${REPO_ROOT}/go.mod" ]); then
+  if [ -f "${REPO_ROOT}/go.work" ]; then
+    echo "  Synchronizing Go workspace dependencies (${ACTIVE_GO_BIN} work sync)..."
+    if [ "${DRY_RUN}" = true ]; then
+      echo "  [DRY-RUN] ${ACTIVE_GO_BIN} work sync"
+    else
+      "${ACTIVE_GO_BIN}" work sync || true
+    fi
   else
-    "${ACTIVE_GO_BIN}" mod download || true
+    echo "  Fetching Go dependencies (${ACTIVE_GO_BIN} mod download)..."
+    if [ "${DRY_RUN}" = true ]; then
+      echo "  [DRY-RUN] ${ACTIVE_GO_BIN} mod download"
+    else
+      "${ACTIVE_GO_BIN}" mod download || true
+    fi
   fi
 fi
 

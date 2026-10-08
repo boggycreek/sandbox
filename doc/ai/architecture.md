@@ -14,7 +14,7 @@ description: >-
 - **Storage**: Named persistent Podman volumes (`agent-sandbox-<name>-home`).
 
 ## Layered OCI Container Hierarchy
-- **Base Image** (`images/base/Dockerfile`): Neutral Debian Bookworm with unprivileged `agent` user (UID 1000), internal SSH daemon on port 2222, tmux session supervisor, and native `bp` binary.
+- **Base Image** (`images/agent-base/Dockerfile`): Neutral Debian Bookworm with unprivileged `agent` user (UID 1000), internal SSH daemon on port 2222, tmux session supervisor, and native `bp` binary.
 - **Derivative Agent Images** (`images/agents/`):
   - `opencode`: OpenCode agent harness.
   - `claude`: Claude Code agent harness.

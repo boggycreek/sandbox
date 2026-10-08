@@ -25,7 +25,7 @@ agent-sandbox/
 │   │   └── resp/           # Custom high-performance Valkey/Redis RESP protocol parser
 │   └── runtime/            # Podman container runtime, networks, infra orchestration
 ├── images/
-│   ├── base/               # Neutral base OCI image (Debian Bookworm, non-root agent, sshd, tmux)
+│   ├── agent-base/         # Neutral base OCI image (Debian Bookworm, non-root agent, sshd, tmux)
 │   └── agents/             # Derivative agent harnesses (opencode, claude, agy)
 ├── infra/                  # Shared local infrastructure definition (docker-compose.yml)
 ├── test/

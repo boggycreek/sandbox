@@ -41,7 +41,7 @@ The installer recognizes the local checkout and sets it up as the active sandbox
 ## Core Architecture & Components
 
 - **Layered OCI Container Hierarchy**:
-  - `images/base/`: Neutral base image with Debian Bookworm, unprivileged user (`agent`, UID 1000), internal SSH daemon (port 2222), tmux supervisor, Deno 2.x runtime, and the `bpd` entrypoint daemon.
+  - `images/agent-base/`: Neutral base image with Debian Bookworm, unprivileged user (`agent`, UID 1000), internal SSH daemon (port 2222), tmux supervisor, Deno 2.x runtime, and the `bpd` entrypoint daemon.
   - `images/agents/`: Derivative agent harnesses (`opencode`, `claude`, `agy`).
 - **Native Go Monorepo & Zero-Dependency Binaries**:
   - `sndbx`: Unified host CLI for managing agent lifecycles, shared infrastructure, and IDE plugins.

@@ -308,9 +308,9 @@ done
 
 if [ "${INSTALLED_PREBUILT}" = "true" ] && [ -f "${SNDBX_BIN}" ]; then
   echo "  Installed prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases."
-elif command -v go >/dev/null 2>&1 && [ -f "${SANDBOX_ROOT}/go.mod" ]; then
+elif command -v go >/dev/null 2>&1 && ([ -f "${SANDBOX_ROOT}/go.work" ] || [ -f "${SANDBOX_ROOT}/go.mod" ]); then
   echo "  Compiling native Go CLI binaries from source..."
-  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./cmd/sonar-mcp)
+  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./sandbox/cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./backplane/cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./mcp/cmd/sonar-mcp)
   chmod +x "${SNDBX_BIN}" "${BP_BIN}" "${BPD_BIN}" "${SONAR_MCP_BIN}" 2>/dev/null || true
   echo "  Installed ${SNDBX_BIN}, ${BP_BIN}, ${BPD_BIN}, and ${SONAR_MCP_BIN}"
 elif [ ! -f "${SNDBX_BIN}" ]; then
@@ -319,7 +319,7 @@ elif [ ! -f "${SNDBX_BIN}" ]; then
 # Temporary bootstrap dispatcher until native Go binary is compiled or downloaded
 if command -v go >/dev/null 2>&1 && [ -d "${SANDBOX_ROOT}" ]; then
   echo "Compiling native sndbx binary..."
-  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./cmd/bp)
+  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./sandbox/cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp)
   exec "${SNDBX_BIN}" "\$@"
 fi
 echo "Agent Sandbox CLI (sndbx)"
