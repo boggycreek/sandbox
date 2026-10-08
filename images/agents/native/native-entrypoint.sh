@@ -17,6 +17,8 @@ mkdir -p /home/agent/workspace
 cd /home/agent/workspace
 
 # Run base entrypoint initialization (sshd on port 2222, host keys, git config)
+# Disable legacy bpd since sndbx-agent handles the backplane inbox directly
+export BPD_DISABLED=1
 /usr/local/bin/entrypoint.sh true
 
 echo "Native Agent Sandbox container initialized [$(hostname)]. Starting sndbx-agent..."

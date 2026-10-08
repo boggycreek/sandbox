@@ -15,6 +15,7 @@ import (
 
 	"github.com/boggycreek/sandbox/agent/pkg/runtime"
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
+	"github.com/boggycreek/sandbox/backplane/pkg/libbpd"
 )
 
 // BackplaneClient abstracts Valkey stream polling and messaging operations.
@@ -67,34 +68,13 @@ func (g *ValkeyGateway) SetCancelFunc(cancel context.CancelFunc) {
 	g.cancelFunc = cancel
 }
 
-// Start begins polling incoming messages and dispatches events until ctx is canceled.
+// Start begins listening to incoming messages with blocking XREAD BLOCK and dispatches events until ctx is canceled.
 func (g *ValkeyGateway) Start(ctx context.Context, bus *runtime.EventBus, state *runtime.SharedState) error {
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		messages, err := g.client.Recv(ctx, g.pollTimeoutSec)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			// Transient poll error: sleep brief pause and continue
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(100 * time.Millisecond):
-				continue
-			}
-		}
-
-		for _, msg := range messages {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			g.handleMessage(ctx, msg, bus, state)
-		}
-	}
+	listener := libbpd.NewStreamListener(g.client, g.pollTimeoutSec)
+	return listener.Listen(ctx, func(msgCtx context.Context, msg *libbp.Message) error {
+		g.handleMessage(msgCtx, msg, bus, state)
+		return nil
+	})
 }
 
 func (g *ValkeyGateway) handleMessage(ctx context.Context, msg *libbp.Message, bus *runtime.EventBus, state *runtime.SharedState) {

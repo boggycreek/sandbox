@@ -48,7 +48,7 @@ if [ -d "/usr/local/share/doc/agent-sandbox" ]; then
 fi
 
 # Start backplane daemon (bpd) in background if available and configured
-if command -v bpd >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ]; then
+if command -v bpd >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ] && [ "${BPD_DISABLED:-0}" != "1" ]; then
   bpd &
 fi
 

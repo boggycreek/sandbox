@@ -87,8 +87,12 @@ func Dial(ctx context.Context, cfg ClientConfig) (*Client, error) {
 	// Authenticate if password provided
 	if cfg.Password != "" {
 		var authVal resp.Value
-		if cfg.Username != "" {
-			authVal, err = c.execInternal("AUTH", cfg.Username, cfg.Password)
+		user := cfg.Username
+		if user == "" && cfg.AgentID != "" {
+			user = cfg.AgentID
+		}
+		if user != "" {
+			authVal, err = c.execInternal("AUTH", user, cfg.Password)
 		} else {
 			authVal, err = c.execInternal("AUTH", cfg.Password)
 		}

@@ -303,6 +303,8 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"-e", fmt.Sprintf("BP_HOST=%s", containerBPHost),
 		"-e", fmt.Sprintf("BP_PORT=%d", bpPort),
 		"-e", fmt.Sprintf("BP_SIGNING_KEY_PEM=%s", cfg.SigningKeyPEM),
+		"-e", fmt.Sprintf("VALKEY_ADDR=%s:%d", containerBPHost, bpPort),
+		"-e", fmt.Sprintf("VALKEY_PASSWORD=%s", cfg.Password),
 	}
 
 	if cfg.ModelURL != "" {
