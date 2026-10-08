@@ -3,6 +3,7 @@
 FROM docker.io/library/golang:1.27-bookworm AS builder
 WORKDIR /src
 COPY go.work ./
+COPY agent/ ./agent/
 COPY backplane/ ./backplane/
 COPY mcp/ ./mcp/
 COPY sandbox/ ./sandbox/
@@ -10,7 +11,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./backplane/
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bpd ./backplane/cmd/bpd && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp-mcp ./mcp/cmd/bp-mcp && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/gitea-mcp ./mcp/cmd/gitea-mcp && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/beads-mcp ./mcp/cmd/beads-mcp
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/beads-mcp ./mcp/cmd/beads-mcp && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/sonar-mcp ./mcp/cmd/sonar-mcp
 
 # Stage 2: Clean, neutral Base OCI Image
 FROM docker.io/library/debian:bookworm-slim
@@ -74,8 +76,9 @@ COPY --from=builder /build/bpd /usr/local/bin/bpd
 COPY --from=builder /build/bp-mcp /usr/local/bin/bp-mcp
 COPY --from=builder /build/gitea-mcp /usr/local/bin/gitea-mcp
 COPY --from=builder /build/beads-mcp /usr/local/bin/beads-mcp
+COPY --from=builder /build/sonar-mcp /usr/local/bin/sonar-mcp
 COPY images/agent-base/agent-runner /usr/local/bin/agent-runner
-RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp /usr/local/bin/agent-runner
+RUN chmod +x /usr/local/bin/bp /usr/local/bin/bpd /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp /usr/local/bin/sonar-mcp /usr/local/bin/agent-runner
 
 # Install in-container documentation
 COPY images/agent-base/doc/ /usr/local/share/doc/agent-sandbox/

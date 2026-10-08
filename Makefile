@@ -15,7 +15,7 @@ COVERAGE_DIR := coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help setup dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-opencode build-image-claude build-image-agy build-image-egress
+.PHONY: all help setup dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress
 
 all: check build
 
@@ -38,7 +38,7 @@ lint: lint-go lint-shell ## Run all Go and shell linter checks
 lint-go: ## Run golangci-lint on Go code
 	@echo "==> Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./backplane/... ./mcp/... ./sandbox/...; \
+		golangci-lint run ./agent/... ./backplane/... ./mcp/... ./sandbox/...; \
 	else \
 		echo "Warning: golangci-lint not installed. Run ./setup.sh to install."; \
 	fi
@@ -62,7 +62,7 @@ format: ## Auto-format Go code and scripts
 test: ## Run unit tests with race detection
 	@echo "==> Running Go unit tests..."
 	@if [ -f go.work ] || [ -f go.mod ]; then \
-		$(GO) test -race -v ./backplane/... ./mcp/... ./sandbox/...; \
+		$(GO) test -race -v ./agent/... ./backplane/... ./mcp/... ./sandbox/...; \
 	else \
 		echo "Notice: go.work not yet initialized. Skipping test run."; \
 	fi
@@ -71,7 +71,7 @@ test-coverage: ## Run tests and enforce >90% code coverage threshold
 	@echo "==> Running unit tests with coverage analysis..."
 	@mkdir -p $(COVERAGE_DIR)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
-		$(GO) test -race -covermode=atomic -coverprofile=$(COVERAGE_PROFILE) ./backplane/pkg/... ./backplane/cmd/... ./mcp/pkg/... ./mcp/cmd/... ./sandbox/pkg/... ./sandbox/cmd/...; \
+		$(GO) test -race -covermode=atomic -coverprofile=$(COVERAGE_PROFILE) ./agent/pkg/... ./agent/cmd/... ./backplane/pkg/... ./backplane/cmd/... ./mcp/pkg/... ./mcp/cmd/... ./sandbox/pkg/... ./sandbox/cmd/...; \
 		$(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML); \
 		TOTAL_COV=$$($(GO) tool cover -func=$(COVERAGE_PROFILE) | grep total: | awk '{print substr($$3, 1, length($$3)-1)}'); \
 		echo "==> Total Test Coverage: $${TOTAL_COV}% (Required: >= $(COVERAGE_THRESHOLD)%)"; \
@@ -97,7 +97,7 @@ vulncheck: ## Run govulncheck on Go dependencies
 	@echo "==> Running govulncheck (Software Composition Analysis)..."
 	@if command -v govulncheck >/dev/null 2>&1; then \
 		if [ -f go.work ] || [ -f go.mod ]; then \
-			govulncheck ./backplane/... ./mcp/... ./sandbox/...; \
+			govulncheck ./agent/... ./backplane/... ./mcp/... ./sandbox/...; \
 		fi; \
 	else \
 		echo "Notice: govulncheck not installed. Install via: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
@@ -107,7 +107,7 @@ gosec: ## Run gosec static security analysis
 	@echo "==> Running gosec security analyzer..."
 	@if command -v gosec >/dev/null 2>&1; then \
 		if [ -f go.work ] || [ -f go.mod ]; then \
-			gosec -quiet ./backplane/... ./mcp/... ./sandbox/...; \
+			gosec -quiet ./agent/... ./backplane/... ./mcp/... ./sandbox/...; \
 		fi; \
 	else \
 		echo "Notice: gosec not installed. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
@@ -142,6 +142,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 	@mkdir -p $(BIN_DIR)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./sandbox/cmd/sndbx; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx-agent ./agent/cmd/sndbx-agent; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./mcp/cmd/bp-mcp; \
@@ -164,11 +165,15 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 # --- OCI Image Build Targets (Podman) ---
 
-build-images: build-image-base build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
+build-images: build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
 
 build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
 	@echo "==> Building agent-sandbox-base OCI image..."
 	podman build -t agent-sandbox-base:latest -f images/agent-base/Dockerfile .
+
+build-image-native: build-image-base ## Build Native Agent derivative agent OCI image with Podman
+	@echo "==> Building agent-sandbox-native OCI image..."
+	podman build -t agent-sandbox-native:latest -f images/agents/native/Dockerfile .
 
 build-image-opencode: build-image-base ## Build OpenCode derivative agent OCI image with Podman
 	@echo "==> Building agent-sandbox-opencode OCI image..."

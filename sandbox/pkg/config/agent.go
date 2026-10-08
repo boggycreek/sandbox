@@ -21,6 +21,8 @@ import (
 // Well-known image presets
 var WellKnownImages = map[string]string{
 	"base":     "agent-sandbox-base:latest",
+	"native":   "agent-sandbox-native:latest",
+	"sndbx":    "agent-sandbox-native:latest",
 	"opencode": "agent-sandbox-opencode:latest",
 	"claude":   "agent-sandbox-claude:latest",
 	"agy":      "agent-sandbox-agy:latest",

@@ -1,0 +1,321 @@
+// Copyright (c) 2026 Boggy Creek Software LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file.
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/boggycreek/sandbox/agent/pkg/engine"
+	"github.com/boggycreek/sandbox/agent/pkg/gateway"
+	"github.com/boggycreek/sandbox/agent/pkg/runtime"
+	"github.com/boggycreek/sandbox/agent/pkg/tools"
+	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
+)
+
+// Config encapsulates runtime parameters for sndbx-agent.
+type Config struct {
+	AgentName          string
+	AgentRole          string
+	WorkspaceDir       string
+	StateFile          string
+	OpenAIBaseURL      string
+	OpenAIAPIKey       string
+	OpenAIModel        string
+	ValkeyAddr         string
+	ValkeyPassword     string
+	MCPBinaries        []string
+	CustomInstructions string
+	LogFormat          string
+}
+
+// LogEntry models structured NDJSON output.
+type LogEntry struct {
+	Timestamp string         `json:"time"`
+	Level     string         `json:"level"`
+	Message   string         `json:"msg"`
+	Fields    map[string]any `json:"fields,omitempty"`
+}
+
+// Logger formats output as NDJSON or plain text.
+type Logger struct {
+	out       io.Writer
+	logFormat string
+}
+
+// NewLogger creates a new Logger.
+func NewLogger(out io.Writer, logFormat string) *Logger {
+	if out == nil {
+		out = os.Stdout
+	}
+	return &Logger{out: out, logFormat: logFormat}
+}
+
+// Log emits a log entry.
+func (l *Logger) Log(level, msg string, fields map[string]any) {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if l.logFormat == "text" {
+		var fieldStr string
+		if len(fields) > 0 {
+			b, _ := json.Marshal(fields)
+			fieldStr = " " + string(b)
+		}
+		_, _ = fmt.Fprintf(l.out, "[%s] %s: %s%s\n", now, level, msg, fieldStr)
+		return
+	}
+
+	entry := LogEntry{
+		Timestamp: now,
+		Level:     level,
+		Message:   msg,
+		Fields:    fields,
+	}
+	bytes, _ := json.Marshal(entry)
+	_, _ = fmt.Fprintln(l.out, string(bytes))
+}
+
+// LoadConfig parses flags and environment variables.
+func LoadConfig(args []string) (*Config, error) {
+	fs := flag.NewFlagSet("sndbx-agent", flag.ContinueOnError)
+
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "sndbx-agent"
+	}
+
+	cwd, _ := os.Getwd()
+	defaultWorkspace := os.Getenv("WORKSPACE_DIR")
+	if defaultWorkspace == "" {
+		defaultWorkspace = "/home/agent/workspace"
+		if _, err := os.Stat(defaultWorkspace); err != nil && cwd != "" {
+			defaultWorkspace = cwd
+		}
+	}
+
+	name := fs.String("name", getEnvOr("AGENT_NAME", hostname), "Agent identity name")
+	role := fs.String("role", getEnvOr("AGENT_ROLE", "General Software Engineer"), "Specialized agent role")
+	workspace := fs.String("workspace", defaultWorkspace, "Path to agent workspace directory")
+	stateFile := fs.String("state-file", getEnvOr("STATE_FILE", ""), "Path to agent shared state file")
+	modelURL := fs.String("model-url", getEnvOr("OPENAI_BASE_URL", "http://llm-gateway:11434/v1"), "OpenAI-compatible LLM endpoint URL")
+	modelKey := fs.String("model-key", getEnvOr("OPENAI_API_KEY", ""), "OpenAI API authorization key")
+	modelName := fs.String("model-name", getEnvOr("OPENAI_MODEL", "qwen2.5-coder:7b"), "Model name identifier")
+	valkeyAddr := fs.String("valkey-addr", getEnvOr("VALKEY_ADDR", ""), "Valkey server address (host:port)")
+	valkeyPass := fs.String("valkey-password", getEnvOr("VALKEY_PASSWORD", ""), "Valkey authentication password")
+	mcpBins := fs.String("mcp-binaries", getEnvOr("MCP_BINARIES", ""), "Comma-separated paths to MCP executable binaries")
+	logFmt := fs.String("log-format", getEnvOr("LOG_FORMAT", "ndjson"), "Log format (ndjson or text)")
+
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+
+	resolvedStateFile := *stateFile
+	if resolvedStateFile == "" {
+		resolvedStateFile = filepath.Join(*workspace, ".agent_state.json")
+	}
+
+	var mcpList []string
+	if strings.TrimSpace(*mcpBins) != "" {
+		for _, b := range strings.Split(*mcpBins, ",") {
+			trimmed := strings.TrimSpace(b)
+			if trimmed != "" {
+				mcpList = append(mcpList, trimmed)
+			}
+		}
+	}
+
+	return &Config{
+		AgentName:      *name,
+		AgentRole:      *role,
+		WorkspaceDir:   *workspace,
+		StateFile:      resolvedStateFile,
+		OpenAIBaseURL:  *modelURL,
+		OpenAIAPIKey:   *modelKey,
+		OpenAIModel:    *modelName,
+		ValkeyAddr:     *valkeyAddr,
+		ValkeyPassword: *valkeyPass,
+		MCPBinaries:    mcpList,
+		LogFormat:      *logFmt,
+	}, nil
+}
+
+func getEnvOr(key, fallback string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return fallback
+}
+
+// StartZombieReaper reaps orphaned child processes asynchronously if running as PID 1 or if requested.
+func StartZombieReaper(ctx context.Context, logger *Logger) {
+	sigCh := make(chan os.Signal, 32)
+	signal.Notify(sigCh, syscall.SIGCHLD)
+
+	go func() {
+		defer signal.Stop(sigCh)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigCh:
+				// Reap all terminated child processes non-blockingly
+				for {
+					var ws syscall.WaitStatus
+					pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
+					if err != nil || pid <= 0 {
+						break
+					}
+					if logger != nil {
+						logger.Log("DEBUG", "Reaped child process", map[string]any{
+							"pid":      pid,
+							"exitCode": ws.ExitStatus(),
+						})
+					}
+				}
+			}
+		}
+	}()
+}
+
+// Run executes the agent runtime with configured subsystems.
+func Run(ctx context.Context, cfg *Config, out io.Writer) error {
+	logger := NewLogger(out, cfg.LogFormat)
+	logger.Log("INFO", "Starting sndbx-agent runtime", map[string]any{
+		"agentName":    cfg.AgentName,
+		"role":         cfg.AgentRole,
+		"workspaceDir": cfg.WorkspaceDir,
+		"model":        cfg.OpenAIModel,
+		"modelURL":     cfg.OpenAIBaseURL,
+		"pid":          os.Getpid(),
+	})
+
+	// Start zombie reaper
+	StartZombieReaper(ctx, logger)
+
+	// Initialize runtime core
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(cfg.StateFile, cfg.AgentName)
+	supervisor := runtime.NewSupervisor(bus, state)
+
+	// Initialize tools registry and register built-in workspace tools
+	reg := tools.NewRegistry()
+	if err := tools.RegisterBuiltinTools(reg, cfg.WorkspaceDir); err != nil {
+		logger.Log("WARN", "Failed to register builtin tools", map[string]any{"error": err.Error()})
+	}
+
+	// Register any configured MCP server binaries
+	for _, binPath := range cfg.MCPBinaries {
+		mcpClient, err := tools.NewProcessMCPClient(ctx, binPath)
+		if err != nil {
+			logger.Log("WARN", "Failed to start MCP server", map[string]any{"binary": binPath, "error": err.Error()})
+			continue
+		}
+		initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
+		if err := mcpClient.Initialize(initCtx); err != nil {
+			initCancel()
+			_ = mcpClient.Close()
+			logger.Log("WARN", "Failed to initialize MCP client", map[string]any{"binary": binPath, "error": err.Error()})
+			continue
+		}
+		initCancel()
+
+		discCtx, discCancel := context.WithTimeout(ctx, 5*time.Second)
+		mcpTools, err := mcpClient.DiscoverTools(discCtx)
+		discCancel()
+		if err != nil {
+			_ = mcpClient.Close()
+			logger.Log("WARN", "Failed to discover MCP tools", map[string]any{"binary": binPath, "error": err.Error()})
+			continue
+		}
+
+		for _, t := range mcpTools {
+			_ = reg.Register(t)
+		}
+		logger.Log("INFO", "Registered MCP tools", map[string]any{"binary": binPath, "count": len(mcpTools)})
+	}
+
+	// Initialize LLM Client & REPL Engine
+	llmClient := engine.NewLLMClient(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel, 90*time.Second)
+	replEngine := engine.NewREPLEngine(llmClient, reg, cfg.WorkspaceDir, cfg.AgentRole)
+	if cfg.CustomInstructions != "" {
+		replEngine.SetCustomInstructions(cfg.CustomInstructions)
+	}
+	_ = supervisor.Register(replEngine)
+
+	// Initialize Valkey Gateway if address is configured
+	if cfg.ValkeyAddr != "" {
+		host, portStr, err := net.SplitHostPort(cfg.ValkeyAddr)
+		port := 6379
+		if err == nil {
+			if p, convErr := strconv.Atoi(portStr); convErr == nil {
+				port = p
+			}
+		} else {
+			host = cfg.ValkeyAddr
+		}
+		dialCtx, dialCancel := context.WithTimeout(ctx, 5*time.Second)
+		bpClient, dialErr := libbp.Dial(dialCtx, libbp.ClientConfig{
+			Host:     host,
+			Port:     port,
+			AgentID:  cfg.AgentName,
+			Password: cfg.ValkeyPassword,
+		})
+		dialCancel()
+		if dialErr != nil {
+			logger.Log("WARN", "Failed to connect to Valkey", map[string]any{"addr": cfg.ValkeyAddr, "error": dialErr.Error()})
+		} else {
+			gw := gateway.NewValkeyGateway(cfg.AgentName, bpClient, nil, 1)
+			_ = supervisor.Register(gw)
+			logger.Log("INFO", "Configured Valkey gateway subsystem", map[string]any{"addr": cfg.ValkeyAddr})
+		}
+	}
+
+	logger.Log("INFO", "Starting supervisor workers", map[string]any{"workerCount": len(supervisor.Subsystems())})
+
+	// Run supervisor until context cancellation or worker error
+	err := supervisor.Start(ctx)
+	if err != nil && err != context.Canceled {
+		logger.Log("ERROR", "Supervisor exited with error", map[string]any{"error": err.Error()})
+		return err
+	}
+
+	logger.Log("INFO", "sndbx-agent runtime shut down cleanly", nil)
+	return nil
+}
+
+func runMain(ctx context.Context, args []string, out io.Writer) error {
+	cfg, err := LoadConfig(args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return fmt.Errorf("error parsing configuration: %w", err)
+	}
+	return Run(ctx, cfg, out)
+}
+
+var osExit = os.Exit
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := runMain(ctx, os.Args[1:], os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		osExit(1)
+	}
+}

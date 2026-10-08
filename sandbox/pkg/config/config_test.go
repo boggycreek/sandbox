@@ -28,6 +28,12 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	}
 
 	// 1. Resolve image
+	if img := ResolveImage("native"); img != "agent-sandbox-native:latest" {
+		t.Errorf("expected native preset image, got %s", img)
+	}
+	if img := ResolveImage("sndbx"); img != "agent-sandbox-native:latest" {
+		t.Errorf("expected sndbx preset image, got %s", img)
+	}
 	if img := ResolveImage("opencode"); img != "agent-sandbox-opencode:latest" {
 		t.Errorf("expected opencode preset image, got %s", img)
 	}

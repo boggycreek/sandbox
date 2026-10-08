@@ -101,6 +101,12 @@ func TestSndbxAgentDomain(t *testing.T) {
 		t.Errorf("agent create as pig failed: %s", out)
 	}
 
+	// Create with 'as native'
+	code, out, _ = runSndbx([]string{"agent", "create", "coder-native", "as", "native", "--role", "engine"})
+	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "agent-sandbox-native:latest") {
+		t.Errorf("agent create as native failed: %s", out)
+	}
+
 	// Create with '--model-url' and '--model-name'
 	code, out, _ = runSndbx([]string{"agent", "create", "coder-ollama", "as", "opencode", "--model-url", "http://localhost:11434/v1", "--model-name", "qwen2.5-coder:32b", "--model-key", "ollama-key"})
 	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "http://localhost:11434/v1") || !strings.Contains(out, "qwen2.5-coder:32b") {
