@@ -754,6 +754,10 @@ func parseFallbackToolCalls(content string) []ToolCall {
 						i = nextIdx - 1
 						continue
 					}
+				} else if tc, ok := parseLooseToolCall(jsonStr, len(blockCalls)); ok && isKnownOrLikelyTool(tc.Function.Name) {
+					blockCalls = append(blockCalls, tc)
+					i = nextIdx - 1
+					continue
 				}
 
 				// Otherwise check preceding token for tool name: <tool_name>\n{ ... }
@@ -883,4 +887,108 @@ func normalizeJSONBackticks(s string) string {
 		}
 	}
 	return sb.String()
+}
+
+// parseLooseToolCall robustly parses tool calls where string values contain raw unescaped newlines or quotes.
+func parseLooseToolCall(s string, idx int) (ToolCall, bool) {
+	// Extract tool name
+	nameKeyIdx := strings.Index(s, `"name"`)
+	if nameKeyIdx < 0 {
+		nameKeyIdx = strings.Index(s, `"tool"`)
+	}
+	if nameKeyIdx < 0 {
+		nameKeyIdx = strings.Index(s, `"action"`)
+	}
+	if nameKeyIdx < 0 {
+		return ToolCall{}, false
+	}
+
+	colonIdx := strings.Index(s[nameKeyIdx:], ":")
+	if colonIdx < 0 {
+		return ToolCall{}, false
+	}
+	valStart := nameKeyIdx + colonIdx + 1
+	for valStart < len(s) && (s[valStart] == ' ' || s[valStart] == '\t' || s[valStart] == '\r' || s[valStart] == '\n' || s[valStart] == '"') {
+		valStart++
+	}
+	valEnd := valStart
+	for valEnd < len(s) && ((s[valEnd] >= 'a' && s[valEnd] <= 'z') || (s[valEnd] >= 'A' && s[valEnd] <= 'Z') || (s[valEnd] >= '0' && s[valEnd] <= '9') || s[valEnd] == '_') {
+		valEnd++
+	}
+	toolName := s[valStart:valEnd]
+	if toolName == "" || !isKnownOrLikelyTool(toolName) {
+		return ToolCall{}, false
+	}
+
+	argsMap := make(map[string]any)
+
+	// Extract path if present
+	if pathIdx := strings.Index(s, `"path"`); pathIdx >= 0 {
+		if cIdx := strings.Index(s[pathIdx:], ":"); cIdx >= 0 {
+			start := pathIdx + cIdx + 1
+			for start < len(s) && (s[start] == ' ' || s[start] == '\t' || s[start] == '"') {
+				start++
+			}
+			end := strings.Index(s[start:], `"`)
+			if end >= 0 {
+				argsMap["path"] = s[start : start+end]
+			}
+		}
+	}
+
+	// Extract command if present
+	if cmdIdx := strings.Index(s, `"command"`); cmdIdx >= 0 {
+		if cIdx := strings.Index(s[cmdIdx:], ":"); cIdx >= 0 {
+			start := cmdIdx + cIdx + 1
+			for start < len(s) && (s[start] == ' ' || s[start] == '\t' || s[start] == '"') {
+				start++
+			}
+			end := strings.Index(s[start:], `"`)
+			if end >= 0 {
+				argsMap["command"] = s[start : start+end]
+			}
+		}
+	}
+
+	// Extract content if present (multi-line tolerant)
+	if contentIdx := strings.Index(s, `"content"`); contentIdx >= 0 {
+		if cIdx := strings.Index(s[contentIdx:], ":"); cIdx >= 0 {
+			start := contentIdx + cIdx + 1
+			for start < len(s) && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
+				start++
+			}
+			if start < len(s) && (s[start] == '"' || s[start] == '`') {
+				quoteChar := s[start]
+				start++
+				// Find closing quote before `}`
+				lastClose := strings.LastIndex(s, "}")
+				if lastClose > start {
+					sub := s[start:lastClose]
+					trimSub := strings.TrimRight(sub, " \t\r\n}")
+					if strings.HasSuffix(trimSub, string(quoteChar)) {
+						trimSub = trimSub[:len(trimSub)-1]
+					}
+					// Unescape escaped newlines if present
+					contentVal := strings.ReplaceAll(trimSub, `\n`, "\n")
+					contentVal = strings.ReplaceAll(contentVal, `\t`, "\t")
+					contentVal = strings.ReplaceAll(contentVal, `\"`, `"`)
+					argsMap["content"] = contentVal
+				}
+			}
+		}
+	}
+
+	argsJSON, err := json.Marshal(argsMap)
+	if err != nil {
+		return ToolCall{}, false
+	}
+
+	return ToolCall{
+		ID:   fmt.Sprintf("call-%d-%d", time.Now().UnixNano(), idx),
+		Type: "function",
+		Function: ToolFunctionCall{
+			Name:      toolName,
+			Arguments: string(argsJSON),
+		},
+	}, true
 }

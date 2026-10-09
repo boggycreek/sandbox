@@ -937,6 +937,11 @@ func TestParseFallbackToolCalls(t *testing.T) {
 	if len(calls10) != 1 || calls10[0].Function.Name != "write_file" || !strings.Contains(calls10[0].Function.Arguments, "pkg/hexutil/hexutil.go") {
 		t.Errorf("unexpected parse result for backtickBlock: %+v", calls10)
 	}
+
+	// 12. Model output with unescaped quotes in content field: \t"encoding/hex\"
+	aliceSnippet := "Let's execute these steps now.\n\n---\n\n{\"name\": \"write_file\", \"arguments\": {\"path\": \"/home/agent/workspace/hexutil/encode.go\", \"content\": \"package hexutil\\n\\nimport (\\n\\t\"encoding/hex\\\"\\n)\\n\\n// Encode converts a byte slice to a hex string.\\nfunc Encode(data []byte) string {\\n\\treturn hex.EncodeToString(data)\\n}\"}}"
+	calls11 := parseFallbackToolCalls(aliceSnippet)
+	t.Logf("calls11: len=%d %+v", len(calls11), calls11)
 }
 
 type mockTurnResponder struct {
