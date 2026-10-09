@@ -512,4 +512,38 @@ func TestGatewayEdgeCases(t *testing.T) {
 	if !isP3 || qType != "PING" {
 		t.Errorf("expected ping action to be P3 PING, got %v, %s", isP3, qType)
 	}
+
+	// 6. isAutomatedNotification
+	if !isAutomatedNotification("Completed directive: tests passed") {
+		t.Error("expected true for 'Completed directive:'")
+	}
+	if !isAutomatedNotification("Execution failed (code 1)") {
+		t.Error("expected true for 'Execution failed'")
+	}
+	if !isAutomatedNotification("Understood. Directive queued") {
+		t.Error("expected true for 'Understood. Directive queued'")
+	}
+	if !isAutomatedNotification("Status: working on task") {
+		t.Error("expected true for 'Status:'")
+	}
+	if !isAutomatedNotification("Online (container started)") {
+		t.Error("expected true for 'Online (container started)'")
+	}
+	if isAutomatedNotification("Please implement string compression") {
+		t.Error("expected false for regular user directive")
+	}
+
+	// 7. isP1Message
+	if gw.isP1Message(&libbp.Message{Destination: "agent-1", Content: "Completed directive: done"}) {
+		t.Error("expected false for automated completion addressed to agent-1")
+	}
+	if !gw.isP1Message(&libbp.Message{Destination: "agent-1", Content: "Please write a test"}) {
+		t.Error("expected true for regular message addressed to agent-1")
+	}
+	if !gw.isP1Message(&libbp.Message{Sender: "operator", Content: "Hello"}) {
+		t.Error("expected true for message from operator")
+	}
+	if gw.isP1Message(&libbp.Message{Destination: "agent-2", Sender: "peer", Content: "Hello"}) {
+		t.Error("expected false for unaddressed message from peer")
+	}
 }

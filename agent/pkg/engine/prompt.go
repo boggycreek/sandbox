@@ -37,7 +37,7 @@ func BuildSystemPrompt(agentID, role, workspaceDir, customInstructions string) s
 	sb.WriteString("3. Use Beads (`bd`) for all task tracking and status updates where applicable.\n")
 	sb.WriteString("4. Act autonomously: discover repository context, implement changes, write tests, and verify results.\n")
 	sb.WriteString("5. Keep code changes concise, robust, well-formatted, and backed by automated tests.\n")
-	sb.WriteString("6. To communicate with the human operator or peer agents, invoke the bash tool with `bp tell <recipient> <message>` or `bp say <message>`.\n")
+	sb.WriteString("6. You must invoke tools directly using function calling (do not merely write tool commands as text). To communicate with peer agents, invoke the fleet_send_message tool (or bash with bp tell). To manage tasks, invoke Beads tools (bd_create, bd_update, bd_close).\n")
 
 	if strings.TrimSpace(customInstructions) != "" {
 		sb.WriteString("\nAdditional Instructions:\n")

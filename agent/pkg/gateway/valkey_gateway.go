@@ -235,13 +235,34 @@ func isP0Directive(content string) bool {
 	return false
 }
 
+func isAutomatedNotification(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	prefixes := []string{
+		"completed directive:",
+		"execution failed",
+		"understood. directive queued",
+		"status:",
+		"online (container started)",
+		"ok (",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *ValkeyGateway) isP1Message(msg *libbp.Message) bool {
+	if isAutomatedNotification(msg.Content) {
+		return false
+	}
 	// Directly addressed to this agent
 	if strings.EqualFold(msg.Destination, g.agentID) {
 		return true
 	}
 	// Direct human directive
-	if strings.EqualFold(msg.Sender, "human") {
+	if strings.EqualFold(msg.Sender, "human") || strings.EqualFold(msg.Sender, "operator") {
 		return true
 	}
 	return false

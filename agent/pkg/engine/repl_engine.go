@@ -39,6 +39,7 @@ type REPLEngine struct {
 	registry           *tools.Registry
 	responder          TurnResponder
 	agentID            string
+	humanName          string
 	workspaceDir       string
 	role               string
 	customInstructions string
@@ -79,6 +80,22 @@ func (e *REPLEngine) SetAgentID(id string) {
 	e.agentID = id
 }
 
+// SetHumanName configures the human operator identity (e.g. "brian", "operator").
+func (e *REPLEngine) SetHumanName(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.humanName = strings.ToLower(strings.TrimSpace(name))
+}
+
+func (e *REPLEngine) getHumanName() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.humanName != "" {
+		return e.humanName
+	}
+	return "brian"
+}
+
 func (e *REPLEngine) setActiveSender(s string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -91,25 +108,65 @@ func (e *REPLEngine) getActiveSender() string {
 	return e.activeSender
 }
 
-func extractEventSender(payload any) string {
+// isHumanSender checks if the sender matches known human operator identities.
+func isHumanSender(sender, humanName string) bool {
+	s := strings.ToLower(strings.TrimSpace(sender))
+	if s == "" {
+		return false
+	}
+	if s == "human" || s == "operator" || s == "brian" {
+		return true
+	}
+	h := strings.ToLower(strings.TrimSpace(humanName))
+	if h != "" && s == h {
+		return true
+	}
+	return false
+}
+
+// isAutomatedNotification checks if the message content matches automated status / completion prefixes.
+func isAutomatedNotification(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	prefixes := []string{
+		"completed directive:",
+		"execution failed",
+		"understood. directive queued",
+		"status:",
+		"online (container started)",
+		"ok (",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractEventInfo(payload any) (string, string) {
 	if payload == nil {
-		return ""
+		return "", ""
 	}
 	switch v := payload.(type) {
 	case libbp.Message:
-		return v.Sender
+		return v.Sender, v.Content
 	case *libbp.Message:
 		if v != nil {
-			return v.Sender
+			return v.Sender, v.Content
 		}
 	case runtime.BackplaneEnvelope:
-		return v.Sender
+		return v.Sender, v.Payload
 	case *runtime.BackplaneEnvelope:
 		if v != nil {
-			return v.Sender
+			return v.Sender, v.Payload
 		}
 	}
-	return ""
+	return "", ""
+}
+
+func extractEventSender(payload any) string {
+	s, _ := extractEventInfo(payload)
+	return s
 }
 
 func (e *REPLEngine) enqueueInbound(evt runtime.Event) {
@@ -244,8 +301,10 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 		hasNewDirective := false
 		for _, evt := range e.drainInboundQueue() {
 			e.AppendMessage(FormatEventMessage(evt))
-			if s := extractEventSender(evt.Payload); s != "" {
-				e.setActiveSender(s)
+			if s, content := extractEventInfo(evt.Payload); s != "" {
+				if isHumanSender(s, e.getHumanName()) && !isAutomatedNotification(content) {
+					e.setActiveSender(s)
+				}
 			}
 			hasNewDirective = true
 		}
@@ -263,8 +322,10 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 			}
 			if evt.Priority == runtime.P1_HighPriority || evt.Priority == runtime.P2_StandardAsync {
 				e.AppendMessage(FormatEventMessage(evt))
-				if s := extractEventSender(evt.Payload); s != "" {
-					e.setActiveSender(s)
+				if s, content := extractEventInfo(evt.Payload); s != "" {
+					if isHumanSender(s, e.getHumanName()) && !isAutomatedNotification(content) {
+						e.setActiveSender(s)
+					}
 				}
 				hasNewDirective = true
 			}
@@ -307,8 +368,10 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 		}
 		if evt.Priority == runtime.P1_HighPriority || evt.Priority == runtime.P2_StandardAsync {
 			e.AppendMessage(FormatEventMessage(evt))
-			if s := extractEventSender(evt.Payload); s != "" {
-				e.setActiveSender(s)
+			if s, content := extractEventInfo(evt.Payload); s != "" {
+				if isHumanSender(s, e.getHumanName()) && !isAutomatedNotification(content) {
+					e.setActiveSender(s)
+				}
 			}
 			_ = e.executeTurn(ctx, bus, state)
 		}
@@ -356,8 +419,10 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			if evt.Priority == runtime.P1_HighPriority {
 				// Inject high-priority directive immediately into history
 				e.AppendMessage(FormatEventMessage(evt))
-				if s := extractEventSender(evt.Payload); s != "" {
-					e.setActiveSender(s)
+				if s, content := extractEventInfo(evt.Payload); s != "" {
+					if isHumanSender(s, e.getHumanName()) && !isAutomatedNotification(content) {
+						e.setActiveSender(s)
+					}
 				}
 			} else if evt.Priority == runtime.P2_StandardAsync {
 				// Buffer P2 events into inbound queue without dropping
@@ -398,6 +463,11 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 				assistantMsg.ToolCalls = fallbackCalls
 			}
 		}
+		if len(assistantMsg.ToolCalls) > 0 {
+			fmt.Printf("[repl] Iteration %d: model requested %d tool call(s)\n", iter+1, len(assistantMsg.ToolCalls))
+		} else {
+			fmt.Printf("[repl] Iteration %d: final text: %s\n", iter+1, strings.TrimSpace(assistantMsg.Content))
+		}
 		e.AppendMessage(assistantMsg)
 
 		// If no tools were invoked, turn execution is finished
@@ -407,9 +477,10 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			sender := e.activeSender
 			agentID := e.agentID
 			e.mu.RUnlock()
+			humanName := e.getHumanName()
 
 			if responder != nil && sender != "" && !didSendExternalMessage && strings.TrimSpace(assistantMsg.Content) != "" {
-				if strings.ToLower(sender) != strings.ToLower(agentID) {
+				if strings.ToLower(sender) != strings.ToLower(agentID) && isHumanSender(sender, humanName) {
 					_ = responder.SendReply(ctx, sender, assistantMsg.Content)
 				}
 			}
@@ -432,6 +503,7 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			}
 
 			toolName := toolCall.Function.Name
+			fmt.Printf("[repl] Iteration %d: executing tool %s args=%s\n", iter+1, toolName, toolCall.Function.Arguments)
 			if toolName == "fleet_send_message" || toolName == "fleet_broadcast" {
 				didSendExternalMessage = true
 			} else if toolName == "bash" {
@@ -457,7 +529,10 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 
 			if execErr != nil {
 				output = fmt.Sprintf("Error: %v", execErr)
+			} else if strings.TrimSpace(output) == "" {
+				output = "(success)"
 			}
+			fmt.Printf("[repl] Iteration %d: tool %s output=%s\n", iter+1, toolName, TruncateToolOutput(strings.TrimSpace(output), 120))
 
 			e.AppendMessage(ChatMessage{
 				Role:       "tool",
@@ -469,10 +544,21 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 	}
 
 	// Tool iteration limit reached: append assistant message so hasPendingUserTurn is false
+	limitMsg := "Tool execution limit reached for this turn. Summary: max tool iterations reached. Execution paused until further instructions."
 	e.AppendMessage(ChatMessage{
 		Role:    "assistant",
-		Content: "Tool execution limit reached for this turn. Summary: max tool iterations reached. Execution paused until further instructions.",
+		Content: limitMsg,
 	})
+	e.mu.RLock()
+	responder := e.responder
+	sender := e.activeSender
+	agentID := e.agentID
+	e.mu.RUnlock()
+	humanName := e.getHumanName()
+
+	if responder != nil && sender != "" && !didSendExternalMessage && isHumanSender(sender, humanName) && strings.ToLower(sender) != strings.ToLower(agentID) {
+		_ = responder.SendReply(ctx, sender, limitMsg)
+	}
 	e.setActiveSender("")
 
 	for _, queuedEvt := range e.drainInboundQueue() {

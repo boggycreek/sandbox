@@ -295,6 +295,8 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 	if cfg.CustomInstructions != "" {
 		replEngine.SetCustomInstructions(cfg.CustomInstructions)
 	}
+	humanName := getEnvOr("HUMAN_NAME", "brian")
+	replEngine.SetHumanName(humanName)
 	_ = supervisor.Register(replEngine)
 
 	// Initialize Valkey Gateway if address is configured

@@ -307,6 +307,12 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"-e", fmt.Sprintf("VALKEY_PASSWORD=%s", cfg.Password),
 	}
 
+	humanName := os.Getenv("HUMAN_NAME")
+	if humanName == "" {
+		humanName = "brian"
+	}
+	args = append(args, "-e", fmt.Sprintf("HUMAN_NAME=%s", humanName))
+
 	if cfg.ModelURL != "" {
 		// Translate localhost / 127.0.0.1 to llm-gateway for container-to-host bridge access
 		containerModelURL := cfg.ModelURL

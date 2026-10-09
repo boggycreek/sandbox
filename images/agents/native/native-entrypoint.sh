@@ -12,11 +12,51 @@
 
 set -euo pipefail
 
+SSH_DIR="/home/agent/.ssh"
+mkdir -p "${SSH_DIR}"
+chmod 700 "${SSH_DIR}"
+
+# Ephemeral host keys
+if [ ! -f "${SSH_DIR}/ssh_host_ed25519_key" ]; then
+  ssh-keygen -t ed25519 -N "" -f "${SSH_DIR}/ssh_host_ed25519_key" >/dev/null 2>&1 || true
+fi
+if [ ! -f "${SSH_DIR}/ssh_host_rsa_key" ]; then
+  ssh-keygen -t rsa -b 2048 -N "" -f "${SSH_DIR}/ssh_host_rsa_key" >/dev/null 2>&1 || true
+fi
+
+# Import host IDE public key if mounted
+if [ -f "/tmp/host-keys/agent-sandbox.pub" ]; then
+  cat "/tmp/host-keys/agent-sandbox.pub" >> "${SSH_DIR}/authorized_keys"
+  sort -u "${SSH_DIR}/authorized_keys" -o "${SSH_DIR}/authorized_keys"
+  chmod 600 "${SSH_DIR}/authorized_keys"
+fi
+
+# Start unprivileged sshd daemon on port 2222
+if [ -x "/usr/sbin/sshd" ] || command -v sshd >/dev/null 2>&1; then
+  /usr/sbin/sshd -f /etc/ssh/sshd_config -E "${SSH_DIR}/sshd.log" 2>/dev/null || true
+fi
+
+# Configure default git author identity if not configured
+if [ ! -f "/home/agent/.gitconfig" ]; then
+  git config --global user.name "${AGENT_NAME:-agent}"
+  git config --global user.email "${AGENT_NAME:-agent}@local.sndbx"
+  git config --global init.defaultBranch main
+fi
+
+# Export FLEET_TASKS_DIR and bootstrap fleet tasks repository if available
+export FLEET_TASKS_DIR="${FLEET_TASKS_DIR:-/home/agent/tasks}"
+mkdir -p "${FLEET_TASKS_DIR}"
+if command -v fleet-tasks >/dev/null 2>&1; then
+  (
+    sleep 1
+    fleet-tasks init >/dev/null 2>&1 || true
+  ) &
+fi
+
 # Ensure workspace exists and set as current working directory
 mkdir -p /home/agent/workspace
 cd /home/agent/workspace
 
-# Run base entrypoint initialization (sshd on port 2222, host keys, git config)
 # Disable legacy bpd since sndbx-agent handles the backplane inbox directly
 export BPD_DISABLED=1
 # Auto-discover installed MCP binaries if MCP_BINARIES is not explicitly set

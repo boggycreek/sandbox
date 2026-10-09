@@ -1168,3 +1168,145 @@ func TestExtractEventSender(t *testing.T) {
 	}
 }
 
+func TestExtractEventInfo(t *testing.T) {
+	s, c := extractEventInfo(nil)
+	if s != "" || c != "" {
+		t.Errorf("expected empty info for nil, got %s, %s", s, c)
+	}
+	msg := libbp.Message{Sender: "alice", Content: "hello"}
+	s, c = extractEventInfo(msg)
+	if s != "alice" || c != "hello" {
+		t.Errorf("expected alice/hello, got %s/%s", s, c)
+	}
+	msgPtr := &libbp.Message{Sender: "bob", Content: "world"}
+	s, c = extractEventInfo(msgPtr)
+	if s != "bob" || c != "world" {
+		t.Errorf("expected bob/world, got %s/%s", s, c)
+	}
+	env := runtime.BackplaneEnvelope{Sender: "carol", Payload: "p-env"}
+	s, c = extractEventInfo(env)
+	if s != "carol" || c != "p-env" {
+		t.Errorf("expected carol/p-env, got %s/%s", s, c)
+	}
+	envPtr := &runtime.BackplaneEnvelope{Sender: "dave", Payload: "p-ptr"}
+	s, c = extractEventInfo(envPtr)
+	if s != "dave" || c != "p-ptr" {
+		t.Errorf("expected dave/p-ptr, got %s/%s", s, c)
+	}
+}
+
+func TestIsHumanSender(t *testing.T) {
+	if isHumanSender("", "brian") {
+		t.Error("expected false for empty sender")
+	}
+	if !isHumanSender("human", "brian") {
+		t.Error("expected true for 'human'")
+	}
+	if !isHumanSender("operator", "brian") {
+		t.Error("expected true for 'operator'")
+	}
+	if !isHumanSender("brian", "brian") {
+		t.Error("expected true for 'brian' matching humanName")
+	}
+	if !isHumanSender("BRIAN", "brian") {
+		t.Error("expected true for case-insensitive match")
+	}
+	if isHumanSender("pig-verifier", "brian") {
+		t.Error("expected false for peer agent 'pig-verifier'")
+	}
+	if isHumanSender("alice", "brian") {
+		t.Error("expected false for peer agent 'alice'")
+	}
+}
+
+func TestIsAutomatedNotification(t *testing.T) {
+	prefixes := []string{
+		"completed directive: task finished",
+		"Completed directive: done",
+		"execution failed (exit 1)",
+		"understood. directive queued for execution",
+		"status: running tests",
+		"online (container started)",
+		"ok (all green)",
+	}
+	for _, p := range prefixes {
+		if !isAutomatedNotification(p) {
+			t.Errorf("expected true for %q", p)
+		}
+	}
+	if isAutomatedNotification("please run the test suite") {
+		t.Error("expected false for regular user prompt")
+	}
+}
+
+func TestTurnResponder_PeerCompletionSuppressed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := ChatCompletionResponse{
+			ID:    "resp-peer-ack",
+			Model: "test-model",
+			Choices: []ChatChoice{
+				{
+					Index: 0,
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Understood. The test suite has been verified.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	eng := NewREPLEngine(llm, nil, tmpDir, "coordinator")
+	eng.SetPollInterval(10 * time.Millisecond)
+	eng.SetHumanName("brian")
+	eng.SetAgentID("agent-alice")
+
+	responder := &mockTurnResponder{}
+	eng.SetResponder(responder)
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-alice")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = eng.Start(ctx, bus, state)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	// Simulate peer pig-verifier sending a completion notice
+	msg := &libbp.Message{
+		ID:          "pig-verifier#51",
+		Sender:      "pig-verifier",
+		Destination: "agent-alice",
+		Content:     "Completed directive: Understood. I will now proceed with verifying the test suite",
+		ReplyTo:     "agent-alice#149",
+	}
+	_ = bus.Publish(runtime.Event{
+		Priority:  runtime.P2_StandardAsync,
+		Source:    "valkey:inbox",
+		Target:    "*",
+		Payload:   msg,
+		Timestamp: time.Now(),
+	})
+
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if state.Read().Status == "idle" {
+			break
+		}
+	}
+
+	// Verify that TurnResponder did NOT auto-reply to pig-verifier
+	replies := responder.getReplies()
+	if len(replies) != 0 {
+		t.Fatalf("expected 0 auto-replies to peer completion notice, got %d: %+v", len(replies), replies)
+	}
+}
+
