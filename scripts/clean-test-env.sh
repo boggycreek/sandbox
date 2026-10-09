@@ -42,8 +42,9 @@ fi
 
 # 2. Terminate orphaned conmon, slirp4netns, and rootlessport test processes.
 # Explicitly target ephemeral test containers only; NEVER kill persistent infrastructure
-# services (agent-sandbox-valkey, agent-sandbox-gitea).
 pkill -9 -u "${UID_NUM}" -f "(conmon|slirp4netns|rootlessport).*(test-valkey|test-infra-|test-gitea|unit-test|test-podman|mock-start)" 2>/dev/null || true
+pkill -9 -u "${UID_NUM}" -f "valkey-server --aclfile /etc/valkey/users.acl" 2>/dev/null || true
+pkill -9 -u "${UID_NUM}" -f "/usr/bin/slirp4netns" 2>/dev/null || true
 
 # 3. Clean up stale netns descriptors and rootless-netns lockfiles in /run/user/<uid>
 NETNS_DIR="/run/user/${UID_NUM}/netns"

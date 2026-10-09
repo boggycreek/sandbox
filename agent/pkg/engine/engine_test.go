@@ -860,3 +860,59 @@ func TestEngineEdgeCasesAndErrors(t *testing.T) {
 		t.Error("expected tool error recorded in history")
 	}
 }
+
+func TestParseFallbackToolCalls(t *testing.T) {
+	// 1. Empty string
+	if calls := parseFallbackToolCalls(""); len(calls) != 0 {
+		t.Errorf("expected 0 calls for empty content, got %d", len(calls))
+	}
+
+	// 2. Direct JSON object with map arguments
+	obj1 := `{"name": "bash", "arguments": {"command": "bp tell brian hi"}}`
+	calls1 := parseFallbackToolCalls(obj1)
+	if len(calls1) != 1 || calls1[0].Function.Name != "bash" || !strings.Contains(calls1[0].Function.Arguments, "bp tell brian hi") {
+		t.Errorf("unexpected parse result for obj1: %+v", calls1)
+	}
+
+	// 3. Markdown fenced JSON with parameters
+	fenced := "```json\n{\"tool\": \"read_file\", \"parameters\": {\"path\": \"README.md\"}}\n```"
+	calls2 := parseFallbackToolCalls(fenced)
+	if len(calls2) != 1 || calls2[0].Function.Name != "read_file" || !strings.Contains(calls2[0].Function.Arguments, "README.md") {
+		t.Errorf("unexpected parse result for fenced: %+v", calls2)
+	}
+
+	// 4. Action / input format
+	actionFmt := `{"action": "write_file", "input": {"path": "test.txt", "content": "data"}}`
+	calls3 := parseFallbackToolCalls(actionFmt)
+	if len(calls3) != 1 || calls3[0].Function.Name != "write_file" || !strings.Contains(calls3[0].Function.Arguments, "test.txt") {
+		t.Errorf("unexpected parse result for actionFmt: %+v", calls3)
+	}
+
+	// 5. Function wrapper format
+	fnFmt := `{"function": {"name": "edit_file", "arguments": "{\"path\": \"main.go\"}"}}`
+	calls4 := parseFallbackToolCalls(fnFmt)
+	if len(calls4) != 1 || calls4[0].Function.Name != "edit_file" || calls4[0].Function.Arguments != `{"path": "main.go"}` {
+		t.Errorf("unexpected parse result for fnFmt: %+v", calls4)
+	}
+
+	// 6. JSON array format
+	arrFmt := `[{"name": "bash", "arguments": {"command": "ls"}}, {"name": "bash", "arguments": {"command": "pwd"}}]`
+	calls5 := parseFallbackToolCalls(arrFmt)
+	if len(calls5) != 2 || calls5[0].Function.Name != "bash" || calls5[1].Function.Name != "bash" {
+		t.Errorf("unexpected parse result for arrFmt: %+v", calls5)
+	}
+
+	// 7. Embedded in conversational text
+	embedded := "I will list the directory.\n{\"name\": \"bash\", \"arguments\": {\"command\": \"ls -la\"}}\nDone."
+	calls6 := parseFallbackToolCalls(embedded)
+	if len(calls6) != 1 || calls6[0].Function.Name != "bash" || !strings.Contains(calls6[0].Function.Arguments, "ls -la") {
+		t.Errorf("unexpected parse result for embedded: %+v", calls6)
+	}
+
+	// 8. Plain conversational text (no tool call)
+	plain := "Hello! How can I assist you with the Agent Sandbox today?"
+	calls7 := parseFallbackToolCalls(plain)
+	if len(calls7) != 0 {
+		t.Errorf("expected 0 calls for plain text, got %d", len(calls7))
+	}
+}

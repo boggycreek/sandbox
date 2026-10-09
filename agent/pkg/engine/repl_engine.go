@@ -7,8 +7,10 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -319,6 +321,11 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 
 		assistantMsg := resp.Choices[0].Message
 		assistantMsg.Role = "assistant"
+		if len(assistantMsg.ToolCalls) == 0 {
+			if fallbackCalls := parseFallbackToolCalls(assistantMsg.Content); len(fallbackCalls) > 0 {
+				assistantMsg.ToolCalls = fallbackCalls
+			}
+		}
 		e.AppendMessage(assistantMsg)
 
 		// If no tools were invoked, turn execution is finished
@@ -382,6 +389,124 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 		s.Status = "idle"
 		s.CurrentActivity = "Iteration limit reached; ready"
 	})
+
+	return nil
+}
+
+// parseFallbackToolCalls extracts function calls from raw content text when models
+// (e.g., local LLMs under llama.cpp or Ollama) format tool calls as JSON in content
+// rather than populating the OpenAI tool_calls structure.
+func parseFallbackToolCalls(content string) []ToolCall {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil
+	}
+
+	// Strip markdown code fences if present: ```json ... ``` or ``` ... ```
+	if strings.HasPrefix(trimmed, "```") {
+		lines := strings.Split(trimmed, "\n")
+		if len(lines) >= 2 {
+			lines = lines[1:]
+			if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "```") {
+				lines = lines[:len(lines)-1]
+			}
+			trimmed = strings.TrimSpace(strings.Join(lines, "\n"))
+		}
+	}
+
+	// Helper to extract a single ToolCall from a map
+	extractCall := func(m map[string]any, idx int) (ToolCall, bool) {
+		name := ""
+		if n, ok := m["name"].(string); ok {
+			name = n
+		} else if n, ok := m["tool"].(string); ok {
+			name = n
+		} else if n, ok := m["action"].(string); ok {
+			name = n
+		} else if fn, ok := m["function"].(map[string]any); ok {
+			if n, ok := fn["name"].(string); ok {
+				name = n
+			}
+		}
+		if name == "" {
+			return ToolCall{}, false
+		}
+
+		var argsStr string
+		var rawArgs any
+		if a, ok := m["arguments"]; ok {
+			rawArgs = a
+		} else if p, ok := m["parameters"]; ok {
+			rawArgs = p
+		} else if in, ok := m["input"]; ok {
+			rawArgs = in
+		} else if fn, ok := m["function"].(map[string]any); ok {
+			if a, ok := fn["arguments"]; ok {
+				rawArgs = a
+			}
+		}
+
+		switch v := rawArgs.(type) {
+		case string:
+			argsStr = v
+		case map[string]any, []any:
+			if b, err := json.Marshal(v); err == nil {
+				argsStr = string(b)
+			}
+		default:
+			if rawArgs != nil {
+				if b, err := json.Marshal(rawArgs); err == nil {
+					argsStr = string(b)
+				}
+			} else {
+				argsStr = "{}"
+			}
+		}
+
+		return ToolCall{
+			ID:   fmt.Sprintf("call-%d-%d", time.Now().UnixNano(), idx),
+			Type: "function",
+			Function: ToolFunctionCall{
+				Name:      name,
+				Arguments: argsStr,
+			},
+		}, true
+	}
+
+	// 1. Try parsing direct JSON object
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err == nil {
+		if tc, ok := extractCall(obj, 0); ok {
+			return []ToolCall{tc}
+		}
+	}
+
+	// 2. Try parsing direct JSON array
+	var arr []map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &arr); err == nil && len(arr) > 0 {
+		var calls []ToolCall
+		for i, item := range arr {
+			if tc, ok := extractCall(item, i); ok {
+				calls = append(calls, tc)
+			}
+		}
+		if len(calls) > 0 {
+			return calls
+		}
+	}
+
+	// 3. Scan for embedded JSON object in text (e.g., surrounding reasoning)
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		sub := trimmed[start : end+1]
+		var subObj map[string]any
+		if err := json.Unmarshal([]byte(sub), &subObj); err == nil {
+			if tc, ok := extractCall(subObj, 0); ok {
+				return []ToolCall{tc}
+			}
+		}
+	}
 
 	return nil
 }
