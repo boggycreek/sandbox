@@ -151,6 +151,19 @@ func LoadConfig(args []string) (*Config, error) {
 				mcpList = append(mcpList, trimmed)
 			}
 		}
+	} else {
+		// Auto-discover standard in-container MCP binaries if present
+		standardBins := []string{
+			"/usr/local/bin/beads-mcp",
+			"/usr/local/bin/bp-mcp",
+			"/usr/local/bin/gitea-mcp",
+			"/usr/local/bin/sonar-mcp",
+		}
+		for _, binPath := range standardBins {
+			if info, err := os.Stat(binPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+				mcpList = append(mcpList, binPath)
+			}
+		}
 	}
 
 	return &Config{
@@ -312,6 +325,8 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 			gw := gateway.NewValkeyGateway(cfg.AgentName, bpClient, verifier, 1)
 			gw.SetCancelFunc(cancel)
 			_ = supervisor.Register(gw)
+			replEngine.SetResponder(&backplaneResponder{client: bpClient})
+			replEngine.SetAgentID(cfg.AgentName)
 			logger.Log("INFO", "Configured Valkey gateway subsystem with verified signatures", map[string]any{"addr": cfg.ValkeyAddr})
 		}
 	}
@@ -327,6 +342,19 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 
 	logger.Log("INFO", "sndbx-agent runtime shut down cleanly", nil)
 	return nil
+}
+
+// backplaneResponder delivers cognitive turn responses directly over the backplane.
+type backplaneResponder struct {
+	client *libbp.Client
+}
+
+func (r *backplaneResponder) SendReply(ctx context.Context, recipient, content string) error {
+	if r == nil || r.client == nil || strings.TrimSpace(recipient) == "" || strings.TrimSpace(content) == "" {
+		return nil
+	}
+	_, err := r.client.Tell(ctx, recipient, content)
+	return err
 }
 
 func runMain(ctx context.Context, args []string, out io.Writer) error {

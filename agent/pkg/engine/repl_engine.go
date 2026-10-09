@@ -16,6 +16,7 @@ import (
 
 	"github.com/boggycreek/sandbox/agent/pkg/runtime"
 	"github.com/boggycreek/sandbox/agent/pkg/tools"
+	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 )
 
 const (
@@ -26,11 +27,18 @@ const (
 	DefaultMaxToolIterations = 25
 )
 
+// TurnResponder delivers conversational replies back to message originators over the backplane.
+type TurnResponder interface {
+	SendReply(ctx context.Context, recipient, content string) error
+}
+
 // REPLEngine drives the multi-turn cognitive agent loop.
 type REPLEngine struct {
 	mu                 sync.RWMutex
 	llm                *LLMClient
 	registry           *tools.Registry
+	responder          TurnResponder
+	agentID            string
 	workspaceDir       string
 	role               string
 	customInstructions string
@@ -39,6 +47,7 @@ type REPLEngine struct {
 	maxToolIterations  int
 	history            []ChatMessage
 	inboundQueue       []runtime.Event
+	activeSender       string
 }
 
 // NewREPLEngine constructs a new REPLEngine instance.
@@ -54,6 +63,53 @@ func NewREPLEngine(llm *LLMClient, registry *tools.Registry, workspaceDir, role 
 		history:           make([]ChatMessage, 0),
 		inboundQueue:      make([]runtime.Event, 0),
 	}
+}
+
+// SetResponder sets the TurnResponder for delivering conversational replies back to the sender.
+func (e *REPLEngine) SetResponder(r TurnResponder) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.responder = r
+}
+
+// SetAgentID configures the engine agent identity.
+func (e *REPLEngine) SetAgentID(id string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.agentID = id
+}
+
+func (e *REPLEngine) setActiveSender(s string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.activeSender = s
+}
+
+func (e *REPLEngine) getActiveSender() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.activeSender
+}
+
+func extractEventSender(payload any) string {
+	if payload == nil {
+		return ""
+	}
+	switch v := payload.(type) {
+	case libbp.Message:
+		return v.Sender
+	case *libbp.Message:
+		if v != nil {
+			return v.Sender
+		}
+	case runtime.BackplaneEnvelope:
+		return v.Sender
+	case *runtime.BackplaneEnvelope:
+		if v != nil {
+			return v.Sender
+		}
+	}
+	return ""
 }
 
 func (e *REPLEngine) enqueueInbound(evt runtime.Event) {
@@ -158,9 +214,11 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 	if agentID == "" {
 		agentID = "sndbx-agent"
 	}
-
-	// Initialize history with foundational system prompt if missing
 	e.mu.Lock()
+	if e.agentID == "" {
+		e.agentID = agentID
+	}
+	// Initialize history with foundational system prompt if missing
 	if len(e.history) == 0 || e.history[0].Role != "system" {
 		sysPrompt := BuildSystemPrompt(agentID, e.role, e.workspaceDir, e.customInstructions)
 		e.history = append([]ChatMessage{{
@@ -186,6 +244,9 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 		hasNewDirective := false
 		for _, evt := range e.drainInboundQueue() {
 			e.AppendMessage(FormatEventMessage(evt))
+			if s := extractEventSender(evt.Payload); s != "" {
+				e.setActiveSender(s)
+			}
 			hasNewDirective = true
 		}
 		for {
@@ -202,6 +263,9 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 			}
 			if evt.Priority == runtime.P1_HighPriority || evt.Priority == runtime.P2_StandardAsync {
 				e.AppendMessage(FormatEventMessage(evt))
+				if s := extractEventSender(evt.Payload); s != "" {
+					e.setActiveSender(s)
+				}
 				hasNewDirective = true
 			}
 		}
@@ -243,6 +307,9 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 		}
 		if evt.Priority == runtime.P1_HighPriority || evt.Priority == runtime.P2_StandardAsync {
 			e.AppendMessage(FormatEventMessage(evt))
+			if s := extractEventSender(evt.Payload); s != "" {
+				e.setActiveSender(s)
+			}
 			_ = e.executeTurn(ctx, bus, state)
 		}
 	}
@@ -266,6 +333,8 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 	maxTurns := e.maxTurns
 	e.mu.RUnlock()
 
+	didSendExternalMessage := false
+
 	for iter := 0; iter < maxIterations; iter++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -287,6 +356,9 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			if evt.Priority == runtime.P1_HighPriority {
 				// Inject high-priority directive immediately into history
 				e.AppendMessage(FormatEventMessage(evt))
+				if s := extractEventSender(evt.Payload); s != "" {
+					e.setActiveSender(s)
+				}
 			} else if evt.Priority == runtime.P2_StandardAsync {
 				// Buffer P2 events into inbound queue without dropping
 				e.enqueueInbound(evt)
@@ -330,6 +402,19 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 
 		// If no tools were invoked, turn execution is finished
 		if len(assistantMsg.ToolCalls) == 0 {
+			e.mu.RLock()
+			responder := e.responder
+			sender := e.activeSender
+			agentID := e.agentID
+			e.mu.RUnlock()
+
+			if responder != nil && sender != "" && !didSendExternalMessage && strings.TrimSpace(assistantMsg.Content) != "" {
+				if strings.ToLower(sender) != strings.ToLower(agentID) {
+					_ = responder.SendReply(ctx, sender, assistantMsg.Content)
+				}
+			}
+			e.setActiveSender("")
+
 			for _, queuedEvt := range e.drainInboundQueue() {
 				e.AppendMessage(FormatEventMessage(queuedEvt))
 			}
@@ -347,6 +432,14 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			}
 
 			toolName := toolCall.Function.Name
+			if toolName == "fleet_send_message" || toolName == "fleet_broadcast" {
+				didSendExternalMessage = true
+			} else if toolName == "bash" {
+				if strings.Contains(toolCall.Function.Arguments, "bp tell") || strings.Contains(toolCall.Function.Arguments, "bp say") || strings.Contains(toolCall.Function.Arguments, "bp reply") {
+					didSendExternalMessage = true
+				}
+			}
+
 			_ = state.Update(func(s *runtime.AgentState) {
 				s.Status = "executing_tool"
 				s.CurrentActivity = fmt.Sprintf("Executing tool: %s", toolName)
@@ -380,6 +473,7 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 		Role:    "assistant",
 		Content: "Tool execution limit reached for this turn. Summary: max tool iterations reached. Execution paused until further instructions.",
 	})
+	e.setActiveSender("")
 
 	for _, queuedEvt := range e.drainInboundQueue() {
 		e.AppendMessage(FormatEventMessage(queuedEvt))

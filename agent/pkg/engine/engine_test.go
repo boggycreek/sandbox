@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -923,3 +924,247 @@ func TestParseFallbackToolCalls(t *testing.T) {
 		t.Errorf("unexpected parse result for ndjson: %+v", calls8)
 	}
 }
+
+type mockTurnResponder struct {
+	mu      sync.Mutex
+	replies []struct {
+		recipient string
+		content   string
+	}
+}
+
+func (m *mockTurnResponder) SendReply(_ context.Context, recipient, content string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.replies = append(m.replies, struct {
+		recipient string
+		content   string
+	}{recipient: recipient, content: content})
+	return nil
+}
+
+func (m *mockTurnResponder) getReplies() []struct {
+	recipient string
+	content   string
+} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	copied := make([]struct {
+		recipient string
+		content   string
+	}, len(m.replies))
+	copy(copied, m.replies)
+	return copied
+}
+
+func TestTurnResponderAutoReply(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := ChatCompletionResponse{
+			ID:    "resp-autoreply",
+			Model: "test-model",
+			Choices: []ChatChoice{
+				{
+					Index: 0,
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Here is the answer to your question.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	responder := &mockTurnResponder{}
+	eng.SetResponder(responder)
+	eng.SetAgentID("agent-alice")
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-alice")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = eng.Start(ctx, bus, state)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	// Send message from sender "brian"
+	msg := &libbp.Message{
+		ID:      "msg-1",
+		Sender:  "brian",
+		Content: "What is the status?",
+	}
+	_ = bus.Publish(runtime.Event{
+		Priority:  runtime.P1_HighPriority,
+		Source:    "valkey:inbox",
+		Target:    "repl-main",
+		Payload:   msg,
+		Timestamp: time.Now(),
+	})
+
+	var replies []struct {
+		recipient string
+		content   string
+	}
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		replies = responder.getReplies()
+		if len(replies) > 0 {
+			break
+		}
+	}
+
+	if len(replies) != 1 {
+		t.Fatalf("expected 1 auto-reply, got %d", len(replies))
+	}
+	if replies[0].recipient != "brian" {
+		t.Errorf("expected recipient 'brian', got %s", replies[0].recipient)
+	}
+	if replies[0].content != "Here is the answer to your question." {
+		t.Errorf("unexpected content: %s", replies[0].content)
+	}
+}
+
+func TestTurnResponderSuppression(t *testing.T) {
+	callCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			// First call returns a tool that sends external message
+			resp := ChatCompletionResponse{
+				ID:    "resp-tool",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatMessage{
+							Role: "assistant",
+							ToolCalls: []ToolCall{
+								{
+									ID:   "call_bash",
+									Type: "function",
+									Function: ToolFunctionCall{
+										Name:      "bash",
+										Arguments: "{\"command\": \"bp tell brian 'already replied'\"}",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// Second call returns final text
+		resp := ChatCompletionResponse{
+			ID:    "resp-final",
+			Model: "test-model",
+			Choices: []ChatChoice{
+				{
+					Index: 0,
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Done executing command.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	_ = tools.RegisterBuiltinTools(reg, tmpDir)
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	responder := &mockTurnResponder{}
+	eng.SetResponder(responder)
+	eng.SetAgentID("agent-alice")
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-alice")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = eng.Start(ctx, bus, state)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	msg := &libbp.Message{
+		ID:      "msg-2",
+		Sender:  "brian",
+		Content: "Run the comms check.",
+	}
+	_ = bus.Publish(runtime.Event{
+		Priority:  runtime.P1_HighPriority,
+		Source:    "valkey:inbox",
+		Target:    "repl-main",
+		Payload:   msg,
+		Timestamp: time.Now(),
+	})
+
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if state.Read().Status == "idle" && callCount >= 2 {
+			break
+		}
+	}
+
+	// Because tool executed bp tell, responder.SendReply should be suppressed
+	replies := responder.getReplies()
+	if len(replies) != 0 {
+		t.Errorf("expected 0 auto-replies due to external message suppression, got %d", len(replies))
+	}
+}
+
+func TestExtractEventSender(t *testing.T) {
+	if s := extractEventSender(nil); s != "" {
+		t.Errorf("expected empty sender for nil, got %s", s)
+	}
+	if s := extractEventSender("string payload"); s != "" {
+		t.Errorf("expected empty sender for string, got %s", s)
+	}
+	msg := libbp.Message{Sender: "alice"}
+	if s := extractEventSender(msg); s != "alice" {
+		t.Errorf("expected alice, got %s", s)
+	}
+	msgPtr := &libbp.Message{Sender: "bob"}
+	if s := extractEventSender(msgPtr); s != "bob" {
+		t.Errorf("expected bob, got %s", s)
+	}
+	var nilMsg *libbp.Message
+	if s := extractEventSender(nilMsg); s != "" {
+		t.Errorf("expected empty for nilMsg, got %s", s)
+	}
+	env := runtime.BackplaneEnvelope{Sender: "carol"}
+	if s := extractEventSender(env); s != "carol" {
+		t.Errorf("expected carol, got %s", s)
+	}
+	envPtr := &runtime.BackplaneEnvelope{Sender: "dave"}
+	if s := extractEventSender(envPtr); s != "dave" {
+		t.Errorf("expected dave, got %s", s)
+	}
+	var nilEnv *runtime.BackplaneEnvelope
+	if s := extractEventSender(nilEnv); s != "" {
+		t.Errorf("expected empty for nilEnv, got %s", s)
+	}
+}
+

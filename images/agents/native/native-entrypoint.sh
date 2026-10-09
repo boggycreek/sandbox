@@ -19,7 +19,18 @@ cd /home/agent/workspace
 # Run base entrypoint initialization (sshd on port 2222, host keys, git config)
 # Disable legacy bpd since sndbx-agent handles the backplane inbox directly
 export BPD_DISABLED=1
-/usr/local/bin/entrypoint.sh true
+# Auto-discover installed MCP binaries if MCP_BINARIES is not explicitly set
+if [ -z "${MCP_BINARIES:-}" ]; then
+    DISCOVERED=""
+    for bin in /usr/local/bin/beads-mcp /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/sonar-mcp; do
+        if [ -x "$bin" ]; then
+            DISCOVERED="${DISCOVERED:+$DISCOVERED,}$bin"
+        fi
+    done
+    if [ -n "$DISCOVERED" ]; then
+        export MCP_BINARIES="$DISCOVERED"
+    fi
+fi
 
 echo "Native Agent Sandbox container initialized [$(hostname)]. Starting sndbx-agent..."
 
