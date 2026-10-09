@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -727,6 +728,12 @@ func LoadClientFromEnv() ClientConfig {
 	var signingKey ed25519.PrivateKey
 	if keyPath := os.Getenv("BP_SIGNING_KEY"); keyPath != "" {
 		if priv, err := LoadPrivateKeyFromFile(keyPath); err == nil {
+			signingKey = priv
+		}
+	} else if agentID != "" {
+		home, _ := os.UserHomeDir()
+		defaultKey := filepath.Join(home, ".local", "share", "agent-sandbox", "secrets", strings.ToLower(agentID), "signing-key.pem")
+		if priv, err := LoadPrivateKeyFromFile(defaultKey); err == nil {
 			signingKey = priv
 		}
 	}

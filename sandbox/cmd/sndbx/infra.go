@@ -14,6 +14,7 @@ import (
 
 	"github.com/boggycreek/sandbox/pkg/config"
 	"github.com/boggycreek/sandbox/pkg/doctor"
+	"github.com/boggycreek/sandbox/pkg/lifecycle"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
@@ -44,6 +45,7 @@ Commands:
 			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
 			return 1
 		}
+		_, _ = lifecycle.EnsureOperatorKeys(ctx, paths, humanName)
 		fmt.Fprintln(stdout, "Shared infrastructure is online.")
 		return 0
 

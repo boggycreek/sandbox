@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|start|tmux|open|ssh|ssh-config|doctor|stop|list|clean|retire>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|provision|start|tmux|open|ssh|ssh-config|keys|doctor|stop|list|clean|retire|deprovision>")
 		return 1
 	}
 
@@ -40,6 +41,9 @@ func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout,
 Commands:
   create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
     Provision a new named agent with persistent configuration, keys, and volume.
+
+  provision <name>
+    Provision or re-provision agent infrastructure, keys, Valkey ACLs, Gitea accounts, and SonarQube credentials.
 
   start <name>
     Start the agent's daemon container with Podman.
@@ -56,6 +60,9 @@ Commands:
   ssh-config [name] [--all]
     Generate OpenSSH host configuration stanza(s) for IDE remote development.
 
+  keys [name]
+    Inspect cryptographic signing keys, public keys, and infrastructure credentials for agents.
+
   doctor <name>
     Diagnose configuration, cryptographic keys, storage, and infrastructure provisioning, and auto-heal defects.
 
@@ -69,7 +76,10 @@ Commands:
     Remove the agent container while preserving its home directory volume.
 
   retire <name> [--force]
-    Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).`)
+    Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).
+
+  deprovision <name> [--force]
+    Alias to retire: fully deprovision agent across container, volume, local secrets, Valkey ACLs, and Gitea account.`)
 		return 0
 	case "tmux":
 		return handleAgentTmux(ctx, paths, subArgs, stdout, stderr)
@@ -77,18 +87,22 @@ Commands:
 		return handleAgentConnect(ctx, paths, subArgs, stdout, stderr)
 	case "ssh":
 		return handleAgentSSH(ctx, paths, subArgs, stdout, stderr)
-	case "create", "start", "open", "ssh-config", "sshconfig", "doctor", "stop", "list", "clean", "retire":
+	case "create", "provision", "start", "open", "ssh-config", "sshconfig", "keys", "doctor", "stop", "list", "clean", "retire", "deprovision":
 		opCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
 		switch sub {
 		case "create":
 			return handleAgentCreate(opCtx, paths, subArgs, stdout, stderr)
+		case "provision":
+			return handleAgentProvision(opCtx, paths, subArgs, stdout, stderr)
 		case "start":
 			return handleAgentStart(opCtx, paths, subArgs, stdout, stderr)
 		case "open":
 			return handleAgentOpen(opCtx, paths, subArgs, stdout, stderr)
 		case "ssh-config", "sshconfig":
 			return handleAgentSSHConfig(opCtx, paths, subArgs, stdout, stderr)
+		case "keys":
+			return handleAgentKeys(opCtx, paths, subArgs, stdout, stderr)
 		case "doctor":
 			return handleAgentDoctor(opCtx, paths, subArgs, stdout, stderr)
 		case "stop":
@@ -99,6 +113,8 @@ Commands:
 			return handleAgentClean(opCtx, paths, subArgs, stdout, stderr)
 		case "retire":
 			return handleAgentRetire(opCtx, paths, subArgs, stdout, stderr)
+		case "deprovision":
+			return handleAgentDeprovision(opCtx, paths, subArgs, stdout, stderr)
 		}
 		return 1
 	default:
@@ -575,6 +591,81 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 	fmt.Fprint(stdout, lifecycle.FormatReport(report))
 	if report.HasErrors() {
 		fmt.Fprintf(stderr, "sndbx warning: agent %q deprovisioned with errors\n", name)
+	}
+	return 0
+}
+
+func handleAgentProvision(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Usage: sndbx agent provision <name>")
+		return 1
+	}
+
+	name := strings.ToLower(strings.TrimSpace(args[0]))
+	cfg, err := config.LoadAgentConfig(name, paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	report := lifecycle.ProvisionAgent(ctx, cfg, paths)
+	fmt.Fprintf(stdout, "Provisioning report for agent %q:\n", cfg.Name)
+	if formatted := lifecycle.FormatReport(report); formatted != "" {
+		fmt.Fprint(stdout, formatted)
+	}
+	if report.HasErrors() {
+		fmt.Fprintf(stderr, "sndbx warning: agent %q provisioned with errors; run 'sndbx agent doctor %s' to diagnose\n", cfg.Name, cfg.Name)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Agent %q is fully provisioned.\n", cfg.Name)
+	return 0
+}
+
+func handleAgentDeprovision(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	return handleAgentRetire(ctx, paths, args, stdout, stderr)
+}
+
+func handleAgentKeys(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	var targetAgent string
+	if len(args) > 0 {
+		targetAgent = strings.ToLower(strings.TrimSpace(args[0]))
+	}
+
+	configs, err := config.ListAgentConfigs(paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error listing agents: %v\n", err)
+		return 1
+	}
+
+	found := false
+	for _, cfg := range configs {
+		if targetAgent != "" && cfg.Name != targetAgent {
+			continue
+		}
+		found = true
+		secretKeyPath := filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem")
+		keyStatus := "missing"
+		if fi, err := os.Stat(secretKeyPath); err == nil && !fi.IsDir() {
+			keyStatus = fmt.Sprintf("present (%s)", secretKeyPath)
+		}
+
+		fmt.Fprintf(stdout, "Agent %q:\n", cfg.Name)
+		fmt.Fprintf(stdout, "  Signing Key: %s\n", keyStatus)
+		fmt.Fprintf(stdout, "  Public Key:  %s\n", cfg.PublicKeyB64)
+		if cfg.Password != "" {
+			fmt.Fprintf(stdout, "  Valkey ACL:  user configured\n")
+		} else {
+			fmt.Fprintf(stdout, "  Valkey ACL:  no password set\n")
+		}
+		if cfg.SonarToken != "" {
+			fmt.Fprintf(stdout, "  SonarQube:   analysis token generated\n")
+		}
+		fmt.Fprintln(stdout)
+	}
+
+	if targetAgent != "" && !found {
+		fmt.Fprintf(stderr, "sndbx error: agent %q not found\n", targetAgent)
+		return 1
 	}
 	return 0
 }
