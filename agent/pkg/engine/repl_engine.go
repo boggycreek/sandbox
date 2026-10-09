@@ -733,12 +733,30 @@ func parseFallbackToolCalls(content string) []ToolCall {
 		}
 	}
 
-	// 5. Scan for blocks of the format: <tool_name>\n{ ... JSON arguments ... }
+	// 5. Scan for blocks of the format: <tool_name>\n{ ... JSON arguments ... } OR embedded { "name": ..., "arguments": ... }
 	var blockCalls []ToolCall
 	for i := 0; i < len(content); i++ {
 		if content[i] == '{' {
 			jsonStr, nextIdx := findBalancedJSON(content, i)
 			if nextIdx > i {
+				// Normalize backticks inside JSON strings to escaped regular quotes or content
+				normalizedJSON := jsonStr
+				if strings.Contains(jsonStr, "`") {
+					// Convert multi-line backtick string literal fields to escaped JSON strings
+					normalizedJSON = normalizeJSONBackticks(jsonStr)
+				}
+
+				var obj map[string]any
+				if err := json.Unmarshal([]byte(normalizedJSON), &obj); err == nil {
+					// Check if this JSON object itself specifies a tool call (e.g. { "name": "write_file", "arguments": ... })
+					if tc, ok := extractCall(obj, len(blockCalls)); ok && isKnownOrLikelyTool(tc.Function.Name) {
+						blockCalls = append(blockCalls, tc)
+						i = nextIdx - 1
+						continue
+					}
+				}
+
+				// Otherwise check preceding token for tool name: <tool_name>\n{ ... }
 				before := strings.TrimRight(content[:i], " \t\r\n`")
 				lastWord := ""
 				for j := len(before) - 1; j >= 0; j-- {
@@ -754,14 +772,13 @@ func parseFallbackToolCalls(content string) []ToolCall {
 				}
 
 				if lastWord != "" && isKnownOrLikelyTool(lastWord) {
-					var obj map[string]any
-					if err := json.Unmarshal([]byte(jsonStr), &obj); err == nil {
+					if err := json.Unmarshal([]byte(normalizedJSON), &obj); err == nil {
 						blockCalls = append(blockCalls, ToolCall{
 							ID:   fmt.Sprintf("call-%d-%d", time.Now().UnixNano(), len(blockCalls)),
 							Type: "function",
 							Function: ToolFunctionCall{
 								Name:      lastWord,
-								Arguments: jsonStr,
+								Arguments: normalizedJSON,
 							},
 						})
 						i = nextIdx - 1
@@ -783,6 +800,7 @@ func findBalancedJSON(s string, startIdx int) (string, int) {
 	}
 	depth := 0
 	inString := false
+	inBacktick := false
 	escape := false
 
 	for i := startIdx; i < len(s); i++ {
@@ -795,11 +813,15 @@ func findBalancedJSON(s string, startIdx int) (string, int) {
 			escape = true
 			continue
 		}
-		if ch == '"' {
+		if ch == '`' && !inString {
+			inBacktick = !inBacktick
+			continue
+		}
+		if ch == '"' && !inBacktick {
 			inString = !inString
 			continue
 		}
-		if !inString {
+		if !inString && !inBacktick {
 			if ch == '{' {
 				depth++
 			} else if ch == '}' {
@@ -822,4 +844,43 @@ func isKnownOrLikelyTool(name string) bool {
 		return true
 	}
 	return strings.HasPrefix(name, "bd_") || strings.HasPrefix(name, "fleet_") || strings.HasPrefix(name, "forge_")
+}
+
+// normalizeJSONBackticks converts raw multi-line strings enclosed in backticks (e.g. `package main...`)
+// into valid escaped JSON double-quoted strings so json.Unmarshal can succeed.
+func normalizeJSONBackticks(s string) string {
+	var sb strings.Builder
+	inBacktick := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch == '`' {
+			if !inBacktick {
+				inBacktick = true
+				sb.WriteByte('"')
+			} else {
+				inBacktick = false
+				sb.WriteByte('"')
+			}
+			continue
+		}
+		if inBacktick {
+			switch ch {
+			case '\\':
+				sb.WriteString("\\\\")
+			case '"':
+				sb.WriteString("\\\"")
+			case '\n':
+				sb.WriteString("\\n")
+			case '\r':
+				sb.WriteString("\\r")
+			case '\t':
+				sb.WriteString("\\t")
+			default:
+				sb.WriteByte(ch)
+			}
+		} else {
+			sb.WriteByte(ch)
+		}
+	}
+	return sb.String()
 }

@@ -930,6 +930,13 @@ func TestParseFallbackToolCalls(t *testing.T) {
 	if len(calls9) != 2 || calls9[0].Function.Name != "write_file" || calls9[1].Function.Name != "bash" {
 		t.Errorf("unexpected parse result for blockFmt: %+v", calls9)
 	}
+
+	// 11. Embedded tool call inside markdown block with raw backtick string (like Alice's response)
+	backtickBlock := "First step:\n```bash\n{\n  \"name\": \"write_file\",\n  \"arguments\": {\n    \"content\": `package hexutil\nfunc Encode() {}`,\n    \"path\": \"pkg/hexutil/hexutil.go\"\n  }\n}\n```\n"
+	calls10 := parseFallbackToolCalls(backtickBlock)
+	if len(calls10) != 1 || calls10[0].Function.Name != "write_file" || !strings.Contains(calls10[0].Function.Arguments, "pkg/hexutil/hexutil.go") {
+		t.Errorf("unexpected parse result for backtickBlock: %+v", calls10)
+	}
 }
 
 type mockTurnResponder struct {
