@@ -771,7 +771,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 		}
 	}
 
-	cloneArgs := []string{"exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "clone", repoURL}
+	cloneArgs := []string{"exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "clone", repoURL}
 	if targetDir != "" {
 		cloneArgs = append(cloneArgs, targetDir)
 	}
@@ -790,7 +790,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 
 func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> [get|list|set <remote-name> <url>]")
+		fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> [get|list|set <remote-name> <url>] [--dir <dir>]")
 		return 1
 	}
 
@@ -802,27 +802,61 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	subCmd := "list"
-	if len(args) >= 2 {
-		subCmd = strings.ToLower(strings.TrimSpace(args[1]))
+	targetDir := ""
+	var cleanArgs []string
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--dir" && i+1 < len(args) {
+			targetDir = args[i+1]
+			i++
+		} else if strings.HasPrefix(args[i], "--dir=") {
+			targetDir = strings.TrimPrefix(args[i], "--dir=")
+		} else {
+			cleanArgs = append(cleanArgs, args[i])
+		}
+	}
+
+	if len(cleanArgs) >= 1 {
+		subCmd = strings.ToLower(strings.TrimSpace(cleanArgs[0]))
+	}
+
+	// Auto-detect git repo in workspace or immediate subdirectories if not specified
+	workDir := "/home/agent/workspace"
+	if targetDir != "" {
+		workDir = filepath.Join("/home/agent/workspace", targetDir)
+	} else {
+		// Test if /home/agent/workspace is a git repo
+		checkGit := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "rev-parse", "--is-inside-work-tree")
+		if err := checkGit.Run(); err != nil {
+			// Find first subdirectory with .git
+			findGit := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "sh", "-c", "find . -maxdepth 2 -name .git -type d | head -n 1")
+			if out, err := findGit.Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+				detected := strings.TrimSpace(string(out))
+				detected = strings.TrimSuffix(detected, "/.git")
+				detected = strings.TrimPrefix(detected, "./")
+				if detected != "" && detected != "." {
+					workDir = filepath.Join("/home/agent/workspace", detected)
+				}
+			}
+		}
 	}
 
 	var gitArgs []string
 	switch subCmd {
 	case "list", "get":
-		gitArgs = []string{"exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "remote", "-v"}
+		gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "-v"}
 	case "set":
-		if len(args) < 4 {
-			fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> set <remote-name> <url>")
+		if len(cleanArgs) < 3 {
+			fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> set <remote-name> <url> [--dir <dir>]")
 			return 1
 		}
-		remoteName := strings.TrimSpace(args[2])
-		remoteURL := strings.TrimSpace(args[3])
+		remoteName := strings.TrimSpace(cleanArgs[1])
+		remoteURL := strings.TrimSpace(cleanArgs[2])
 		// Try set-url first, if that fails, add
-		setURLCmd := execCommandContext(ctx, "podman", "exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "remote", "set-url", remoteName, remoteURL)
+		setURLCmd := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "set-url", remoteName, remoteURL)
 		if err := setURLCmd.Run(); err != nil {
-			gitArgs = []string{"exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "remote", "add", remoteName, remoteURL}
+			gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "add", remoteName, remoteURL}
 		} else {
-			fmt.Fprintf(stdout, "Updated remote %q to %s\n", remoteName, remoteURL)
+			fmt.Fprintf(stdout, "Updated remote %q to %s (in %s)\n", remoteName, remoteURL, workDir)
 			return 0
 		}
 	default:
