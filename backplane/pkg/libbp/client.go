@@ -410,40 +410,60 @@ func (c *Client) Human(ctx context.Context, count int) ([]*Message, error) {
 
 // Peers returns the discovered list of active agents and their statuses
 func (c *Client) Peers(ctx context.Context) ([]*Peer, error) {
-	// Scan for *:out keys
-	val, err := c.Exec(ctx, "SCAN", "0", "MATCH", "*:out", "COUNT", "100")
+	seen := make(map[string]bool)
+	var agentIDs []string
+
+	// Scan for identity:* keys
+	val, err := c.Exec(ctx, "SCAN", "0", "MATCH", "identity:*", "COUNT", "100")
 	if err != nil {
 		return nil, err
 	}
-	arr, err := val.AsArray()
-	if err != nil || len(arr) < 2 {
-		return []*Peer{}, nil
+	if arr, err := val.AsArray(); err == nil && len(arr) >= 2 {
+		if keysArray, err := arr[1].AsArray(); err == nil {
+			for _, k := range keysArray {
+				agentID := strings.TrimPrefix(k.String(), "identity:")
+				if agentID != "" && !seen[agentID] {
+					seen[agentID] = true
+					agentIDs = append(agentIDs, agentID)
+				}
+			}
+		}
 	}
 
-	keysArray, err := arr[1].AsArray()
-	if err != nil {
-		return []*Peer{}, nil
+	// Scan for legacy *:out keys
+	valOut, err := c.Exec(ctx, "SCAN", "0", "MATCH", "*:out", "COUNT", "100")
+	if err == nil {
+		if arr, err := valOut.AsArray(); err == nil && len(arr) >= 2 {
+			if keysArray, err := arr[1].AsArray(); err == nil {
+				for _, k := range keysArray {
+					keyStr := k.String()
+					if strings.HasSuffix(keyStr, ":out") {
+						agentID := strings.TrimSuffix(keyStr, ":out")
+						if agentID != "" && !seen[agentID] {
+							seen[agentID] = true
+							agentIDs = append(agentIDs, agentID)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	currentLiaison, _ := c.GetLiaison(ctx)
 
 	var peers []*Peer
-	seen := make(map[string]bool)
-
-	for _, k := range keysArray {
-		keyStr := k.String()
-		if !strings.HasSuffix(keyStr, ":out") {
-			continue
+	for _, agentID := range agentIDs {
+		role := ""
+		if rec, err := c.GetIdentity(ctx, agentID); err == nil && rec != nil {
+			if rec.Kind == "human" {
+				continue
+			}
+			role = rec.Role
 		}
-		agentID := strings.TrimSuffix(keyStr, ":out")
-		if agentID == "" || seen[agentID] {
-			continue
-		}
-		seen[agentID] = true
-
 		status, _ := c.GetStatus(ctx, agentID)
 		peer := &Peer{
 			ID:        agentID,
+			Role:      role,
 			Status:    status,
 			IsLiaison: strings.EqualFold(agentID, currentLiaison),
 		}
