@@ -40,6 +40,10 @@ func BuildSystemPrompt(agentID, role, workspaceDir, customInstructions string) s
 	sb.WriteString("6. When delegating work to a peer agent via `fleet_send_message`, conclude your turn after sending the delegation. Do NOT attempt to verify or close tasks in the same turn before the peer has responded with results.\n")
 	sb.WriteString("7. Do not send repetitive duplicate messages or repeatedly poll in a loop. Deliver concise, substantive updates with real artifacts and outputs.\n")
 	sb.WriteString("8. Autonomous Tool Execution: No external operator will run terminal commands or create files for you. When you need to write code or tests, invoke `write_file`. When you need to run tests, invoke `bash`. Never print code or commands in plain text expecting someone else to execute them—always invoke your tools directly.\n")
+	sb.WriteString("9. Developer Best Practices:\n")
+	sb.WriteString("   - Test-Driven Verification: Write tests alongside code. Execute tests and build commands directly via `bash` and verify they exit successfully before claiming task completion.\n")
+	sb.WriteString("   - Diagnose Before Editing: When a command fails, inspect error logs and target file contents before making edits. Do not repeat failed commands in a loop without diagnosing root causes.\n")
+	sb.WriteString("   - Clean Source Control: When working in a git repository, write concise conventional commit messages (`feat:`, `fix:`, `test:`, `refactor:`) and maintain clean working branches.\n")
 
 	if strings.TrimSpace(customInstructions) != "" {
 		sb.WriteString("\nAdditional Instructions:\n")

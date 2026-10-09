@@ -27,7 +27,7 @@ import (
 
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|provision|start|tmux|open|ssh|ssh-config|keys|doctor|stop|list|clean|retire|deprovision>")
+		fmt.Fprintln(stderr, "Usage: sndbx agent <create|provision|start|tmux|open|ssh|ssh-config|keys|doctor|stop|list|clean|retire|deprovision|clone|remote>")
 		return 1
 	}
 
@@ -79,7 +79,13 @@ Commands:
     Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).
 
   deprovision <name> [--force]
-    Alias to retire: fully deprovision agent across container, volume, local secrets, Valkey ACLs, and Gitea account.`)
+    Alias to retire: fully deprovision agent across container, volume, local secrets, Valkey ACLs, and Gitea account.
+
+  clone <name> <repo-url> [dir]
+    Clone a git repository directly into the agent container's workspace.
+
+  remote <name> [get|list|set <remote-name> <url>]
+    Inspect or configure git remotes inside the agent container's workspace.`)
 		return 0
 	case "tmux":
 		return handleAgentTmux(ctx, paths, subArgs, stdout, stderr)
@@ -87,7 +93,7 @@ Commands:
 		return handleAgentConnect(ctx, paths, subArgs, stdout, stderr)
 	case "ssh":
 		return handleAgentSSH(ctx, paths, subArgs, stdout, stderr)
-	case "create", "provision", "start", "open", "ssh-config", "sshconfig", "keys", "doctor", "stop", "list", "clean", "retire", "deprovision":
+	case "create", "provision", "start", "open", "ssh-config", "sshconfig", "keys", "doctor", "stop", "list", "clean", "retire", "deprovision", "clone", "remote":
 		opCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
 		switch sub {
@@ -115,6 +121,10 @@ Commands:
 			return handleAgentRetire(opCtx, paths, subArgs, stdout, stderr)
 		case "deprovision":
 			return handleAgentDeprovision(opCtx, paths, subArgs, stdout, stderr)
+		case "clone":
+			return handleAgentClone(opCtx, paths, subArgs, stdout, stderr)
+		case "remote":
+			return handleAgentRemote(opCtx, paths, subArgs, stdout, stderr)
 		}
 		return 1
 	default:
@@ -727,6 +737,105 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 			ide = "-"
 		}
 		fmt.Fprintf(stdout, fmtFmt, s.Name, s.Role, s.ContainerState, s.Image, ide)
+	}
+	return 0
+}
+
+func handleAgentClone(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 2 {
+		fmt.Fprintln(stderr, "Usage: sndbx agent clone <name> <repo-url> [dir]")
+		return 1
+	}
+
+	name := strings.ToLower(strings.TrimSpace(args[0]))
+	repoURL := strings.TrimSpace(args[1])
+	targetDir := ""
+	if len(args) >= 3 {
+		targetDir = strings.TrimSpace(args[2])
+	}
+
+	cfg, err := config.LoadAgentConfig(name, paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	// Verify container is running or start it
+	checkRunning := execCommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
+	out, err := checkRunning.Output()
+	if err != nil || strings.TrimSpace(string(out)) != "true" {
+		bpCfg := libbp.LoadClientFromEnv()
+		if startErr := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); startErr != nil {
+			fmt.Fprintf(stderr, "sndbx error starting agent container %s: %v\n", cfg.ContainerName, startErr)
+			return 1
+		}
+	}
+
+	cloneArgs := []string{"exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "clone", repoURL}
+	if targetDir != "" {
+		cloneArgs = append(cloneArgs, targetDir)
+	}
+
+	cmd := execCommandContext(ctx, "podman", cloneArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(stderr, "sndbx error: git clone failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Repository %s successfully cloned into %s workspace.\n", repoURL, cfg.Name)
+	return 0
+}
+
+func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> [get|list|set <remote-name> <url>]")
+		return 1
+	}
+
+	name := strings.ToLower(strings.TrimSpace(args[0]))
+	cfg, err := config.LoadAgentConfig(name, paths)
+	if err != nil {
+		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	subCmd := "list"
+	if len(args) >= 2 {
+		subCmd = strings.ToLower(strings.TrimSpace(args[1]))
+	}
+
+	var gitArgs []string
+	switch subCmd {
+	case "list", "get":
+		gitArgs = []string{"exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "remote", "-v"}
+	case "set":
+		if len(args) < 4 {
+			fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> set <remote-name> <url>")
+			return 1
+		}
+		remoteName := strings.TrimSpace(args[2])
+		remoteURL := strings.TrimSpace(args[3])
+		// Try set-url first, if that fails, add
+		setURLCmd := execCommandContext(ctx, "podman", "exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "remote", "set-url", remoteName, remoteURL)
+		if err := setURLCmd.Run(); err != nil {
+			gitArgs = []string{"exec", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "remote", "add", remoteName, remoteURL}
+		} else {
+			fmt.Fprintf(stdout, "Updated remote %q to %s\n", remoteName, remoteURL)
+			return 0
+		}
+	default:
+		fmt.Fprintf(stderr, "sndbx agent remote: unknown subcommand %q\n", subCmd)
+		return 1
+	}
+
+	cmd := execCommandContext(ctx, "podman", gitArgs...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(stderr, "sndbx error: git remote operation failed: %v\n", err)
+		return 1
 	}
 	return 0
 }
