@@ -923,6 +923,13 @@ func TestParseFallbackToolCalls(t *testing.T) {
 	if len(calls8) != 2 || calls8[0].Function.Name != "write_file" || calls8[1].Function.Name != "bash" {
 		t.Errorf("unexpected parse result for ndjson: %+v", calls8)
 	}
+
+	// 10. Markdown / text-wrapped tool blocks (<name>\n{ ... })
+	blockFmt := "Here is my plan:\n```bash\nwrite_file\n{\n  \"path\": \"pkg/test.go\",\n  \"content\": \"package pkg\"\n}\n```\nAnd then:\nbash\n{\n  \"command\": \"go test ./...\"\n}\n"
+	calls9 := parseFallbackToolCalls(blockFmt)
+	if len(calls9) != 2 || calls9[0].Function.Name != "write_file" || calls9[1].Function.Name != "bash" {
+		t.Errorf("unexpected parse result for blockFmt: %+v", calls9)
+	}
 }
 
 type mockTurnResponder struct {

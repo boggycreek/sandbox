@@ -733,5 +733,93 @@ func parseFallbackToolCalls(content string) []ToolCall {
 		}
 	}
 
+	// 5. Scan for blocks of the format: <tool_name>\n{ ... JSON arguments ... }
+	var blockCalls []ToolCall
+	for i := 0; i < len(content); i++ {
+		if content[i] == '{' {
+			jsonStr, nextIdx := findBalancedJSON(content, i)
+			if nextIdx > i {
+				before := strings.TrimRight(content[:i], " \t\r\n`")
+				lastWord := ""
+				for j := len(before) - 1; j >= 0; j-- {
+					ch := before[j]
+					if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' {
+						continue
+					}
+					lastWord = before[j+1:]
+					break
+				}
+				if lastWord == "" && len(before) > 0 {
+					lastWord = before
+				}
+
+				if lastWord != "" && isKnownOrLikelyTool(lastWord) {
+					var obj map[string]any
+					if err := json.Unmarshal([]byte(jsonStr), &obj); err == nil {
+						blockCalls = append(blockCalls, ToolCall{
+							ID:   fmt.Sprintf("call-%d-%d", time.Now().UnixNano(), len(blockCalls)),
+							Type: "function",
+							Function: ToolFunctionCall{
+								Name:      lastWord,
+								Arguments: jsonStr,
+							},
+						})
+						i = nextIdx - 1
+					}
+				}
+			}
+		}
+	}
+	if len(blockCalls) > 0 {
+		return blockCalls
+	}
+
 	return nil
+}
+
+func findBalancedJSON(s string, startIdx int) (string, int) {
+	if startIdx >= len(s) || s[startIdx] != '{' {
+		return "", -1
+	}
+	depth := 0
+	inString := false
+	escape := false
+
+	for i := startIdx; i < len(s); i++ {
+		ch := s[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString {
+			if ch == '{' {
+				depth++
+			} else if ch == '}' {
+				depth--
+				if depth == 0 {
+					return s[startIdx : i+1], i + 1
+				}
+			}
+		}
+	}
+	return "", -1
+}
+
+func isKnownOrLikelyTool(name string) bool {
+	switch name {
+	case "bash", "write_file", "read_file", "edit_file", "list_dir",
+		"fleet_send_message", "fleet_broadcast", "fleet_read_inbox", "fleet_list_peers",
+		"bd_ready", "bd_list", "bd_show", "bd_create", "bd_claim", "bd_close", "bd_update", "bd_sync",
+		"forge_list_tasks", "forge_create_task", "forge_create_pull_request", "forge_review_pull_request", "forge_get_file":
+		return true
+	}
+	return strings.HasPrefix(name, "bd_") || strings.HasPrefix(name, "fleet_") || strings.HasPrefix(name, "forge_")
 }
