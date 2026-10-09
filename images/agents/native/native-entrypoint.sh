@@ -36,11 +36,21 @@ if [ -x "/usr/sbin/sshd" ] || command -v sshd >/dev/null 2>&1; then
   /usr/sbin/sshd -f /etc/ssh/sshd_config -E "${SSH_DIR}/sshd.log" 2>/dev/null || true
 fi
 
-# Configure default git author identity if not configured
+# Configure default git author identity and credentials
 if [ ! -f "/home/agent/.gitconfig" ]; then
   git config --global user.name "${AGENT_NAME:-agent}"
   git config --global user.email "${AGENT_NAME:-agent}@local.sndbx"
   git config --global init.defaultBranch main
+  git config --global beads.role contributor
+fi
+
+if [ ! -f "/home/agent/.git-credentials" ]; then
+  PASS="${AGENT_PASSWORD:-${BP_PASSWORD:-${VALKEY_PASSWORD:-}}}"
+  if [ -n "${PASS}" ]; then
+    git config --global credential.helper store
+    echo "http://${AGENT_NAME:-agent}:${PASS}@gitea:3000" > /home/agent/.git-credentials
+    chmod 600 /home/agent/.git-credentials
+  fi
 fi
 
 # Export FLEET_TASKS_DIR and bootstrap fleet tasks repository if available

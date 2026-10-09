@@ -344,6 +344,11 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 		return mcp.ErrorResult(fmt.Sprintf("Error executing 'bd %s': %s", strings.Join(args, " "), errText))
 	}
 
+	// For mutating operations, attempt best-effort sync with remote forge
+	if params.Name == "bd_create" || params.Name == "bd_claim" || params.Name == "bd_close" {
+		_, _, _ = s.runner.Run(ctx, dir, "sync")
+	}
+
 	outText := strings.TrimSpace(string(stdout))
 	if outText == "" {
 		outText = "OK"
