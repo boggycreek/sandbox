@@ -915,4 +915,11 @@ func TestParseFallbackToolCalls(t *testing.T) {
 	if len(calls7) != 0 {
 		t.Errorf("expected 0 calls for plain text, got %d", len(calls7))
 	}
+
+	// 9. Concatenated JSON lines (multi-tool invocation)
+	ndjson := "{\"name\": \"write_file\", \"arguments\": {\"path\": \"a.txt\", \"content\": \"hello\"}}\n{\"name\": \"bash\", \"arguments\": {\"command\": \"cat a.txt\"}}"
+	calls8 := parseFallbackToolCalls(ndjson)
+	if len(calls8) != 2 || calls8[0].Function.Name != "write_file" || calls8[1].Function.Name != "bash" {
+		t.Errorf("unexpected parse result for ndjson: %+v", calls8)
+	}
 }

@@ -473,12 +473,21 @@ func parseFallbackToolCalls(content string) []ToolCall {
 		}, true
 	}
 
-	// 1. Try parsing direct JSON object
-	var obj map[string]any
-	if err := json.Unmarshal([]byte(trimmed), &obj); err == nil {
-		if tc, ok := extractCall(obj, 0); ok {
-			return []ToolCall{tc}
+	// 1. Try streaming parser for single or concatenated (JSON lines / NDJSON) objects
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	var streamCalls []ToolCall
+	for dec.More() {
+		var obj map[string]any
+		if err := dec.Decode(&obj); err == nil {
+			if tc, ok := extractCall(obj, len(streamCalls)); ok {
+				streamCalls = append(streamCalls, tc)
+			}
+		} else {
+			break
 		}
+	}
+	if len(streamCalls) > 0 {
+		return streamCalls
 	}
 
 	// 2. Try parsing direct JSON array
@@ -495,7 +504,25 @@ func parseFallbackToolCalls(content string) []ToolCall {
 		}
 	}
 
-	// 3. Scan for embedded JSON object in text (e.g., surrounding reasoning)
+	// 3. Scan for embedded JSON line objects in text
+	lines := strings.Split(trimmed, "\n")
+	var lineCalls []ToolCall
+	for _, line := range lines {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, "{") && strings.HasSuffix(l, "}") {
+			var lObj map[string]any
+			if err := json.Unmarshal([]byte(l), &lObj); err == nil {
+				if tc, ok := extractCall(lObj, len(lineCalls)); ok {
+					lineCalls = append(lineCalls, tc)
+				}
+			}
+		}
+	}
+	if len(lineCalls) > 0 {
+		return lineCalls
+	}
+
+	// 4. Scan for embedded JSON object in text (e.g., surrounding reasoning)
 	start := strings.Index(trimmed, "{")
 	end := strings.LastIndex(trimmed, "}")
 	if start >= 0 && end > start {
