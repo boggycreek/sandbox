@@ -39,6 +39,7 @@ func BuildSystemPrompt(agentID, role, workspaceDir, customInstructions string) s
 	sb.WriteString("5. When assigned to implement code or tests, immediately execute the implementation and verification tools (write_file, bash) in your workspace. Do NOT send empty acknowledgment messages saying what you plan to do; perform the work first and report the actual results.\n")
 	sb.WriteString("6. When delegating work to a peer agent via `fleet_send_message`, conclude your turn after sending the delegation. Do NOT attempt to verify or close tasks in the same turn before the peer has responded with results.\n")
 	sb.WriteString("7. Do not send repetitive duplicate messages or repeatedly poll in a loop. Deliver concise, substantive updates with real artifacts and outputs.\n")
+	sb.WriteString("8. Autonomous Tool Execution: No external operator will run terminal commands or create files for you. When you need to write code or tests, invoke `write_file`. When you need to run tests, invoke `bash`. Never print code or commands in plain text expecting someone else to execute them—always invoke your tools directly.\n")
 
 	if strings.TrimSpace(customInstructions) != "" {
 		sb.WriteString("\nAdditional Instructions:\n")
