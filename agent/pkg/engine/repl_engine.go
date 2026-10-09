@@ -497,12 +497,25 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 		}
 
 		// Execute tool calls sequentially
+		executedToolCalls := make(map[string]string)
 		for _, toolCall := range assistantMsg.ToolCalls {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 
 			toolName := toolCall.Function.Name
+			toolKey := fmt.Sprintf("%s:%s", toolName, strings.TrimSpace(toolCall.Function.Arguments))
+			if prevOutput, isDup := executedToolCalls[toolKey]; isDup && (toolName == "fleet_send_message" || toolName == "fleet_broadcast" || toolName == "fleet_read_inbox") {
+				fmt.Printf("[repl] Iteration %d: skipping duplicate tool %s\n", iter+1, toolName)
+				e.AppendMessage(ChatMessage{
+					Role:       "tool",
+					ToolCallID: toolCall.ID,
+					Name:       toolName,
+					Content:    prevOutput,
+				})
+				continue
+			}
+
 			fmt.Printf("[repl] Iteration %d: executing tool %s args=%s\n", iter+1, toolName, toolCall.Function.Arguments)
 			if toolName == "fleet_send_message" || toolName == "fleet_broadcast" {
 				didSendExternalMessage = true
@@ -538,6 +551,7 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			}
 			fmt.Printf("[repl] Iteration %d: tool %s output=%s\n", iter+1, toolName, TruncateToolOutput(strings.TrimSpace(output), 120))
 
+			executedToolCalls[toolKey] = output
 			e.AppendMessage(ChatMessage{
 				Role:       "tool",
 				ToolCallID: toolCall.ID,

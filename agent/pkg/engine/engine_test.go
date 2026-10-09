@@ -1310,3 +1310,117 @@ func TestTurnResponder_PeerCompletionSuppressed(t *testing.T) {
 	}
 }
 
+type mockSendTool struct {
+	execCount *int
+}
+
+func (m mockSendTool) Name() string { return "fleet_send_message" }
+func (m mockSendTool) Description() string { return "test" }
+func (m mockSendTool) Parameters() map[string]any { return nil }
+func (m mockSendTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	*m.execCount++
+	return `{"id":"msg-1"}`, nil
+}
+
+func TestREPLEngineDuplicateToolCallDeduplication(t *testing.T) {
+	callCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp ChatCompletionResponse
+		if callCount == 1 {
+			// First completion returns 2 identical fleet_send_message calls in the same turn
+			resp = ChatCompletionResponse{
+				ID:    "resp-dup-tools",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatMessage{
+							Role: "assistant",
+							ToolCalls: []ToolCall{
+								{
+									ID:   "call-1",
+									Type: "function",
+									Function: ToolFunctionCall{
+										Name:      "fleet_send_message",
+										Arguments: `{"recipient":"bob","message":"test"}`,
+									},
+								},
+								{
+									ID:   "call-2",
+									Type: "function",
+									Function: ToolFunctionCall{
+										Name:      "fleet_send_message",
+										Arguments: `{"recipient":"bob","message":"test"}`,
+									},
+								},
+							},
+						},
+						FinishReason: "tool_calls",
+					},
+				},
+			}
+		} else {
+			resp = ChatCompletionResponse{
+				ID:    "resp-final",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatMessage{
+							Role:    "assistant",
+							Content: "Done.",
+						},
+						FinishReason: "stop",
+					},
+				},
+			}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	execCount := 0
+	_ = reg.Register(mockSendTool{execCount: &execCount})
+
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-01")
+
+	eng.AppendMessage(ChatMessage{Role: "user", Content: "Send a message."})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- eng.Start(ctx, bus, state)
+	}()
+
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if state.Read().Status == "idle" {
+			break
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errChan:
+		if err != nil && err != context.Canceled {
+			t.Fatalf("unexpected Start error: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("engine did not stop after cancel")
+	}
+
+	if execCount != 1 {
+		t.Errorf("expected fleet_send_message to be executed exactly once due to deduplication, got %d", execCount)
+	}
+}
+

@@ -34,10 +34,11 @@ func BuildSystemPrompt(agentID, role, workspaceDir, customInstructions string) s
 	sb.WriteString("Operational Guidelines:\n")
 	sb.WriteString("1. You have access to built-in tools (bash, read_file, write_file, edit_file) and MCP tools.\n")
 	sb.WriteString("2. All file system operations must remain strictly inside your workspace boundary.\n")
-	sb.WriteString("3. Use Beads (`bd`) for all task tracking and status updates where applicable.\n")
-	sb.WriteString("4. Act autonomously: discover repository context, implement changes, write tests, and verify results.\n")
-	sb.WriteString("5. Keep code changes concise, robust, well-formatted, and backed by automated tests.\n")
-	sb.WriteString("6. You must invoke tools directly using function calling (do not merely write tool commands as text). To communicate with peer agents, invoke the fleet_send_message tool (or bash with bp tell). To manage tasks, invoke Beads tools (bd_create, bd_update, bd_close).\n")
+	sb.WriteString("3. Use Beads (`bd`) for task tracking and status updates. Never close a task (`bd_close`) until tests have actually run and passed with real verification evidence.\n")
+	sb.WriteString("4. Act autonomously: discover repository context, implement changes, write tests, and verify results directly using your tools.\n")
+	sb.WriteString("5. When assigned to implement code or tests, immediately execute the implementation and verification tools (write_file, bash) in your workspace. Do NOT send empty acknowledgment messages saying what you plan to do; perform the work first and report the actual results.\n")
+	sb.WriteString("6. When delegating work to a peer agent via `fleet_send_message`, conclude your turn after sending the delegation. Do NOT attempt to verify or close tasks in the same turn before the peer has responded with results.\n")
+	sb.WriteString("7. Do not send repetitive duplicate messages or repeatedly poll in a loop. Deliver concise, substantive updates with real artifacts and outputs.\n")
 
 	if strings.TrimSpace(customInstructions) != "" {
 		sb.WriteString("\nAdditional Instructions:\n")
