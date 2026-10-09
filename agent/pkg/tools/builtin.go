@@ -257,7 +257,12 @@ func (t *WriteFileTool) Execute(_ context.Context, args map[string]any) (string,
 		return "", err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
+	parentDir := filepath.Dir(resolved)
+	if fi, statErr := os.Stat(parentDir); statErr == nil && !fi.IsDir() && fi.Size() == 0 {
+		_ = os.Remove(parentDir)
+	}
+
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create parent directories: %w", err)
 	}
 

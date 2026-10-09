@@ -528,7 +528,11 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			state.UnlockWorkspace()
 
 			if execErr != nil {
-				output = fmt.Sprintf("Error: %v", execErr)
+				if strings.TrimSpace(output) != "" {
+					output = fmt.Sprintf("Error: %v\nOutput: %s", execErr, strings.TrimSpace(output))
+				} else {
+					output = fmt.Sprintf("Error: %v", execErr)
+				}
 			} else if strings.TrimSpace(output) == "" {
 				output = "(success)"
 			}
