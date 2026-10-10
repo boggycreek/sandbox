@@ -113,16 +113,24 @@ func TestBPFullCoverage(t *testing.T) {
 	_ = os.MkdirAll(bpProfDir, 0700)
 	profFile := filepath.Join(bpProfDir, "myhost.env")
 	_ = os.WriteFile(profFile, []byte("BP_AGENT=myhost-agent\nBP_PASSWORD=secret\n"), 0600)
+	// Create bare .env file to verify it's skipped
+	_ = os.WriteFile(filepath.Join(bpProfDir, ".env"), []byte("IGNORE=true\n"), 0600)
 
 	code, out, _ = runCLI([]string{"--profile=myhost", "whoami"})
 	if code != 0 || !strings.Contains(out, "Agent ID:   myhost-agent") {
 		t.Errorf("--profile=myhost whoami failed: %s", out)
 	}
 
-	// profile list with profiles in dir
-	code, out, _ = runCLI([]string{"profile", "list"})
+	// whoami with trailing --profile flag
+	code, out, _ = runCLI([]string{"whoami", "--profile", "myhost"})
+	if code != 0 || !strings.Contains(out, "Agent ID:   myhost-agent") {
+		t.Errorf("whoami with trailing --profile failed: %s", out)
+	}
+
+	// profile list with profiles in dir (even when active profile is nonexistent)
+	code, out, _ = runCLI([]string{"--profile", "nonexistent", "profile", "list"})
 	if code != 0 || !strings.Contains(out, "myhost") {
-		t.Errorf("profile list with files failed: %s", out)
+		t.Errorf("profile list with nonexistent active profile failed: %s", out)
 	}
 
 	// Unknown command

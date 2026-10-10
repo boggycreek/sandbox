@@ -39,13 +39,14 @@ func RegisterValkeyACL(ctx context.Context, cfg *config.AgentConfig, paths confi
 	defer func() { _ = client.Close() }()
 
 	// Set Valkey ACL for agent
-	// Format: ACL SETUSER <name> on ><password> ~<name>:* %R~*:* &* +@all -@admin -@dangerous (+xadd ~*:inbox)
+	// Restrict stream reads to public broadcast streams, identity records, human broadcasts, and blobs
 	aclArgs := []string{
 		"SETUSER", cfg.Name, "on",
 		">" + cfg.Password,
 		fmt.Sprintf("~%s:*", cfg.Name),
 		fmt.Sprintf("~identity:%s", cfg.Name),
-		"%R~*:*", "&*", "+@all", "-@admin", "-@dangerous",
+		"%R~*:out", "%R~identity:*", "%R~human:*", "%R~*:blob:*",
+		"&*", "+@all", "-@admin", "-@dangerous",
 		"(+xadd ~*:inbox)",
 	}
 	if _, err := client.Exec(ctx, "ACL", aclArgs...); err != nil {

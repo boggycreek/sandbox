@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -66,11 +67,28 @@ func ResolveImage(input string) string {
 	return input
 }
 
+var (
+	validAgentName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,63}$`)
+	reservedNames  = map[string]bool{
+		"operator": true,
+		"human":    true,
+		"default":  true,
+		"admin":    true,
+		"system":   true,
+	}
+)
+
 // NewAgentConfig creates a newly initialized AgentConfig with random credentials
 func NewAgentConfig(name, imageInput, role string, modelOpts ...string) (*AgentConfig, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return nil, fmt.Errorf("agent name cannot be empty")
+	}
+	if !validAgentName.MatchString(name) {
+		return nil, fmt.Errorf("invalid agent name %q: must match ^[a-z0-9][a-z0-9_-]{1,63}$", name)
+	}
+	if reservedNames[name] {
+		return nil, fmt.Errorf("agent name %q is reserved", name)
 	}
 
 	if role == "" {
@@ -151,11 +169,16 @@ func SaveAgentConfig(cfg *AgentConfig, paths Paths) error {
 
 	// Write BP profile .env in StateDir/bp/profiles/<name>.env if directory is configured
 	if paths.BPProfilesDir != "" {
-		_ = os.MkdirAll(paths.BPProfilesDir, 0700)
+		if err := os.MkdirAll(paths.BPProfilesDir, 0700); err != nil {
+			return fmt.Errorf("failed creating backplane profiles directory: %w", err)
+		}
 		profilePath := filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name))
 		profileContent := fmt.Sprintf("BP_AGENT=%s\nBP_PASSWORD=%s\nBP_SIGNING_KEY=%s\n",
 			cfg.Name, cfg.Password, keyPath)
-		_ = os.WriteFile(profilePath, []byte(profileContent), 0600)
+		if err := os.WriteFile(profilePath, []byte(profileContent), 0600); err != nil {
+			return fmt.Errorf("failed writing backplane profile %s: %w", profilePath, err)
+		}
+		_ = os.Chmod(profilePath, 0600)
 	}
 
 	return nil

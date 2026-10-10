@@ -29,6 +29,7 @@ type ClientConfig struct {
 	Username       string
 	Password       string
 	AgentID        string
+	Mode           string
 	SigningKey     ed25519.PrivateKey
 	SigningKeyPEM  string
 	ConnectTimeout time.Duration
@@ -781,7 +782,15 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
-			envMap[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			k := strings.TrimSpace(parts[0])
+			v := strings.TrimSpace(parts[1])
+			if (strings.HasPrefix(v, "\"") && strings.HasSuffix(v, "\"")) ||
+				(strings.HasPrefix(v, "'") && strings.HasSuffix(v, "'")) {
+				if len(v) >= 2 {
+					v = v[1 : len(v)-1]
+				}
+			}
+			envMap[k] = v
 		}
 	}
 
@@ -789,16 +798,28 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 	// For named profiles (non-default), values defined in the profile take precedence over process env.
 	// For default profile, explicit process env overrides.
 	getVal := func(key string) string {
+		var val string
 		if profileName != "default" {
 			if v, ok := envMap[key]; ok && v != "" {
-				return v
+				val = v
+			} else {
+				val = os.Getenv(key)
 			}
-			return os.Getenv(key)
+		} else {
+			if v := os.Getenv(key); v != "" {
+				val = v
+			} else {
+				val = envMap[key]
+			}
 		}
-		if v := os.Getenv(key); v != "" {
-			return v
+		val = strings.TrimSpace(val)
+		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) ||
+			(strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
+			if len(val) >= 2 {
+				val = val[1 : len(val)-1]
+			}
 		}
-		return envMap[key]
+		return val
 	}
 
 	host := getVal("BP_HOST")
@@ -812,17 +833,18 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 		}
 	}
 
-	mode = strings.ToLower(getVal("BP_MODE"))
-	var username, password, agentID string
+	rawMode := strings.ToLower(getVal("BP_MODE"))
+	var username, password, agentID, resolvedMode string
 
 	isAgent := getVal("BP_AGENT") != "" || getVal("AGENT_NAME") != "" || getVal("BP_PASSWORD") != ""
-	if mode == "human" || (mode == "" && !isAgent && getVal("HUMAN_BACKPLANE_PASSWORD") != "") {
+	if rawMode == "human" || (rawMode == "" && !isAgent && getVal("HUMAN_BACKPLANE_PASSWORD") != "") {
 		username = getVal("HUMAN_NAME")
 		if username == "" {
 			username = "operator"
 		}
 		password = getVal("HUMAN_BACKPLANE_PASSWORD")
 		agentID = username
+		resolvedMode = "human"
 	} else {
 		agentID = getVal("BP_AGENT")
 		if agentID == "" {
@@ -833,15 +855,18 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 		if password == "" {
 			password = getVal("AGENT_PASSWORD")
 		}
+		resolvedMode = "agent"
 	}
 
 	signingKeyPEM := getVal("BP_SIGNING_KEY_PEM")
 	var signingKey ed25519.PrivateKey
 	if keyPath := getVal("BP_SIGNING_KEY"); keyPath != "" {
-		if priv, err := LoadPrivateKeyFromFile(keyPath); err == nil {
-			signingKey = priv
+		priv, err := LoadPrivateKeyFromFile(keyPath)
+		if err != nil {
+			return ClientConfig{}, fmt.Errorf("failed loading signing key from %s: %w", keyPath, err)
 		}
-	} else if agentID != "" && mode != "human" {
+		signingKey = priv
+	} else if agentID != "" {
 		xdgData := os.Getenv("XDG_DATA_HOME")
 		if xdgData == "" {
 			xdgData = filepath.Join(home, ".local", "share")
@@ -858,6 +883,7 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 		Username:      username,
 		Password:      password,
 		AgentID:       agentID,
+		Mode:          resolvedMode,
 		SigningKey:    signingKey,
 		SigningKeyPEM: signingKeyPEM,
 	}, nil
@@ -876,18 +902,19 @@ func loadClientDirectEnv() ClientConfig {
 		}
 	}
 
-	mode := strings.ToLower(os.Getenv("BP_MODE"))
-	var username, password string
+	rawMode := strings.ToLower(os.Getenv("BP_MODE"))
+	var username, password, resolvedMode string
 	var agentID string
 
 	isAgent := os.Getenv("BP_AGENT") != "" || os.Getenv("AGENT_NAME") != "" || os.Getenv("BP_PASSWORD") != ""
-	if mode == "human" || (mode == "" && !isAgent && os.Getenv("HUMAN_BACKPLANE_PASSWORD") != "") {
+	if rawMode == "human" || (rawMode == "" && !isAgent && os.Getenv("HUMAN_BACKPLANE_PASSWORD") != "") {
 		username = os.Getenv("HUMAN_NAME")
 		if username == "" {
 			username = "operator"
 		}
 		password = os.Getenv("HUMAN_BACKPLANE_PASSWORD")
 		agentID = username
+		resolvedMode = "human"
 	} else {
 		agentID = os.Getenv("BP_AGENT")
 		if agentID == "" {
@@ -898,6 +925,7 @@ func loadClientDirectEnv() ClientConfig {
 		if password == "" {
 			password = os.Getenv("AGENT_PASSWORD")
 		}
+		resolvedMode = "agent"
 	}
 
 	signingKeyPEM := os.Getenv("BP_SIGNING_KEY_PEM")
@@ -920,6 +948,7 @@ func loadClientDirectEnv() ClientConfig {
 		Username:      username,
 		Password:      password,
 		AgentID:       agentID,
+		Mode:          resolvedMode,
 		SigningKey:    signingKey,
 		SigningKeyPEM: signingKeyPEM,
 	}

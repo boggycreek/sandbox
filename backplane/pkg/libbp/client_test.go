@@ -533,22 +533,30 @@ func TestLoadClientFromEnv(t *testing.T) {
 	os.Unsetenv("BP_MODE")
 	os.Unsetenv("BP_AGENT")
 
-	// Test LoadClientWithProfile from file
+	// Test LoadClientWithProfile from file with quotes
 	os.Unsetenv("BP_PORT")
 	stateDir := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateDir)
 	profilesDir := filepath.Join(stateDir, "bp", "profiles")
 	_ = os.MkdirAll(profilesDir, 0700)
 	testProfilePath := filepath.Join(profilesDir, "testprof.env")
-	profileEnv := "BP_AGENT=profile-agent\nBP_PASSWORD=prof-pass\nBP_PORT=6399\n"
+	profileEnv := "BP_AGENT=\"profile-agent\"\nBP_PASSWORD='prof-pass'\nBP_PORT=\"6399\"\n"
 	_ = os.WriteFile(testProfilePath, []byte(profileEnv), 0600)
 
 	cfgProf, err := LoadClientWithProfile("testprof")
 	if err != nil {
 		t.Fatalf("LoadClientWithProfile failed: %v", err)
 	}
-	if cfgProf.AgentID != "profile-agent" || cfgProf.Password != "prof-pass" || cfgProf.Port != 6399 {
+	if cfgProf.AgentID != "profile-agent" || cfgProf.Password != "prof-pass" || cfgProf.Port != 6399 || cfgProf.Mode != "agent" {
 		t.Errorf("unexpected profile config: %+v", cfgProf)
+	}
+
+	// Quoted BP_SIGNING_KEY that does not exist should return error
+	testKeyFailPath := filepath.Join(profilesDir, "keyfail.env")
+	keyFailEnv := "BP_AGENT=agent-fail\nBP_SIGNING_KEY=\"/nonexistent/key.pem\"\n"
+	_ = os.WriteFile(testKeyFailPath, []byte(keyFailEnv), 0600)
+	if _, err := LoadClientWithProfile("keyfail"); err == nil {
+		t.Errorf("expected error for nonexistent BP_SIGNING_KEY in profile")
 	}
 
 	// Missing profile error

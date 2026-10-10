@@ -88,6 +88,21 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if !strings.Contains(stderr.String(), "sndbx error:") {
 		t.Errorf("expected sndbx error, got: %s", stderr.String())
 	}
+
+	// 7. Host agent (cannot use container IDE forwarding)
+	hostCfg, _ := config.NewAgentConfig("host-open-bot", "base", "developer")
+	hostCfg.Runtime = "host"
+	hostCfg.HostOnly = true
+	_ = config.SaveAgentConfig(hostCfg, paths)
+
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "host-open-bot"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 for host agent open, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "runs directly on host, no container SSH IDE forwarding") {
+		t.Errorf("expected host agent IDE error, got: %s", stderr.String())
+	}
 }
 
 func TestAgentOpenExecution(t *testing.T) {

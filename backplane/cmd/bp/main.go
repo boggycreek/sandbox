@@ -70,7 +70,7 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	loadDefaultEnv()
 
-	// Parse optional leading --profile flag before subcommand dispatch
+	// Parse optional --profile flag from any argument position before subcommand dispatch
 	var profileName string
 	var remainingArgs []string
 	for i := 0; i < len(args); i++ {
@@ -87,8 +87,7 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		} else if strings.HasPrefix(arg, "-profile=") {
 			profileName = strings.TrimPrefix(arg, "-profile=")
 		} else {
-			remainingArgs = append(remainingArgs, args[i:]...)
-			break
+			remainingArgs = append(remainingArgs, arg)
 		}
 	}
 
@@ -111,6 +110,11 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	// Dispatch profile management command without requiring a valid connection profile
+	if cmd == "profile" {
+		return handleProfile(cmdArgs, stdout, stderr)
+	}
+
 	// Resolve configuration with profile
 	if profileName == "" {
 		profileName = os.Getenv("BP_PROFILE")
@@ -131,9 +135,6 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch cmd {
 	case "whoami":
 		return handleWhoami(cfg, stdout)
-
-	case "profile":
-		return handleProfile(cmdArgs, stdout, stderr)
 
 	case "say":
 		return handleSay(ctx, cfg, cmdArgs, stdin, stdout, stderr)
@@ -181,9 +182,12 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func handleWhoami(cfg libbp.ClientConfig, stdout io.Writer) int {
-	mode := "agent"
-	if strings.ToLower(os.Getenv("BP_MODE")) == "human" || cfg.AgentID == os.Getenv("HUMAN_NAME") || cfg.AgentID == "operator" {
-		mode = "human"
+	mode := cfg.Mode
+	if mode == "" {
+		mode = "agent"
+		if cfg.AgentID == "operator" {
+			mode = "human"
+		}
 	}
 	pubKeyB64 := "none"
 	if cfg.SigningKey != nil {
@@ -227,6 +231,9 @@ func handleProfile(args []string, stdout, stderr io.Writer) int {
 		for _, e := range entries {
 			if !e.IsDir() && strings.HasSuffix(e.Name(), ".env") {
 				name := strings.TrimSuffix(e.Name(), ".env")
+				if name == "" {
+					continue
+				}
 				if name == "default" {
 					hasDefault = true
 				}

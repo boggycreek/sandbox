@@ -209,6 +209,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		fmt.Fprintf(stdout, "  Runtime:    host (first-class host agent)\n")
 		fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
 		fmt.Fprintf(stdout, "  BP Profile: %s\n", filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name)))
+		fmt.Fprintln(stdout, "\nWARNING: Host agent runs directly on the host without container isolation. Full access to host filesystem and credentials is permitted.")
 	} else {
 		fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
 		fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
@@ -279,6 +280,11 @@ func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, std
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (no container or tmux session)\n", cfg.Name)
 		return 1
 	}
 
@@ -366,6 +372,11 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
+		return 1
+	}
+
 	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 	if err != nil || port <= 0 {
 		bpCfg := libbp.LoadClientFromEnv()
@@ -445,6 +456,11 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host, no SSH connection required)\n", cfg.Name)
 		return 1
 	}
 
@@ -549,6 +565,9 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	if args[0] == "--all" {
 		configs, _ := config.ListAgentConfigs(paths)
 		for _, c := range configs {
+			if c.IsHost() {
+				continue
+			}
 			lifecycle.WarnOnErr(stderr, runtime.StopAgentContainer(ctx, c.ContainerName), "stop container "+c.ContainerName)
 			fmt.Fprintf(stdout, "Stopped %s\n", c.Name)
 		}
@@ -561,6 +580,11 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
 		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stdout, "Agent %q is a host agent (no container to stop).\n", cfg.Name)
+		return 0
 	}
 
 	if err := runtime.StopAgentContainer(ctx, cfg.ContainerName); err != nil {
@@ -581,6 +605,11 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (no container or home volume to clean; use 'sndbx agent retire %s' to deprovision)\n", cfg.Name, cfg.Name)
 		return 1
 	}
 
@@ -803,6 +832,11 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 		return 1
 	}
 
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host filesystem; use host 'git clone' directly)\n", cfg.Name)
+		return 1
+	}
+
 	// Verify container is running or start it
 	checkRunning := execCommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
 	out, err := checkRunning.Output()
@@ -850,6 +884,11 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host filesystem; use host 'git remote' directly)\n", cfg.Name)
 		return 1
 	}
 
