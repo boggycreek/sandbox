@@ -48,7 +48,9 @@ if [ ! -f "/home/agent/.git-credentials" ]; then
   PASS="${AGENT_PASSWORD:-${BP_PASSWORD:-${VALKEY_PASSWORD:-}}}"
   if [ -n "${PASS}" ]; then
     git config --global credential.helper store
-    echo "http://${AGENT_NAME:-agent}:${PASS}@gitea:3000" > /home/agent/.git-credentials
+    ENCODED_NAME=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${AGENT_NAME:-agent}" 2>/dev/null || echo "${AGENT_NAME:-agent}")
+    ENCODED_PASS=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${PASS}" 2>/dev/null || echo "${PASS}")
+    echo "http://${ENCODED_NAME}:${ENCODED_PASS}@gitea:3000" > /home/agent/.git-credentials
     chmod 600 /home/agent/.git-credentials
   fi
 fi

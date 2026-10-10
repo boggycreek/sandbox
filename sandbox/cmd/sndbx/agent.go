@@ -771,7 +771,16 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 		}
 	}
 
-	cloneArgs := []string{"exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "clone", repoURL}
+	// Validate targetDir if provided
+	if targetDir != "" {
+		cleaned := filepath.Clean(filepath.Join("/home/agent/workspace", targetDir))
+		if !strings.HasPrefix(cleaned, "/home/agent/workspace") {
+			fmt.Fprintln(stderr, "sndbx error: target directory must remain within /home/agent/workspace")
+			return 1
+		}
+	}
+
+	cloneArgs := []string{"exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "clone", "--", repoURL}
 	if targetDir != "" {
 		cloneArgs = append(cloneArgs, targetDir)
 	}
@@ -801,6 +810,17 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		return 1
 	}
 
+	// Verify container is running or start it
+	checkRunning := execCommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
+	out, err := checkRunning.Output()
+	if err != nil || strings.TrimSpace(string(out)) != "true" {
+		bpCfg := libbp.LoadClientFromEnv()
+		if startErr := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); startErr != nil {
+			fmt.Fprintf(stderr, "sndbx error starting agent container %s: %v\n", cfg.ContainerName, startErr)
+			return 1
+		}
+	}
+
 	subCmd := "list"
 	targetDir := ""
 	var cleanArgs []string
@@ -822,7 +842,12 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	// Auto-detect git repo in workspace or immediate subdirectories if not specified
 	workDir := "/home/agent/workspace"
 	if targetDir != "" {
-		workDir = filepath.Join("/home/agent/workspace", targetDir)
+		cleaned := filepath.Clean(filepath.Join("/home/agent/workspace", targetDir))
+		if !strings.HasPrefix(cleaned, "/home/agent/workspace") {
+			fmt.Fprintln(stderr, "sndbx error: target directory must remain within /home/agent/workspace")
+			return 1
+		}
+		workDir = cleaned
 	} else {
 		// Test if /home/agent/workspace is a git repo
 		checkGit := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "rev-parse", "--is-inside-work-tree")
@@ -842,8 +867,14 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 
 	var gitArgs []string
 	switch subCmd {
-	case "list", "get":
+	case "list":
 		gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "-v"}
+	case "get":
+		remoteName := "origin"
+		if len(cleanArgs) >= 2 {
+			remoteName = strings.TrimSpace(cleanArgs[1])
+		}
+		gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "get-url", "--", remoteName}
 	case "set":
 		if len(cleanArgs) < 3 {
 			fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> set <remote-name> <url> [--dir <dir>]")
@@ -852,9 +883,9 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		remoteName := strings.TrimSpace(cleanArgs[1])
 		remoteURL := strings.TrimSpace(cleanArgs[2])
 		// Try set-url first, if that fails, add
-		setURLCmd := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "set-url", remoteName, remoteURL)
+		setURLCmd := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "set-url", "--", remoteName, remoteURL)
 		if err := setURLCmd.Run(); err != nil {
-			gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "add", remoteName, remoteURL}
+			gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "add", "--", remoteName, remoteURL}
 		} else {
 			fmt.Fprintf(stdout, "Updated remote %q to %s (in %s)\n", remoteName, remoteURL, workDir)
 			return 0

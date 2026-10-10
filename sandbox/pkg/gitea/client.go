@@ -230,7 +230,7 @@ func (c *Client) AddOrgMember(ctx context.Context, orgName, username string) err
 	}
 
 	if statusCode == http.StatusMethodNotAllowed {
-		// Gitea manages org members through teams. Resolve teams and add to Owners or primary team.
+		// Gitea manages org members through teams. Resolve teams and add to an unprivileged team (Contributors, Agents, or first non-owners team).
 		var teams []struct {
 			ID   int64  `json:"id"`
 			Name string `json:"name"`
@@ -241,12 +241,25 @@ func (c *Client) AddOrgMember(ctx context.Context, orgName, username string) err
 		}
 		if teamsStatus == http.StatusOK {
 			if err := json.Unmarshal(teamsBody, &teams); err == nil && len(teams) > 0 {
-				targetTeamID := teams[0].ID
+				var targetTeamID int64
+				// Prioritize explicitly unprivileged teams
 				for _, t := range teams {
-					if strings.EqualFold(t.Name, "owners") {
+					if strings.EqualFold(t.Name, "contributors") || strings.EqualFold(t.Name, "agents") || strings.EqualFold(t.Name, "members") {
 						targetTeamID = t.ID
 						break
 					}
+				}
+				// If no named non-owner team found, pick the first non-owners team
+				if targetTeamID == 0 {
+					for _, t := range teams {
+						if !strings.EqualFold(t.Name, "owners") {
+							targetTeamID = t.ID
+							break
+						}
+					}
+				}
+				if targetTeamID == 0 {
+					return fmt.Errorf("cannot add %s to org %s: only administrative 'Owners' team exists", username, orgName)
 				}
 				teamEndpoint := fmt.Sprintf("/teams/%d/members/%s", targetTeamID, username)
 				teamStatus, teamBody, teamErr := c.doRequest(ctx, http.MethodPut, teamEndpoint, nil)

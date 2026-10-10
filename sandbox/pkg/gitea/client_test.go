@@ -98,7 +98,7 @@ func TestGiteaClientSuite(t *testing.T) {
 
 		case r.Method == http.MethodGet && path == "/api/v1/orgs/method-not-allowed-org/teams":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[{"id":99,"name":"Owners"}]`))
+			_, _ = w.Write([]byte(`[{"id":98,"name":"Owners"},{"id":99,"name":"Members"}]`))
 
 		case r.Method == http.MethodPut && path == "/api/v1/teams/99/members/test-agent":
 			w.WriteHeader(http.StatusNoContent)
@@ -108,7 +108,7 @@ func TestGiteaClientSuite(t *testing.T) {
 
 		case r.Method == http.MethodGet && path == "/api/v1/orgs/team-fail-org/teams":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[{"id":101,"name":"Owners"}]`))
+			_, _ = w.Write([]byte(`[{"id":101,"name":"Members"}]`))
 
 		case r.Method == http.MethodPut && path == "/api/v1/teams/101/members/test-agent":
 			w.WriteHeader(http.StatusInternalServerError)

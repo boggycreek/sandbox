@@ -309,7 +309,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 
 	humanName := os.Getenv("HUMAN_NAME")
 	if humanName == "" {
-		humanName = "brian"
+		humanName = "operator"
 	}
 	args = append(args, "-e", fmt.Sprintf("HUMAN_NAME=%s", humanName))
 

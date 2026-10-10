@@ -414,6 +414,19 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// Block on Valkey streams with intervalSecs
 		if err := d.Tick(ctx, intervalSecs); err != nil {
 			fmt.Fprintf(d.stderr, "[bpd] Error processing tick: %v\n", err)
+			// Apply backoff sleep on error to prevent busy spinning if server is unreachable
+			backoff := time.Duration(1) * time.Second
+			if intervalSecs > 1 {
+				backoff = time.Duration(intervalSecs) * time.Second
+			}
+			if sleepErr := d.sleeper(ctx, backoff); sleepErr != nil {
+				if errors.Is(sleepErr, context.Canceled) {
+					fmt.Fprintln(d.stdout, "[bpd] Stopping daemon (context canceled)")
+					return nil
+				}
+				return sleepErr
+			}
+			continue
 		}
 
 		// If attach lock file exists, sleep until next check

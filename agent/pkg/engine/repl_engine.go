@@ -93,7 +93,7 @@ func (e *REPLEngine) getHumanName() string {
 	if e.humanName != "" {
 		return e.humanName
 	}
-	return "brian"
+	return "operator"
 }
 
 func (e *REPLEngine) setActiveSender(s string) {
@@ -397,6 +397,7 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 	e.mu.RUnlock()
 
 	didSendExternalMessage := false
+	executedToolCalls := make(map[string]string)
 
 	for iter := 0; iter < maxIterations; iter++ {
 		if ctx.Err() != nil {
@@ -497,7 +498,6 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 		}
 
 		// Execute tool calls sequentially
-		executedToolCalls := make(map[string]string)
 		for _, toolCall := range assistantMsg.ToolCalls {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -520,7 +520,16 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			if toolName == "fleet_send_message" || toolName == "fleet_broadcast" {
 				didSendExternalMessage = true
 			} else if toolName == "bash" {
-				if strings.Contains(toolCall.Function.Arguments, "bp tell") || strings.Contains(toolCall.Function.Arguments, "bp say") || strings.Contains(toolCall.Function.Arguments, "bp reply") {
+				var bashArgs struct {
+					Command string `json:"command"`
+				}
+				cmdToInspect := toolCall.Function.Arguments
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &bashArgs); err == nil && bashArgs.Command != "" {
+					cmdToInspect = bashArgs.Command
+				}
+				trimmedCmd := strings.TrimSpace(cmdToInspect)
+				if strings.HasPrefix(trimmedCmd, "bp tell") || strings.HasPrefix(trimmedCmd, "bp say") || strings.HasPrefix(trimmedCmd, "bp reply") ||
+					strings.HasPrefix(trimmedCmd, "/usr/local/bin/bp tell") || strings.HasPrefix(trimmedCmd, "/usr/local/bin/bp say") || strings.HasPrefix(trimmedCmd, "/usr/local/bin/bp reply") {
 					didSendExternalMessage = true
 				}
 			}
@@ -852,11 +861,34 @@ func isKnownOrLikelyTool(name string) bool {
 
 // normalizeJSONBackticks converts raw multi-line strings enclosed in backticks (e.g. `package main...`)
 // into valid escaped JSON double-quoted strings so json.Unmarshal can succeed.
+// If the backtick is inside an existing double-quoted JSON string value, it is preserved.
 func normalizeJSONBackticks(s string) string {
 	var sb strings.Builder
 	inBacktick := false
+	inDoubleQuote := false
+	isEscaped := false
+
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
+
+		if inDoubleQuote {
+			sb.WriteByte(ch)
+			if isEscaped {
+				isEscaped = false
+			} else if ch == '\\' {
+				isEscaped = true
+			} else if ch == '"' {
+				inDoubleQuote = false
+			}
+			continue
+		}
+
+		if ch == '"' && !inBacktick {
+			inDoubleQuote = true
+			sb.WriteByte(ch)
+			continue
+		}
+
 		if ch == '`' {
 			if !inBacktick {
 				inBacktick = true
@@ -867,6 +899,7 @@ func normalizeJSONBackticks(s string) string {
 			}
 			continue
 		}
+
 		if inBacktick {
 			switch ch {
 			case '\\':

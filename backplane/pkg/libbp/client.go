@@ -413,12 +413,18 @@ func (c *Client) Peers(ctx context.Context) ([]*Peer, error) {
 	seen := make(map[string]bool)
 	var agentIDs []string
 
-	// Scan for identity:* keys
-	val, err := c.Exec(ctx, "SCAN", "0", "MATCH", "identity:*", "COUNT", "100")
-	if err != nil {
-		return nil, err
-	}
-	if arr, err := val.AsArray(); err == nil && len(arr) >= 2 {
+	// Scan for identity:* keys across all pages
+	cursor := "0"
+	for {
+		val, err := c.Exec(ctx, "SCAN", cursor, "MATCH", "identity:*", "COUNT", "100")
+		if err != nil {
+			return nil, err
+		}
+		arr, err := val.AsArray()
+		if err != nil || len(arr) < 2 {
+			break
+		}
+		cursor = arr[0].String()
 		if keysArray, err := arr[1].AsArray(); err == nil {
 			for _, k := range keysArray {
 				agentID := strings.TrimPrefix(k.String(), "identity:")
@@ -428,24 +434,37 @@ func (c *Client) Peers(ctx context.Context) ([]*Peer, error) {
 				}
 			}
 		}
+		if cursor == "0" || cursor == "" {
+			break
+		}
 	}
 
-	// Scan for legacy *:out keys
-	valOut, err := c.Exec(ctx, "SCAN", "0", "MATCH", "*:out", "COUNT", "100")
-	if err == nil {
-		if arr, err := valOut.AsArray(); err == nil && len(arr) >= 2 {
-			if keysArray, err := arr[1].AsArray(); err == nil {
-				for _, k := range keysArray {
-					keyStr := k.String()
-					if strings.HasSuffix(keyStr, ":out") {
-						agentID := strings.TrimSuffix(keyStr, ":out")
-						if agentID != "" && !seen[agentID] {
-							seen[agentID] = true
-							agentIDs = append(agentIDs, agentID)
-						}
+	// Scan for legacy *:out keys across all pages
+	cursor = "0"
+	for {
+		valOut, err := c.Exec(ctx, "SCAN", cursor, "MATCH", "*:out", "COUNT", "100")
+		if err != nil {
+			break
+		}
+		arr, err := valOut.AsArray()
+		if err != nil || len(arr) < 2 {
+			break
+		}
+		cursor = arr[0].String()
+		if keysArray, err := arr[1].AsArray(); err == nil {
+			for _, k := range keysArray {
+				keyStr := k.String()
+				if strings.HasSuffix(keyStr, ":out") {
+					agentID := strings.TrimSuffix(keyStr, ":out")
+					if agentID != "" && !seen[agentID] {
+						seen[agentID] = true
+						agentIDs = append(agentIDs, agentID)
 					}
 				}
 			}
+		}
+		if cursor == "0" || cursor == "" {
+			break
 		}
 	}
 
