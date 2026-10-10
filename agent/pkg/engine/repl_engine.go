@@ -561,11 +561,12 @@ func (e *REPLEngine) executeTurn(ctx context.Context, bus *runtime.EventBus, sta
 			fmt.Printf("[repl] Iteration %d: tool %s output=%s\n", iter+1, toolName, TruncateToolOutput(strings.TrimSpace(output), 120))
 
 			executedToolCalls[toolKey] = output
+			truncatedOutput := TruncateToolOutput(output, MaxToolOutputLength)
 			e.AppendMessage(ChatMessage{
 				Role:       "tool",
 				ToolCallID: toolCall.ID,
 				Name:       toolName,
-				Content:    output,
+				Content:    truncatedOutput,
 			})
 		}
 	}

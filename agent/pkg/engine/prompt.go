@@ -19,7 +19,7 @@ const (
 	DefaultMaxTurns = 40
 
 	// MaxToolOutputLength is the maximum character length for a single tool output in context.
-	MaxToolOutputLength = 8000
+	MaxToolOutputLength = 4000
 )
 
 // BuildSystemPrompt constructs the foundational system instruction prompt for the agent.
