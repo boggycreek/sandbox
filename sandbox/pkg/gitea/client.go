@@ -212,7 +212,7 @@ func (c *Client) EnsureOrg(ctx context.Context, orgName string) error {
 	return nil
 }
 
-// AddOrgMember adds a user to an organization
+// AddOrgMember adds a user to an organization, falling back to team membership if direct org PUT returns 405.
 func (c *Client) AddOrgMember(ctx context.Context, orgName, username string) error {
 	orgName = strings.TrimSpace(orgName)
 	username = strings.TrimSpace(username)
@@ -225,11 +225,56 @@ func (c *Client) AddOrgMember(ctx context.Context, orgName, username string) err
 	if err != nil {
 		return err
 	}
-	if statusCode != http.StatusNoContent && statusCode != http.StatusOK && statusCode != http.StatusCreated {
-		return fmt.Errorf("failed adding member %s to org %s (status %d): %s", username, orgName, statusCode, string(respBody))
+	if statusCode == http.StatusNoContent || statusCode == http.StatusOK || statusCode == http.StatusCreated {
+		return nil
 	}
 
-	return nil
+	if statusCode == http.StatusMethodNotAllowed {
+		// Gitea manages org members through teams. Resolve teams and add to an unprivileged team (Contributors, Agents, or first non-owners team).
+		var teams []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		}
+		teamsStatus, teamsBody, teamsErr := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/orgs/%s/teams", orgName), nil)
+		if teamsErr != nil {
+			return teamsErr
+		}
+		if teamsStatus == http.StatusOK {
+			if err := json.Unmarshal(teamsBody, &teams); err == nil && len(teams) > 0 {
+				var targetTeamID int64
+				// Prioritize explicitly unprivileged teams
+				for _, t := range teams {
+					if strings.EqualFold(t.Name, "contributors") || strings.EqualFold(t.Name, "agents") || strings.EqualFold(t.Name, "members") {
+						targetTeamID = t.ID
+						break
+					}
+				}
+				// If no named non-owner team found, pick the first non-owners team
+				if targetTeamID == 0 {
+					for _, t := range teams {
+						if !strings.EqualFold(t.Name, "owners") {
+							targetTeamID = t.ID
+							break
+						}
+					}
+				}
+				if targetTeamID == 0 {
+					return fmt.Errorf("cannot add %s to org %s: only administrative 'Owners' team exists", username, orgName)
+				}
+				teamEndpoint := fmt.Sprintf("/teams/%d/members/%s", targetTeamID, username)
+				teamStatus, teamBody, teamErr := c.doRequest(ctx, http.MethodPut, teamEndpoint, nil)
+				if teamErr != nil {
+					return teamErr
+				}
+				if teamStatus == http.StatusNoContent || teamStatus == http.StatusOK || teamStatus == http.StatusCreated {
+					return nil
+				}
+				return fmt.Errorf("failed adding member %s to team %d (status %d): %s", username, targetTeamID, teamStatus, string(teamBody))
+			}
+		}
+	}
+
+	return fmt.Errorf("failed adding member %s to org %s (status %d): %s", username, orgName, statusCode, string(respBody))
 }
 
 // EnsureRepo creates a repository under an organization or user namespace if missing

@@ -44,6 +44,7 @@ func DeprovisionValkeyUser(ctx context.Context, agentName string) error {
 		fmt.Sprintf("%s:inbox", agentName),
 		fmt.Sprintf("%s:out", agentName),
 		fmt.Sprintf("%s:seq", agentName),
+		fmt.Sprintf("%s:cursor", agentName),
 		fmt.Sprintf("%s:finger", agentName),
 		fmt.Sprintf("%s:status", agentName),
 	)

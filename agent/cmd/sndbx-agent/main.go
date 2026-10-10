@@ -114,8 +114,23 @@ func LoadConfig(args []string) (*Config, error) {
 	modelURL := fs.String("model-url", getEnvOr("OPENAI_BASE_URL", "http://llm-gateway:11434/v1"), "OpenAI-compatible LLM endpoint URL")
 	modelKey := fs.String("model-key", getEnvOr("OPENAI_API_KEY", ""), "OpenAI API authorization key")
 	modelName := fs.String("model-name", getEnvOr("OPENAI_MODEL", "qwen2.5-coder:7b"), "Model name identifier")
-	valkeyAddr := fs.String("valkey-addr", getEnvOr("VALKEY_ADDR", ""), "Valkey server address (host:port)")
-	valkeyPass := fs.String("valkey-password", getEnvOr("VALKEY_PASSWORD", ""), "Valkey authentication password")
+
+	defaultValkeyAddr := os.Getenv("VALKEY_ADDR")
+	if defaultValkeyAddr == "" && os.Getenv("BP_HOST") != "" {
+		bpPort := os.Getenv("BP_PORT")
+		if bpPort == "" {
+			bpPort = "6379"
+		}
+		defaultValkeyAddr = net.JoinHostPort(os.Getenv("BP_HOST"), bpPort)
+	}
+
+	defaultValkeyPass := os.Getenv("VALKEY_PASSWORD")
+	if defaultValkeyPass == "" {
+		defaultValkeyPass = os.Getenv("BP_PASSWORD")
+	}
+
+	valkeyAddr := fs.String("valkey-addr", defaultValkeyAddr, "Valkey server address (host:port)")
+	valkeyPass := fs.String("valkey-password", defaultValkeyPass, "Valkey authentication password")
 	mcpBins := fs.String("mcp-binaries", getEnvOr("MCP_BINARIES", ""), "Comma-separated paths to MCP executable binaries")
 	logFmt := fs.String("log-format", getEnvOr("LOG_FORMAT", "ndjson"), "Log format (ndjson or text)")
 
@@ -134,6 +149,19 @@ func LoadConfig(args []string) (*Config, error) {
 			trimmed := strings.TrimSpace(b)
 			if trimmed != "" {
 				mcpList = append(mcpList, trimmed)
+			}
+		}
+	} else {
+		// Auto-discover standard in-container MCP binaries if present
+		standardBins := []string{
+			"/usr/local/bin/beads-mcp",
+			"/usr/local/bin/bp-mcp",
+			"/usr/local/bin/gitea-mcp",
+			"/usr/local/bin/sonar-mcp",
+		}
+		for _, binPath := range standardBins {
+			if info, err := os.Stat(binPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+				mcpList = append(mcpList, binPath)
 			}
 		}
 	}
@@ -267,6 +295,8 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 	if cfg.CustomInstructions != "" {
 		replEngine.SetCustomInstructions(cfg.CustomInstructions)
 	}
+	humanName := getEnvOr("HUMAN_NAME", "operator")
+	replEngine.SetHumanName(humanName)
 	_ = supervisor.Register(replEngine)
 
 	// Initialize Valkey Gateway if address is configured
@@ -285,6 +315,7 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 			Host:     host,
 			Port:     port,
 			AgentID:  cfg.AgentName,
+			Username: cfg.AgentName,
 			Password: cfg.ValkeyPassword,
 		})
 		dialCancel()
@@ -296,6 +327,8 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 			gw := gateway.NewValkeyGateway(cfg.AgentName, bpClient, verifier, 1)
 			gw.SetCancelFunc(cancel)
 			_ = supervisor.Register(gw)
+			replEngine.SetResponder(&backplaneResponder{client: bpClient})
+			replEngine.SetAgentID(cfg.AgentName)
 			logger.Log("INFO", "Configured Valkey gateway subsystem with verified signatures", map[string]any{"addr": cfg.ValkeyAddr})
 		}
 	}
@@ -311,6 +344,19 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 
 	logger.Log("INFO", "sndbx-agent runtime shut down cleanly", nil)
 	return nil
+}
+
+// backplaneResponder delivers cognitive turn responses directly over the backplane.
+type backplaneResponder struct {
+	client *libbp.Client
+}
+
+func (r *backplaneResponder) SendReply(ctx context.Context, recipient, content string) error {
+	if r == nil || r.client == nil || strings.TrimSpace(recipient) == "" || strings.TrimSpace(content) == "" {
+		return nil
+	}
+	_, err := r.client.Tell(ctx, recipient, content)
+	return err
 }
 
 func runMain(ctx context.Context, args []string, out io.Writer) error {

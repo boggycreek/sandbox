@@ -315,3 +315,18 @@ func TestMainInvocation(t *testing.T) {
 		t.Errorf("expected osExit(1) called, got called=%v code=%d", exitCalled, exitCode)
 	}
 }
+
+func TestBackplaneResponder(t *testing.T) {
+	var nilResp *backplaneResponder
+	if err := nilResp.SendReply(context.Background(), "alice", "hello"); err != nil {
+		t.Errorf("expected nil error on nil responder, got: %v", err)
+	}
+	resp := &backplaneResponder{client: nil}
+	if err := resp.SendReply(context.Background(), "", "hello"); err != nil {
+		t.Errorf("expected nil error on empty recipient, got: %v", err)
+	}
+	if err := resp.SendReply(context.Background(), "alice", ""); err != nil {
+		t.Errorf("expected nil error on empty content, got: %v", err)
+	}
+}
+

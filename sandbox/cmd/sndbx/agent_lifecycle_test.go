@@ -350,3 +350,98 @@ func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		Body:       io.NopCloser(strings.NewReader("404 Not Found")),
 	}, nil
 }
+
+func TestAgentCloneAndRemote(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	paths := config.GetPaths()
+	if err := paths.EnsureDirectories(); err != nil {
+		t.Fatalf("failed to create paths: %v", err)
+	}
+
+	origExec := execCommandContext
+	defer func() { execCommandContext = origExec }()
+
+	// 1. Error when arguments are missing
+	code, _, errOut := runSndbx([]string{"agent", "clone"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent clone") {
+		t.Errorf("expected clone usage error, got code %d: %s", code, errOut)
+	}
+
+	code, _, errOut = runSndbx([]string{"agent", "remote"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent remote") {
+		t.Errorf("expected remote usage error, got code %d: %s", code, errOut)
+	}
+
+	// 2. Error when agent does not exist
+	code, _, errOut = runSndbx([]string{"agent", "clone", "nonexistent", "https://example.com/repo.git"})
+	if code != 1 || !strings.Contains(errOut, "sndbx error") {
+		t.Errorf("expected error on nonexistent agent clone, got code %d: %s", code, errOut)
+	}
+
+	code, _, errOut = runSndbx([]string{"agent", "remote", "nonexistent"})
+	if code != 1 || !strings.Contains(errOut, "sndbx error") {
+		t.Errorf("expected error on nonexistent agent remote, got code %d: %s", code, errOut)
+	}
+
+	// Create valid agent config
+	cfg, err := config.NewAgentConfig("test-git-agent", "base", "developer")
+	if err != nil {
+		t.Fatalf("failed creating agent config: %v", err)
+	}
+	if err := config.SaveAgentConfig(cfg, paths); err != nil {
+		t.Fatalf("failed saving agent config: %v", err)
+	}
+
+	// Mock commands
+	var executedCommands [][]string
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		full := append([]string{name}, args...)
+		executedCommands = append(executedCommands, full)
+		// Container inspection: report running
+		if len(args) >= 4 && args[0] == "container" && args[1] == "inspect" {
+			return exec.Command("echo", "true")
+		}
+		return exec.Command("true")
+	}
+
+	// 3. Successful clone
+	code, out, errOut := runSndbx([]string{"agent", "clone", "test-git-agent", "http://gitea:3000/fleet/tools.git", "tools"})
+	if code != 0 {
+		t.Errorf("expected clone to succeed, got code %d, errOut: %s", code, errOut)
+	}
+	if !strings.Contains(out, "successfully cloned") {
+		t.Errorf("expected success message in clone output, got: %s", out)
+	}
+
+	// 4. Remote list / get
+	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "list"})
+	if code != 0 {
+		t.Errorf("expected remote list to succeed, got code %d: %s", code, errOut)
+	}
+
+	// 5. Remote set missing args
+	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "set", "origin"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent remote") {
+		t.Errorf("expected remote set usage error, got code %d: %s", code, errOut)
+	}
+
+	// 6. Remote set success
+	code, out, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "set", "origin", "http://gitea:3000/fleet/tools.git"})
+	if code != 0 {
+		t.Errorf("expected remote set to succeed, got code %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "Updated remote") {
+		t.Errorf("expected Updated remote in output, got: %s", out)
+	}
+
+	// 7. Remote unknown subcommand
+	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "invalid-sub"})
+	if code != 1 || !strings.Contains(errOut, "unknown subcommand") {
+		t.Errorf("expected unknown subcommand error, got code %d: %s", code, errOut)
+	}
+}

@@ -93,6 +93,27 @@ func TestGiteaClientSuite(t *testing.T) {
 		case r.Method == http.MethodPut && path == "/api/v1/orgs/fleet/members/test-agent":
 			w.WriteHeader(http.StatusNoContent)
 
+		case r.Method == http.MethodPut && path == "/api/v1/orgs/method-not-allowed-org/members/test-agent":
+			w.WriteHeader(http.StatusMethodNotAllowed)
+
+		case r.Method == http.MethodGet && path == "/api/v1/orgs/method-not-allowed-org/teams":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[{"id":98,"name":"Owners"},{"id":99,"name":"Members"}]`))
+
+		case r.Method == http.MethodPut && path == "/api/v1/teams/99/members/test-agent":
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodPut && path == "/api/v1/orgs/team-fail-org/members/test-agent":
+			w.WriteHeader(http.StatusMethodNotAllowed)
+
+		case r.Method == http.MethodGet && path == "/api/v1/orgs/team-fail-org/teams":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[{"id":101,"name":"Members"}]`))
+
+		case r.Method == http.MethodPut && path == "/api/v1/teams/101/members/test-agent":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"team error"}`))
+
 		case r.Method == http.MethodPut && path == "/api/v1/orgs/fail-org/members/test-agent":
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"message":"org not found"}`))
@@ -268,6 +289,12 @@ func TestGiteaClientSuite(t *testing.T) {
 	// 4. AddOrgMember
 	if err := client.AddOrgMember(ctx, "fleet", "test-agent"); err != nil {
 		t.Errorf("AddOrgMember failed: %v", err)
+	}
+	if err := client.AddOrgMember(ctx, "method-not-allowed-org", "test-agent"); err != nil {
+		t.Errorf("AddOrgMember with 405 team fallback failed: %v", err)
+	}
+	if err := client.AddOrgMember(ctx, "team-fail-org", "test-agent"); err == nil {
+		t.Errorf("expected error on team-fail-org member add")
 	}
 	if err := client.AddOrgMember(ctx, "fail-org", "test-agent"); err == nil {
 		t.Errorf("expected error on fail-org member add")

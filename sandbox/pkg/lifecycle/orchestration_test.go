@@ -111,8 +111,8 @@ func TestProvisionAgentAndDeprovisionAgentHappyPath(t *testing.T) {
 	if provReport.HasErrors() {
 		t.Errorf("expected no errors in ProvisionAgent: %s", FormatReport(provReport))
 	}
-	if provReport.SuccessCount != 3 {
-		t.Errorf("expected 3 successful steps in ProvisionAgent, got %d", provReport.SuccessCount)
+	if provReport.SuccessCount != 5 {
+		t.Errorf("expected 5 successful steps in ProvisionAgent, got %d", provReport.SuccessCount)
 	}
 	outText := FormatReport(provReport)
 	if !strings.Contains(outText, "[✓]") || !strings.Contains(outText, "Valkey ACL & Identity") {

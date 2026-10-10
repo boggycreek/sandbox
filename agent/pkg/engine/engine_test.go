@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -860,3 +861,585 @@ func TestEngineEdgeCasesAndErrors(t *testing.T) {
 		t.Error("expected tool error recorded in history")
 	}
 }
+
+func TestParseFallbackToolCalls(t *testing.T) {
+	// 1. Empty string
+	if calls := parseFallbackToolCalls(""); len(calls) != 0 {
+		t.Errorf("expected 0 calls for empty content, got %d", len(calls))
+	}
+
+	// 2. Direct JSON object with map arguments
+	obj1 := `{"name": "bash", "arguments": {"command": "bp tell brian hi"}}`
+	calls1 := parseFallbackToolCalls(obj1)
+	if len(calls1) != 1 || calls1[0].Function.Name != "bash" || !strings.Contains(calls1[0].Function.Arguments, "bp tell brian hi") {
+		t.Errorf("unexpected parse result for obj1: %+v", calls1)
+	}
+
+	// 3. Markdown fenced JSON with parameters
+	fenced := "```json\n{\"tool\": \"read_file\", \"parameters\": {\"path\": \"README.md\"}}\n```"
+	calls2 := parseFallbackToolCalls(fenced)
+	if len(calls2) != 1 || calls2[0].Function.Name != "read_file" || !strings.Contains(calls2[0].Function.Arguments, "README.md") {
+		t.Errorf("unexpected parse result for fenced: %+v", calls2)
+	}
+
+	// 4. Action / input format
+	actionFmt := `{"action": "write_file", "input": {"path": "test.txt", "content": "data"}}`
+	calls3 := parseFallbackToolCalls(actionFmt)
+	if len(calls3) != 1 || calls3[0].Function.Name != "write_file" || !strings.Contains(calls3[0].Function.Arguments, "test.txt") {
+		t.Errorf("unexpected parse result for actionFmt: %+v", calls3)
+	}
+
+	// 5. Function wrapper format
+	fnFmt := `{"function": {"name": "edit_file", "arguments": "{\"path\": \"main.go\"}"}}`
+	calls4 := parseFallbackToolCalls(fnFmt)
+	if len(calls4) != 1 || calls4[0].Function.Name != "edit_file" || calls4[0].Function.Arguments != `{"path": "main.go"}` {
+		t.Errorf("unexpected parse result for fnFmt: %+v", calls4)
+	}
+
+	// 6. JSON array format
+	arrFmt := `[{"name": "bash", "arguments": {"command": "ls"}}, {"name": "bash", "arguments": {"command": "pwd"}}]`
+	calls5 := parseFallbackToolCalls(arrFmt)
+	if len(calls5) != 2 || calls5[0].Function.Name != "bash" || calls5[1].Function.Name != "bash" {
+		t.Errorf("unexpected parse result for arrFmt: %+v", calls5)
+	}
+
+	// 7. Embedded in conversational text
+	embedded := "I will list the directory.\n{\"name\": \"bash\", \"arguments\": {\"command\": \"ls -la\"}}\nDone."
+	calls6 := parseFallbackToolCalls(embedded)
+	if len(calls6) != 1 || calls6[0].Function.Name != "bash" || !strings.Contains(calls6[0].Function.Arguments, "ls -la") {
+		t.Errorf("unexpected parse result for embedded: %+v", calls6)
+	}
+
+	// 8. Plain conversational text (no tool call)
+	plain := "Hello! How can I assist you with the Agent Sandbox today?"
+	calls7 := parseFallbackToolCalls(plain)
+	if len(calls7) != 0 {
+		t.Errorf("expected 0 calls for plain text, got %d", len(calls7))
+	}
+
+	// 9. Concatenated JSON lines (multi-tool invocation)
+	ndjson := "{\"name\": \"write_file\", \"arguments\": {\"path\": \"a.txt\", \"content\": \"hello\"}}\n{\"name\": \"bash\", \"arguments\": {\"command\": \"cat a.txt\"}}"
+	calls8 := parseFallbackToolCalls(ndjson)
+	if len(calls8) != 2 || calls8[0].Function.Name != "write_file" || calls8[1].Function.Name != "bash" {
+		t.Errorf("unexpected parse result for ndjson: %+v", calls8)
+	}
+
+	// 10. Markdown / text-wrapped tool blocks (<name>\n{ ... })
+	blockFmt := "Here is my plan:\n```bash\nwrite_file\n{\n  \"path\": \"pkg/test.go\",\n  \"content\": \"package pkg\"\n}\n```\nAnd then:\nbash\n{\n  \"command\": \"go test ./...\"\n}\n"
+	calls9 := parseFallbackToolCalls(blockFmt)
+	if len(calls9) != 2 || calls9[0].Function.Name != "write_file" || calls9[1].Function.Name != "bash" {
+		t.Errorf("unexpected parse result for blockFmt: %+v", calls9)
+	}
+
+	// 11. Embedded tool call inside markdown block with raw backtick string (like Alice's response)
+	backtickBlock := "First step:\n```bash\n{\n  \"name\": \"write_file\",\n  \"arguments\": {\n    \"content\": `package hexutil\nfunc Encode() {}`,\n    \"path\": \"pkg/hexutil/hexutil.go\"\n  }\n}\n```\n"
+	calls10 := parseFallbackToolCalls(backtickBlock)
+	if len(calls10) != 1 || calls10[0].Function.Name != "write_file" || !strings.Contains(calls10[0].Function.Arguments, "pkg/hexutil/hexutil.go") {
+		t.Errorf("unexpected parse result for backtickBlock: %+v", calls10)
+	}
+
+	// 12. Model output with unescaped quotes in content field: \t"encoding/hex\"
+	aliceSnippet := "Let's execute these steps now.\n\n---\n\n{\"name\": \"write_file\", \"arguments\": {\"path\": \"/home/agent/workspace/hexutil/encode.go\", \"content\": \"package hexutil\\n\\nimport (\\n\\t\"encoding/hex\\\"\\n)\\n\\n// Encode converts a byte slice to a hex string.\\nfunc Encode(data []byte) string {\\n\\treturn hex.EncodeToString(data)\\n}\"}}"
+	calls11 := parseFallbackToolCalls(aliceSnippet)
+	t.Logf("calls11: len=%d %+v", len(calls11), calls11)
+}
+
+type mockTurnResponder struct {
+	mu      sync.Mutex
+	replies []struct {
+		recipient string
+		content   string
+	}
+}
+
+func (m *mockTurnResponder) SendReply(_ context.Context, recipient, content string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.replies = append(m.replies, struct {
+		recipient string
+		content   string
+	}{recipient: recipient, content: content})
+	return nil
+}
+
+func (m *mockTurnResponder) getReplies() []struct {
+	recipient string
+	content   string
+} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	copied := make([]struct {
+		recipient string
+		content   string
+	}, len(m.replies))
+	copy(copied, m.replies)
+	return copied
+}
+
+func TestTurnResponderAutoReply(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := ChatCompletionResponse{
+			ID:    "resp-autoreply",
+			Model: "test-model",
+			Choices: []ChatChoice{
+				{
+					Index: 0,
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Here is the answer to your question.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	responder := &mockTurnResponder{}
+	eng.SetResponder(responder)
+	eng.SetAgentID("agent-alice")
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-alice")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = eng.Start(ctx, bus, state)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	// Send message from sender "brian"
+	msg := &libbp.Message{
+		ID:      "msg-1",
+		Sender:  "brian",
+		Content: "What is the status?",
+	}
+	_ = bus.Publish(runtime.Event{
+		Priority:  runtime.P1_HighPriority,
+		Source:    "valkey:inbox",
+		Target:    "repl-main",
+		Payload:   msg,
+		Timestamp: time.Now(),
+	})
+
+	var replies []struct {
+		recipient string
+		content   string
+	}
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		replies = responder.getReplies()
+		if len(replies) > 0 {
+			break
+		}
+	}
+
+	if len(replies) != 1 {
+		t.Fatalf("expected 1 auto-reply, got %d", len(replies))
+	}
+	if replies[0].recipient != "brian" {
+		t.Errorf("expected recipient 'brian', got %s", replies[0].recipient)
+	}
+	if replies[0].content != "Here is the answer to your question." {
+		t.Errorf("unexpected content: %s", replies[0].content)
+	}
+}
+
+func TestTurnResponderSuppression(t *testing.T) {
+	callCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			// First call returns a tool that sends external message
+			resp := ChatCompletionResponse{
+				ID:    "resp-tool",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatMessage{
+							Role: "assistant",
+							ToolCalls: []ToolCall{
+								{
+									ID:   "call_bash",
+									Type: "function",
+									Function: ToolFunctionCall{
+										Name:      "bash",
+										Arguments: "{\"command\": \"bp tell brian 'already replied'\"}",
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		// Second call returns final text
+		resp := ChatCompletionResponse{
+			ID:    "resp-final",
+			Model: "test-model",
+			Choices: []ChatChoice{
+				{
+					Index: 0,
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Done executing command.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	_ = tools.RegisterBuiltinTools(reg, tmpDir)
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	responder := &mockTurnResponder{}
+	eng.SetResponder(responder)
+	eng.SetAgentID("agent-alice")
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-alice")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = eng.Start(ctx, bus, state)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	msg := &libbp.Message{
+		ID:      "msg-2",
+		Sender:  "brian",
+		Content: "Run the comms check.",
+	}
+	_ = bus.Publish(runtime.Event{
+		Priority:  runtime.P1_HighPriority,
+		Source:    "valkey:inbox",
+		Target:    "repl-main",
+		Payload:   msg,
+		Timestamp: time.Now(),
+	})
+
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if state.Read().Status == "idle" && callCount >= 2 {
+			break
+		}
+	}
+
+	// Because tool executed bp tell, responder.SendReply should be suppressed
+	replies := responder.getReplies()
+	if len(replies) != 0 {
+		t.Errorf("expected 0 auto-replies due to external message suppression, got %d", len(replies))
+	}
+}
+
+func TestExtractEventSender(t *testing.T) {
+	if s := extractEventSender(nil); s != "" {
+		t.Errorf("expected empty sender for nil, got %s", s)
+	}
+	if s := extractEventSender("string payload"); s != "" {
+		t.Errorf("expected empty sender for string, got %s", s)
+	}
+	msg := libbp.Message{Sender: "alice"}
+	if s := extractEventSender(msg); s != "alice" {
+		t.Errorf("expected alice, got %s", s)
+	}
+	msgPtr := &libbp.Message{Sender: "bob"}
+	if s := extractEventSender(msgPtr); s != "bob" {
+		t.Errorf("expected bob, got %s", s)
+	}
+	var nilMsg *libbp.Message
+	if s := extractEventSender(nilMsg); s != "" {
+		t.Errorf("expected empty for nilMsg, got %s", s)
+	}
+	env := runtime.BackplaneEnvelope{Sender: "carol"}
+	if s := extractEventSender(env); s != "carol" {
+		t.Errorf("expected carol, got %s", s)
+	}
+	envPtr := &runtime.BackplaneEnvelope{Sender: "dave"}
+	if s := extractEventSender(envPtr); s != "dave" {
+		t.Errorf("expected dave, got %s", s)
+	}
+	var nilEnv *runtime.BackplaneEnvelope
+	if s := extractEventSender(nilEnv); s != "" {
+		t.Errorf("expected empty for nilEnv, got %s", s)
+	}
+}
+
+func TestExtractEventInfo(t *testing.T) {
+	s, c := extractEventInfo(nil)
+	if s != "" || c != "" {
+		t.Errorf("expected empty info for nil, got %s, %s", s, c)
+	}
+	msg := libbp.Message{Sender: "alice", Content: "hello"}
+	s, c = extractEventInfo(msg)
+	if s != "alice" || c != "hello" {
+		t.Errorf("expected alice/hello, got %s/%s", s, c)
+	}
+	msgPtr := &libbp.Message{Sender: "bob", Content: "world"}
+	s, c = extractEventInfo(msgPtr)
+	if s != "bob" || c != "world" {
+		t.Errorf("expected bob/world, got %s/%s", s, c)
+	}
+	env := runtime.BackplaneEnvelope{Sender: "carol", Payload: "p-env"}
+	s, c = extractEventInfo(env)
+	if s != "carol" || c != "p-env" {
+		t.Errorf("expected carol/p-env, got %s/%s", s, c)
+	}
+	envPtr := &runtime.BackplaneEnvelope{Sender: "dave", Payload: "p-ptr"}
+	s, c = extractEventInfo(envPtr)
+	if s != "dave" || c != "p-ptr" {
+		t.Errorf("expected dave/p-ptr, got %s/%s", s, c)
+	}
+}
+
+func TestIsHumanSender(t *testing.T) {
+	if isHumanSender("", "brian") {
+		t.Error("expected false for empty sender")
+	}
+	if !isHumanSender("human", "brian") {
+		t.Error("expected true for 'human'")
+	}
+	if !isHumanSender("operator", "brian") {
+		t.Error("expected true for 'operator'")
+	}
+	if !isHumanSender("brian", "brian") {
+		t.Error("expected true for 'brian' matching humanName")
+	}
+	if !isHumanSender("BRIAN", "brian") {
+		t.Error("expected true for case-insensitive match")
+	}
+	if isHumanSender("pig-verifier", "brian") {
+		t.Error("expected false for peer agent 'pig-verifier'")
+	}
+	if isHumanSender("alice", "brian") {
+		t.Error("expected false for peer agent 'alice'")
+	}
+}
+
+func TestIsAutomatedNotification(t *testing.T) {
+	prefixes := []string{
+		"completed directive: task finished",
+		"Completed directive: done",
+		"execution failed (exit 1)",
+		"understood. directive queued for execution",
+		"status: running tests",
+		"online (container started)",
+		"ok (all green)",
+	}
+	for _, p := range prefixes {
+		if !isAutomatedNotification(p) {
+			t.Errorf("expected true for %q", p)
+		}
+	}
+	if isAutomatedNotification("please run the test suite") {
+		t.Error("expected false for regular user prompt")
+	}
+}
+
+func TestTurnResponder_PeerCompletionSuppressed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := ChatCompletionResponse{
+			ID:    "resp-peer-ack",
+			Model: "test-model",
+			Choices: []ChatChoice{
+				{
+					Index: 0,
+					Message: ChatMessage{
+						Role:    "assistant",
+						Content: "Understood. The test suite has been verified.",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	eng := NewREPLEngine(llm, nil, tmpDir, "coordinator")
+	eng.SetPollInterval(10 * time.Millisecond)
+	eng.SetHumanName("brian")
+	eng.SetAgentID("agent-alice")
+
+	responder := &mockTurnResponder{}
+	eng.SetResponder(responder)
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-alice")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = eng.Start(ctx, bus, state)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	// Simulate peer pig-verifier sending a completion notice
+	msg := &libbp.Message{
+		ID:          "pig-verifier#51",
+		Sender:      "pig-verifier",
+		Destination: "agent-alice",
+		Content:     "Completed directive: Understood. I will now proceed with verifying the test suite",
+		ReplyTo:     "agent-alice#149",
+	}
+	_ = bus.Publish(runtime.Event{
+		Priority:  runtime.P2_StandardAsync,
+		Source:    "valkey:inbox",
+		Target:    "*",
+		Payload:   msg,
+		Timestamp: time.Now(),
+	})
+
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if state.Read().Status == "idle" {
+			break
+		}
+	}
+
+	// Verify that TurnResponder did NOT auto-reply to pig-verifier
+	replies := responder.getReplies()
+	if len(replies) != 0 {
+		t.Fatalf("expected 0 auto-replies to peer completion notice, got %d: %+v", len(replies), replies)
+	}
+}
+
+type mockSendTool struct {
+	execCount *int
+}
+
+func (m mockSendTool) Name() string { return "fleet_send_message" }
+func (m mockSendTool) Description() string { return "test" }
+func (m mockSendTool) Parameters() map[string]any { return nil }
+func (m mockSendTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	*m.execCount++
+	return `{"id":"msg-1"}`, nil
+}
+
+func TestREPLEngineDuplicateToolCallDeduplication(t *testing.T) {
+	callCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var resp ChatCompletionResponse
+		if callCount == 1 {
+			// First completion returns 2 identical fleet_send_message calls in the same turn
+			resp = ChatCompletionResponse{
+				ID:    "resp-dup-tools",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatMessage{
+							Role: "assistant",
+							ToolCalls: []ToolCall{
+								{
+									ID:   "call-1",
+									Type: "function",
+									Function: ToolFunctionCall{
+										Name:      "fleet_send_message",
+										Arguments: `{"recipient":"bob","message":"test"}`,
+									},
+								},
+								{
+									ID:   "call-2",
+									Type: "function",
+									Function: ToolFunctionCall{
+										Name:      "fleet_send_message",
+										Arguments: `{"recipient":"bob","message":"test"}`,
+									},
+								},
+							},
+						},
+						FinishReason: "tool_calls",
+					},
+				},
+			}
+		} else {
+			resp = ChatCompletionResponse{
+				ID:    "resp-final",
+				Model: "test-model",
+				Choices: []ChatChoice{
+					{
+						Index: 0,
+						Message: ChatMessage{
+							Role:    "assistant",
+							Content: "Done.",
+						},
+						FinishReason: "stop",
+					},
+				},
+			}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer ts.Close()
+
+	tmpDir := t.TempDir()
+	llm := NewLLMClient(ts.URL, "key", "test-model", 5*time.Second)
+	reg := tools.NewRegistry()
+	execCount := 0
+	_ = reg.Register(mockSendTool{execCount: &execCount})
+
+	eng := NewREPLEngine(llm, reg, tmpDir, "coder")
+	eng.SetPollInterval(10 * time.Millisecond)
+
+	bus := runtime.NewEventBus()
+	state := runtime.NewSharedState(filepath.Join(tmpDir, "state.json"), "agent-01")
+
+	eng.AppendMessage(ChatMessage{Role: "user", Content: "Send a message."})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- eng.Start(ctx, bus, state)
+	}()
+
+	for i := 0; i < 50; i++ {
+		time.Sleep(20 * time.Millisecond)
+		if state.Read().Status == "idle" {
+			break
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errChan:
+		if err != nil && err != context.Canceled {
+			t.Fatalf("unexpected Start error: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("engine did not stop after cancel")
+	}
+
+	if execCount != 1 {
+		t.Errorf("expected fleet_send_message to be executed exactly once due to deduplication, got %d", execCount)
+	}
+}
+
