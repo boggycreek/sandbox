@@ -64,8 +64,77 @@ func TestBPFullCoverage(t *testing.T) {
 		}
 	}
 
+	// help --ai
+	code, out, _ = runCLI([]string{"help", "--ai"})
+	if code != 0 || !strings.Contains(out, "Agent Execution & Protocol Guide") {
+		t.Errorf("help --ai failed: %s", out)
+	}
+
+	// whoami
+	code, out, _ = runCLI([]string{"whoami"})
+	if code != 0 || !strings.Contains(out, "Agent ID:   agent-1") {
+		t.Errorf("whoami failed: %s", out)
+	}
+
+	// profile list
+	code, out, _ = runCLI([]string{"profile", "list"})
+	if code != 0 || !strings.Contains(out, "Available profiles:") {
+		t.Errorf("profile list failed: %s", out)
+	}
+
+	// profile list default without sub
+	code, out, _ = runCLI([]string{"profile"})
+	if code != 0 || !strings.Contains(out, "Available profiles:") {
+		t.Errorf("profile default sub failed: %s", out)
+	}
+
+	// profile invalid sub
+	code, _, errOut := runCLI([]string{"profile", "invalid"})
+	if code != 1 || !strings.Contains(errOut, "unknown profile subcommand") {
+		t.Errorf("profile invalid sub failed")
+	}
+
+	// --profile flag missing arg
+	code, _, errOut = runCLI([]string{"--profile"})
+	if code != 1 || !strings.Contains(errOut, "--profile flag requires an argument") {
+		t.Errorf("--profile missing arg failed")
+	}
+
+	// --profile flag with whoami
+	code, out, _ = runCLI([]string{"--profile", "default", "whoami"})
+	if code != 0 || !strings.Contains(out, "Agent ID:   agent-1") {
+		t.Errorf("--profile default whoami failed: %s", out)
+	}
+
+	// --profile with custom profile file
+	stateTmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateTmp)
+	bpProfDir := filepath.Join(stateTmp, "bp", "profiles")
+	_ = os.MkdirAll(bpProfDir, 0700)
+	profFile := filepath.Join(bpProfDir, "myhost.env")
+	_ = os.WriteFile(profFile, []byte("BP_AGENT=myhost-agent\nBP_PASSWORD=secret\n"), 0600)
+	// Create bare .env file to verify it's skipped
+	_ = os.WriteFile(filepath.Join(bpProfDir, ".env"), []byte("IGNORE=true\n"), 0600)
+
+	code, out, _ = runCLI([]string{"--profile=myhost", "whoami"})
+	if code != 0 || !strings.Contains(out, "Agent ID:   myhost-agent") {
+		t.Errorf("--profile=myhost whoami failed: %s", out)
+	}
+
+	// whoami with trailing --profile flag
+	code, out, _ = runCLI([]string{"whoami", "--profile", "myhost"})
+	if code != 0 || !strings.Contains(out, "Agent ID:   myhost-agent") {
+		t.Errorf("whoami with trailing --profile failed: %s", out)
+	}
+
+	// profile list with profiles in dir (even when active profile is nonexistent)
+	code, out, _ = runCLI([]string{"--profile", "nonexistent", "profile", "list"})
+	if code != 0 || !strings.Contains(out, "myhost") {
+		t.Errorf("profile list with nonexistent active profile failed: %s", out)
+	}
+
 	// Unknown command
-	code, _, errOut := runCLI([]string{"unknowncmd"})
+	code, _, errOut = runCLI([]string{"unknowncmd"})
 	if code != 1 || !strings.Contains(errOut, "unknown command") {
 		t.Errorf("expected unknown command error")
 	}
@@ -423,6 +492,8 @@ func TestBPFullCoverage(t *testing.T) {
 
 	// 7. Liaison
 	os.Setenv("BP_MODE", "human")
+	os.Unsetenv("BP_AGENT")
+	os.Unsetenv("BP_PASSWORD")
 	os.Setenv("HUMAN_NAME", "operator")
 	os.Setenv("HUMAN_BACKPLANE_PASSWORD", valkey.HumanPass)
 

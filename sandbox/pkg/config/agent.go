@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,8 +36,8 @@ type AgentConfig struct {
 	Name          string    `json:"name"`
 	Role          string    `json:"role"`
 	Image         string    `json:"image"`
-	ContainerName string    `json:"container_name"`
-	VolumeName    string    `json:"volume_name"`
+	ContainerName string    `json:"container_name,omitempty"`
+	VolumeName    string    `json:"volume_name,omitempty"`
 	Password      string    `json:"password"`
 	SigningKeyPEM string    `json:"signing_key_pem"`
 	PublicKeyB64  string    `json:"public_key_b64"`
@@ -44,7 +45,14 @@ type AgentConfig struct {
 	ModelName     string    `json:"model_name,omitempty"`
 	ModelAPIKey   string    `json:"model_api_key,omitempty"`
 	SonarToken    string    `json:"sonar_token,omitempty"`
+	Runtime       string    `json:"runtime,omitempty"` // "container" (default) or "host"
+	HostOnly      bool      `json:"host_only,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+// IsHost returns true if the agent runs directly on the host rather than in a container
+func (c *AgentConfig) IsHost() bool {
+	return c.HostOnly || c.Runtime == "host"
 }
 
 // ResolveImage returns the canonical OCI image name for a given input or preset
@@ -59,11 +67,28 @@ func ResolveImage(input string) string {
 	return input
 }
 
+var (
+	validAgentName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,63}$`)
+	reservedNames  = map[string]bool{
+		"operator": true,
+		"human":    true,
+		"default":  true,
+		"admin":    true,
+		"system":   true,
+	}
+)
+
 // NewAgentConfig creates a newly initialized AgentConfig with random credentials
 func NewAgentConfig(name, imageInput, role string, modelOpts ...string) (*AgentConfig, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return nil, fmt.Errorf("agent name cannot be empty")
+	}
+	if !validAgentName.MatchString(name) {
+		return nil, fmt.Errorf("invalid agent name %q: must match ^[a-z0-9][a-z0-9_-]{1,63}$", name)
+	}
+	if reservedNames[name] {
+		return nil, fmt.Errorf("agent name %q is reserved", name)
 	}
 
 	if role == "" {
@@ -142,6 +167,20 @@ func SaveAgentConfig(cfg *AgentConfig, paths Paths) error {
 		return err
 	}
 
+	// Write BP profile .env in StateDir/bp/profiles/<name>.env if directory is configured
+	if paths.BPProfilesDir != "" {
+		if err := os.MkdirAll(paths.BPProfilesDir, 0700); err != nil {
+			return fmt.Errorf("failed creating backplane profiles directory: %w", err)
+		}
+		profilePath := filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name))
+		profileContent := fmt.Sprintf("BP_AGENT=%s\nBP_PASSWORD=%s\nBP_SIGNING_KEY=%s\n",
+			cfg.Name, cfg.Password, keyPath)
+		if err := os.WriteFile(profilePath, []byte(profileContent), 0600); err != nil {
+			return fmt.Errorf("failed writing backplane profile %s: %w", profilePath, err)
+		}
+		_ = os.Chmod(profilePath, 0600)
+	}
+
 	return nil
 }
 
@@ -185,7 +224,7 @@ func ListAgentConfigs(paths Paths) ([]*AgentConfig, error) {
 	return configs, nil
 }
 
-// DeleteAgentConfig removes the agent config and secrets
+// DeleteAgentConfig removes the agent config, secrets, and profile
 func DeleteAgentConfig(name string, paths Paths) error {
 	name = strings.ToLower(strings.TrimSpace(name))
 	jsonPath := filepath.Join(paths.AgentsDir, fmt.Sprintf("%s.json", name))
@@ -193,5 +232,10 @@ func DeleteAgentConfig(name string, paths Paths) error {
 
 	agentSecretDir := filepath.Join(paths.SecretsDir, name)
 	_ = os.RemoveAll(agentSecretDir)
+
+	if paths.BPProfilesDir != "" {
+		profilePath := filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", name))
+		_ = os.Remove(profilePath)
+	}
 	return nil
 }

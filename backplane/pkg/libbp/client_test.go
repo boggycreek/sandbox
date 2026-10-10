@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -520,6 +521,53 @@ func TestLoadClientFromEnv(t *testing.T) {
 	cfgFallbackAgent := LoadClientFromEnv()
 	if cfgFallbackAgent.AgentID != "agent-fallback-id" || cfgFallbackAgent.Password != "agent-fallback-pw" || cfgFallbackAgent.Port != 6379 {
 		t.Errorf("unexpected LoadClientFromEnv agent fallback: %+v", cfgFallbackAgent)
+	}
+
+	// Test Fail-Closed on conflicting BP_MODE=human and BP_AGENT
+	os.Setenv("BP_MODE", "human")
+	os.Setenv("BP_AGENT", "conflicting-agent")
+	os.Setenv("HUMAN_NAME", "admin-user")
+	if _, err := LoadClientWithProfile("default"); err == nil {
+		t.Errorf("expected fail-closed error for conflicting BP_MODE=human and BP_AGENT")
+	}
+	os.Unsetenv("BP_MODE")
+	os.Unsetenv("BP_AGENT")
+
+	// Test LoadClientWithProfile from file with quotes
+	os.Unsetenv("BP_PORT")
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	profilesDir := filepath.Join(stateDir, "bp", "profiles")
+	_ = os.MkdirAll(profilesDir, 0700)
+	testProfilePath := filepath.Join(profilesDir, "testprof.env")
+	profileEnv := "BP_AGENT=\"profile-agent\"\nBP_PASSWORD='prof-pass'\nBP_PORT=\"6399\"\n"
+	_ = os.WriteFile(testProfilePath, []byte(profileEnv), 0600)
+
+	// Even with ambient BP_MODE=human and HUMAN_NAME exported, named profile must NOT be hijacked
+	t.Setenv("BP_MODE", "human")
+	t.Setenv("HUMAN_NAME", "brian-operator")
+
+	cfgProf, err := LoadClientWithProfile("testprof")
+	if err != nil {
+		t.Fatalf("LoadClientWithProfile failed: %v", err)
+	}
+	if cfgProf.AgentID != "profile-agent" || cfgProf.Password != "prof-pass" || cfgProf.Port != 6399 || cfgProf.Mode != "agent" {
+		t.Errorf("unexpected profile config (hijacked by ambient env?): %+v", cfgProf)
+	}
+	os.Unsetenv("BP_MODE")
+	os.Unsetenv("HUMAN_NAME")
+
+	// Quoted BP_SIGNING_KEY that does not exist should return error
+	testKeyFailPath := filepath.Join(profilesDir, "keyfail.env")
+	keyFailEnv := "BP_AGENT=agent-fail\nBP_SIGNING_KEY=\"/nonexistent/key.pem\"\n"
+	_ = os.WriteFile(testKeyFailPath, []byte(keyFailEnv), 0600)
+	if _, err := LoadClientWithProfile("keyfail"); err == nil {
+		t.Errorf("expected error for nonexistent BP_SIGNING_KEY in profile")
+	}
+
+	// Missing profile error
+	if _, err := LoadClientWithProfile("nonexistent-profile"); err == nil {
+		t.Errorf("expected error for missing non-default profile")
 	}
 }
 

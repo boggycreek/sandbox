@@ -152,6 +152,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	// Flag parsing for overrides
+	hostOnly := false
 	fs := flag.NewFlagSet("agent create", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&image, "image", image, "OCI image or preset (base, native, opencode, claude, agy, pig)")
@@ -160,6 +161,8 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	fs.StringVar(&modelName, "model-name", os.Getenv("OPENAI_MODEL"), "Target model name")
 	fs.StringVar(&modelKey, "model-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
 	fs.StringVar(&modelKey, "model-api-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
+	fs.BoolVar(&hostOnly, "host", false, "Provision as a first-class host agent without a container")
+	fs.BoolVar(&hostOnly, "host-only", false, "Provision as a first-class host agent without a container")
 
 	var flagArgs []string
 	if len(args) >= 3 && strings.ToLower(args[1]) == "as" {
@@ -175,12 +178,23 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		image = "base"
 	}
 
-	resolvedImage, _ := runtime.ResolveAgentImage(ctx, image)
+	resolvedImage := image
+	if !hostOnly {
+		resolvedImage, _ = runtime.ResolveAgentImage(ctx, image)
+	}
 
 	cfg, err := config.NewAgentConfig(agentName, resolvedImage, role, modelURL, modelName, modelKey)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
 		return 1
+	}
+
+	if hostOnly {
+		cfg.Runtime = "host"
+		cfg.HostOnly = true
+		cfg.ContainerName = ""
+		cfg.VolumeName = ""
+		cfg.Image = "host"
 	}
 
 	if err := config.SaveAgentConfig(cfg, paths); err != nil {
@@ -191,16 +205,23 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	report := lifecycle.ProvisionAgent(ctx, cfg, paths)
 
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
-	fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
-	fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
-	if cfg.ModelURL != "" {
-		fmt.Fprintf(stdout, "  Model URL:  %s\n", cfg.ModelURL)
+	if cfg.IsHost() {
+		fmt.Fprintf(stdout, "  Runtime:    host (first-class host agent)\n")
+		fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
+		fmt.Fprintf(stdout, "  BP Profile: %s\n", filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name)))
+		fmt.Fprintln(stdout, "\nWARNING: Host agent runs directly on the host without container isolation. Full access to host filesystem and credentials is permitted.")
+	} else {
+		fmt.Fprintf(stdout, "  Image:      %s\n", cfg.Image)
+		fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
+		if cfg.ModelURL != "" {
+			fmt.Fprintf(stdout, "  Model URL:  %s\n", cfg.ModelURL)
+		}
+		if cfg.ModelName != "" {
+			fmt.Fprintf(stdout, "  Model Name: %s\n", cfg.ModelName)
+		}
+		fmt.Fprintf(stdout, "  Container:  %s\n", cfg.ContainerName)
+		fmt.Fprintf(stdout, "  Volume:     %s\n", cfg.VolumeName)
 	}
-	if cfg.ModelName != "" {
-		fmt.Fprintf(stdout, "  Model Name: %s\n", cfg.ModelName)
-	}
-	fmt.Fprintf(stdout, "  Container:  %s\n", cfg.ContainerName)
-	fmt.Fprintf(stdout, "  Volume:     %s\n", cfg.VolumeName)
 	if formatted := lifecycle.FormatReport(report); formatted != "" {
 		fmt.Fprintln(stdout, "Infrastructure Provisioning:")
 		fmt.Fprint(stdout, formatted)
@@ -208,7 +229,11 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	if report.HasErrors() {
 		fmt.Fprintf(stderr, "sndbx warning: agent %q provisioned with errors; run 'sndbx agent doctor %s' to diagnose\n", cfg.Name, cfg.Name)
 	}
-	fmt.Fprintf(stdout, "To start: sndbx agent start %s\n", cfg.Name)
+	if !cfg.IsHost() {
+		fmt.Fprintf(stdout, "To start: sndbx agent start %s\n", cfg.Name)
+	} else {
+		fmt.Fprintf(stdout, "To use:   bp --profile %s tell <recipient> <msg>\n", cfg.Name)
+	}
 	return 0
 }
 
@@ -223,6 +248,12 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
 		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stdout, "Agent %q is a first-class host agent (no container required).\n", cfg.Name)
+		fmt.Fprintf(stdout, "Use directly via: bp --profile %s <command>\n", cfg.Name)
+		return 0
 	}
 
 	bpCfg := libbp.LoadClientFromEnv()
@@ -249,6 +280,11 @@ func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, std
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (no container or tmux session)\n", cfg.Name)
 		return 1
 	}
 
@@ -336,6 +372,11 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
+		return 1
+	}
+
 	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 	if err != nil || port <= 0 {
 		bpCfg := libbp.LoadClientFromEnv()
@@ -415,6 +456,11 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host, no SSH connection required)\n", cfg.Name)
 		return 1
 	}
 
@@ -519,6 +565,9 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	if args[0] == "--all" {
 		configs, _ := config.ListAgentConfigs(paths)
 		for _, c := range configs {
+			if c.IsHost() {
+				continue
+			}
 			lifecycle.WarnOnErr(stderr, runtime.StopAgentContainer(ctx, c.ContainerName), "stop container "+c.ContainerName)
 			fmt.Fprintf(stdout, "Stopped %s\n", c.Name)
 		}
@@ -531,6 +580,11 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
 		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stdout, "Agent %q is a host agent (no container to stop).\n", cfg.Name)
+		return 0
 	}
 
 	if err := runtime.StopAgentContainer(ctx, cfg.ContainerName); err != nil {
@@ -551,6 +605,11 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (no container or home volume to clean; use 'sndbx agent retire %s' to deprovision)\n", cfg.Name, cfg.Name)
 		return 1
 	}
 
@@ -696,6 +755,19 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 
 	statuses := make([]runtime.AgentStatus, 0, len(configs))
 	for _, c := range configs {
+		if c.IsHost() {
+			statuses = append(statuses, runtime.AgentStatus{
+				Name:           c.Name,
+				Role:           c.Role,
+				Image:          "host",
+				ContainerName:  "-",
+				ContainerState: "HOST",
+				SSHPort:        0,
+				IDEConnect:     "-",
+			})
+			continue
+		}
+
 		state := "stopped"
 		info, err := runtime.InspectAgentContainer(ctx, c.ContainerName)
 		if err == nil && info != nil {
@@ -760,6 +832,11 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 		return 1
 	}
 
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host filesystem; use host 'git clone' directly)\n", cfg.Name)
+		return 1
+	}
+
 	// Verify container is running or start it
 	checkRunning := execCommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
 	out, err := checkRunning.Output()
@@ -807,6 +884,11 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
 		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		return 1
+	}
+
+	if cfg.IsHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host filesystem; use host 'git remote' directly)\n", cfg.Name)
 		return 1
 	}
 

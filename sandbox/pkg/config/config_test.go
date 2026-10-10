@@ -60,6 +60,21 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	if _, err := NewAgentConfig("", "base", "role"); err == nil {
 		t.Errorf("expected error for empty agent name")
 	}
+	if _, err := NewAgentConfig("operator", "base", "role"); err == nil {
+		t.Errorf("expected error for reserved agent name 'operator'")
+	}
+	if _, err := NewAgentConfig("human", "base", "role"); err == nil {
+		t.Errorf("expected error for reserved agent name 'human'")
+	}
+	if _, err := NewAgentConfig("-invalid-start", "base", "role"); err == nil {
+		t.Errorf("expected error for invalid agent name '-invalid-start'")
+	}
+	if _, err := NewAgentConfig("a", "base", "role"); err == nil {
+		t.Errorf("expected error for too short agent name 'a'")
+	}
+	if _, err := NewAgentConfig("invalid/slash", "base", "role"); err == nil {
+		t.Errorf("expected error for agent name with slash")
+	}
 
 	cfg, err := NewAgentConfig("test-agent", "opencode", "", "http://localhost:11434/v1", "llama3", "secret-key")
 	if err != nil {
@@ -90,6 +105,17 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	// 4. Missing agent error
 	if _, err := LoadAgentConfig("nonexistent", paths); err == nil {
 		t.Errorf("expected error for nonexistent agent")
+	}
+
+	// Host-agent test
+	cfg.Runtime = "host"
+	if !cfg.IsHost() {
+		t.Errorf("expected IsHost() to return true when Runtime=host")
+	}
+	cfg.Runtime = "container"
+	cfg.HostOnly = true
+	if !cfg.IsHost() {
+		t.Errorf("expected IsHost() to return true when HostOnly=true")
 	}
 
 	// 5. Delete agent

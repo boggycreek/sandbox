@@ -200,6 +200,21 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected storage, image, and container checks in report")
 	}
 
+	// Test host agent handling across storage, image, and container checks
+	hostCfg := &config.AgentConfig{Name: "host-test", Runtime: "host", HostOnly: true}
+	reportHost := &DoctorReport{AgentName: "host-test"}
+	checkAndHealPodmanStorage(ctx, hostCfg, reportHost)
+	checkAndHealImage(ctx, hostCfg, paths, reportHost)
+	checkAndHealContainer(ctx, hostCfg, paths, reportHost)
+	if len(reportHost.Checks) != 3 {
+		t.Errorf("expected 3 checks for host agent, got %d", len(reportHost.Checks))
+	}
+	for _, chk := range reportHost.Checks {
+		if chk.Status != StatusOK {
+			t.Errorf("expected StatusOK for host agent check %s, got %s", chk.Name, chk.Status)
+		}
+	}
+
 	// 11. Signing key check when key file is corrupt
 	keyPath := filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem")
 	_ = os.WriteFile(keyPath, []byte("bad-pem-data"), 0600)

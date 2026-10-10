@@ -258,6 +258,65 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	if !strings.Contains(out, "stopped") {
 		t.Errorf("expected stop success output, got: %s", out)
 	}
+
+	// 4. Start host agent
+	cfgHost, _ := config.NewAgentConfig("host-lifecycle-bot", "base", "developer")
+	cfgHost.Runtime = "host"
+	cfgHost.HostOnly = true
+	_ = config.SaveAgentConfig(cfgHost, paths)
+
+	code, out, errOut = runSndbx([]string{"agent", "start", "host-lifecycle-bot"})
+	if code != 0 {
+		t.Errorf("agent start host-lifecycle-bot failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "first-class host agent") {
+		t.Errorf("expected host execution message, got: %s", out)
+	}
+
+	// 5. Host agent stop
+	code, out, errOut = runSndbx([]string{"agent", "stop", "host-lifecycle-bot"})
+	if code != 0 {
+		t.Errorf("expected stop host agent to exit 0, got %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "no container to stop") {
+		t.Errorf("expected no container to stop message, got: %s", out)
+	}
+
+	// 6. Host agent stop --all skips host cleanly
+	code, out, errOut = runSndbx([]string{"agent", "stop", "--all"})
+	if code != 0 {
+		t.Errorf("expected stop --all to succeed, got %d: %s", code, errOut)
+	}
+
+	// 7. Host agent clean guard
+	code, _, errOut = runSndbx([]string{"agent", "clean", "host-lifecycle-bot"})
+	if code != 1 || !strings.Contains(errOut, "no container or home volume to clean") {
+		t.Errorf("expected clean guard error for host agent, got code %d: %s", code, errOut)
+	}
+
+	// 8. Host agent ssh guard
+	code, _, errOut = runSndbx([]string{"agent", "ssh", "host-lifecycle-bot"})
+	if code != 1 || !strings.Contains(errOut, "runs directly on host, no SSH connection required") {
+		t.Errorf("expected ssh guard error for host agent, got code %d: %s", code, errOut)
+	}
+
+	// 9. Host agent tmux guard
+	code, _, errOut = runSndbx([]string{"agent", "tmux", "host-lifecycle-bot"})
+	if code != 1 || !strings.Contains(errOut, "no container or tmux session") {
+		t.Errorf("expected tmux guard error for host agent, got code %d: %s", code, errOut)
+	}
+
+	// 10. Host agent clone guard
+	code, _, errOut = runSndbx([]string{"agent", "clone", "host-lifecycle-bot", "http://example.com/repo.git"})
+	if code != 1 || !strings.Contains(errOut, "use host 'git clone' directly") {
+		t.Errorf("expected clone guard error for host agent, got code %d: %s", code, errOut)
+	}
+
+	// 11. Host agent remote guard
+	code, _, errOut = runSndbx([]string{"agent", "remote", "host-lifecycle-bot", "list"})
+	if code != 1 || !strings.Contains(errOut, "use host 'git remote' directly") {
+		t.Errorf("expected remote guard error for host agent, got code %d: %s", code, errOut)
+	}
 }
 
 func TestAgentListTableMultipleAgents(t *testing.T) {
@@ -269,15 +328,22 @@ func TestAgentListTableMultipleAgents(t *testing.T) {
 
 	cfg1, _ := config.NewAgentConfig("alpha-bot", "base", "researcher")
 	cfg2, _ := config.NewAgentConfig("beta-bot", "opencode", "coder")
+	cfgHost, _ := config.NewAgentConfig("gamma-host-bot", "base", "assistant")
+	cfgHost.Runtime = "host"
+	cfgHost.HostOnly = true
 	_ = config.SaveAgentConfig(cfg1, paths)
 	_ = config.SaveAgentConfig(cfg2, paths)
+	_ = config.SaveAgentConfig(cfgHost, paths)
 
 	code, out, errOut := runSndbx([]string{"agent", "list"})
 	if code != 0 {
 		t.Fatalf("agent list failed: code=%d err=%s", code, errOut)
 	}
-	if !strings.Contains(out, "alpha-bot") || !strings.Contains(out, "beta-bot") {
-		t.Errorf("expected both agents in table output, got: %s", out)
+	if !strings.Contains(out, "alpha-bot") || !strings.Contains(out, "beta-bot") || !strings.Contains(out, "gamma-host-bot") {
+		t.Errorf("expected all agents in table output, got: %s", out)
+	}
+	if !strings.Contains(out, "HOST") {
+		t.Errorf("expected HOST status in table output, got: %s", out)
 	}
 	if !strings.Contains(out, "AGENT_NAME") || !strings.Contains(out, "STATUS") {
 		t.Errorf("expected table header in list output, got: %s", out)

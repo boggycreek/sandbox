@@ -97,6 +97,9 @@ func DiagnoseAndHealAgent(ctx context.Context, agentName string, paths config.Pa
 	// 9. Container State & SSH Config Sync
 	checkAndHealContainer(ctx, cfg, paths, report)
 
+	// 10. Backplane Profile Check & Heal
+	checkAndHealBPProfile(cfg, paths, report)
+
 	return report, nil
 }
 
@@ -126,17 +129,19 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 	}
 
 	healed := false
-	if cfg.ContainerName == "" {
-		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
-		healed = true
-	}
-	if cfg.VolumeName == "" {
-		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", name)
-		healed = true
-	}
-	if cfg.Image == "" {
-		cfg.Image = "agent-sandbox-base:latest"
-		healed = true
+	if !cfg.IsHost() {
+		if cfg.ContainerName == "" {
+			cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
+			healed = true
+		}
+		if cfg.VolumeName == "" {
+			cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", name)
+			healed = true
+		}
+		if cfg.Image == "" {
+			cfg.Image = "agent-sandbox-base:latest"
+			healed = true
+		}
 	}
 	if cfg.Password == "" {
 		pBytes := make([]byte, 16)
@@ -322,6 +327,14 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 }
 
 func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Podman Storage",
+			Status:  StatusOK,
+			Message: "Host agent (direct host execution, no container storage required)",
+		})
+		return
+	}
 	healed := false
 	netName := "agent-sandbox-infra"
 	if err := runtime.EnsureNetwork(ctx, netName); err != nil {
@@ -362,6 +375,14 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 }
 
 func checkAndHealImage(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Agent Image",
+			Status:  StatusOK,
+			Message: "Host agent (no OCI container image required)",
+		})
+		return
+	}
 	resolved, isLocal := runtime.ResolveAgentImage(ctx, cfg.Image)
 	if resolved != cfg.Image {
 		cfg.Image = resolved
@@ -425,7 +446,8 @@ func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths conf
 		">" + cfg.Password,
 		fmt.Sprintf("~%s:*", cfg.Name),
 		fmt.Sprintf("~identity:%s", cfg.Name),
-		"%R~*:*", "&*", "+@all", "-@admin", "-@dangerous",
+		"%R~*:out", "%R~identity:*", "%R~human:*", "%R~*:blob:*",
+		"&*", "+@all", "-@admin", "-@dangerous",
 		"(+xadd ~*:inbox)",
 	}
 	_, _ = client.Exec(ctx, "ACL", aclArgs...)
@@ -445,6 +467,14 @@ func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths conf
 }
 
 func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Gitea Git Forge",
+			Status:  StatusOK,
+			Message: "Host agent (direct host execution, no dedicated Gitea account required)",
+		})
+		return
+	}
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
@@ -494,6 +524,14 @@ func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "SonarQube Analysis",
+			Status:  StatusOK,
+			Message: "Host agent (direct host execution, no SonarQube account required)",
+		})
+		return
+	}
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin"
@@ -553,6 +591,14 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Container & Runtime",
+			Status:  StatusOK,
+			Message: "Host agent (direct host execution, no container runtime required)",
+		})
+		return
+	}
 	info, err := runtime.InspectAgentContainer(ctx, cfg.ContainerName)
 	state := "stopped"
 	if err == nil && info != nil {
@@ -579,6 +625,60 @@ func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths c
 		Name:    "Container & Runtime",
 		Status:  StatusOK,
 		Message: msg,
+	})
+}
+
+func checkAndHealBPProfile(cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if paths.BPProfilesDir == "" {
+		return
+	}
+	profilePath := filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name))
+	keyPath := filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem")
+
+	expectedContent := fmt.Sprintf("BP_AGENT=%s\nBP_PASSWORD=%s\nBP_SIGNING_KEY=%s\n",
+		cfg.Name, cfg.Password, keyPath)
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil || string(data) != expectedContent {
+		_ = os.MkdirAll(paths.BPProfilesDir, 0700)
+		if err := os.WriteFile(profilePath, []byte(expectedContent), 0600); err != nil {
+			report.Checks = append(report.Checks, CheckItem{
+				Name:         "Backplane Profile",
+				Status:       StatusError,
+				Message:      fmt.Sprintf("Failed creating profile at %s: %v", profilePath, err),
+				Unrepairable: true,
+			})
+			report.UnrepairableCount++
+			return
+		}
+		_ = os.Chmod(profilePath, 0600)
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Backplane Profile",
+			Status:  StatusHealed,
+			Message: fmt.Sprintf("Rebuilt backplane profile and permissions (0600) at %s", profilePath),
+			Healed:  true,
+		})
+		report.HealedCount++
+		return
+	}
+
+	// Verify permissions
+	if fi, err := os.Stat(profilePath); err == nil && fi.Mode().Perm() != 0600 {
+		_ = os.Chmod(profilePath, 0600)
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Backplane Profile",
+			Status:  StatusHealed,
+			Message: fmt.Sprintf("Repaired profile permissions to 0600 at %s", profilePath),
+			Healed:  true,
+		})
+		report.HealedCount++
+		return
+	}
+
+	report.Checks = append(report.Checks, CheckItem{
+		Name:    "Backplane Profile",
+		Status:  StatusOK,
+		Message: fmt.Sprintf("Backplane connection profile verified at %s", profilePath),
 	})
 }
 
