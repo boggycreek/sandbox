@@ -3,7 +3,8 @@ adr: "00011"
 title: "Ed25519 Cryptographic Message Signing"
 topic: "Security, Backplane & Messaging"
 theme: "THEME-SECURITY"
-status: "accepted"
+status: "superseded"
+superseded_by: "00042"
 version: "v0.1.0-alpha"
 as_built: true
 tags:

@@ -46,6 +46,8 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Deno 2.x replaces Node.js as the standard JavaScript/TypeScript runtime in all agent OCI images, providing native TypeScript execution, granular capability sandboxing, and a leaner container footprint without compromising npm ecosystem compatibility.
 - **[00036 — PiG Derivative Agent OCI Image](00036-PiGDerivativeAgentOciImage.md)**  
   *Executive Summary:* Introduces PiG (Pi in Go) as a first-class derivative agent harness OCI image (`agent-sandbox-pig:latest`), integrating single-binary Go execution, non-root isolation, tmux session supervision, and native sndbx lifecycle preset management.
+- **[00043 — Layered Host-Connected Tool Containers and Ephemeral Workspace Projections](00043-LayeredHostConnectedToolContainersAndEphemeralWorkspaceProjections.md)**  
+  *Executive Summary:* Establishes a dual-tier OCI container architecture separating 24/7 background daemon sandboxes from interactive host-connected tool containers, projecting the operator's current working directory into an unprivileged rootless container with preserved host file ownership (keep-id) and open host networking.
 
 ### Agent Lifecycle & Process Model (`THEME-LIFECYCLE`)
 - **[00007 — Agent Lifecycle Phase Separation](00007-AgentLifecyclePhaseSeparation.md)**  
@@ -60,12 +62,14 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Establishes a dual-lobe cognitive model for containerized agents: a Fast-Reflex Front Lobe (`bpd` + minimal triage context) for immediate signed backplane communication, and a Deep-Focus Worker (24/7 persistent session) for heavy multi-turn execution, sharing state via `~/.agent/state.json` under a single cryptographic identity.
 
 ### Security, Backplane & Messaging (`THEME-SECURITY`)
-- **[00010 — Valkey Streams Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)**  
+- **[00010 — Valkey Streams Messaging Bus and ACL Isolation](00010-ValkeyPubSubMessagingAndAclIsolation.md)** *(Superseded by 00042)*  
   *Executive Summary:* Inter-agent and telemetry communication utilizes a shared Valkey Streams message bus governed by strict per-agent ACL rules and isolated stream keys.
-- **[00011 — Ed25519 Cryptographic Message Signing](00011-Ed25519CryptographicMessageSigning.md)**  
+- **[00011 — Ed25519 Cryptographic Message Signing](00011-Ed25519CryptographicMessageSigning.md)** *(Superseded by 00042)*  
   *Executive Summary:* All backplane events and commands require cryptographic Ed25519 signatures verified against the sending agent's public key to guarantee authenticity.
 - **[00012 — libbp Core Client Library and Shared C ABI](00012-LibbpCoreClientLibraryAndCAbi.md)**  
   *Executive Summary:* Backplane IPC protocol logic is implemented in a native Go library (`libbp`) and planned for export as a shared C ABI (`libbp.so`) for polyglot agent runtimes.
+- **[00042 — Universal Cryptographic Backplane Fabric and Stateless Identity Profiles](00042-UniversalCryptographicBackplaneFabricAndStatelessIdentityProfiles.md)**  
+  *Executive Summary:* Establishes a universal, topology-agnostic backplane communication fabric governed by non-repudiable cryptographic identity, strict capability-bounded message streams, and stateless connection profile resolution. Supersedes ADR 00010 and ADR 00011.
 
 ### Network Isolation & Perimeter Defense (`THEME-NETWORKING`)
 - **[00013 — Per-Instance Network Isolation](00013-PerInstanceNetworkIsolation.md)**  
