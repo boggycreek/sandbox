@@ -126,17 +126,19 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 	}
 
 	healed := false
-	if cfg.ContainerName == "" {
-		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
-		healed = true
-	}
-	if cfg.VolumeName == "" {
-		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", name)
-		healed = true
-	}
-	if cfg.Image == "" {
-		cfg.Image = "agent-sandbox-base:latest"
-		healed = true
+	if !cfg.IsHost() {
+		if cfg.ContainerName == "" {
+			cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
+			healed = true
+		}
+		if cfg.VolumeName == "" {
+			cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", name)
+			healed = true
+		}
+		if cfg.Image == "" {
+			cfg.Image = "agent-sandbox-base:latest"
+			healed = true
+		}
 	}
 	if cfg.Password == "" {
 		pBytes := make([]byte, 16)
@@ -322,6 +324,14 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 }
 
 func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Podman Storage",
+			Status:  StatusOK,
+			Message: "Host agent (direct host execution, no container storage required)",
+		})
+		return
+	}
 	healed := false
 	netName := "agent-sandbox-infra"
 	if err := runtime.EnsureNetwork(ctx, netName); err != nil {
@@ -362,6 +372,14 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 }
 
 func checkAndHealImage(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Agent Image",
+			Status:  StatusOK,
+			Message: "Host agent (no OCI container image required)",
+		})
+		return
+	}
 	resolved, isLocal := runtime.ResolveAgentImage(ctx, cfg.Image)
 	if resolved != cfg.Image {
 		cfg.Image = resolved
@@ -553,6 +571,14 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	if cfg.IsHost() {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Container & Runtime",
+			Status:  StatusOK,
+			Message: "Host agent (direct host execution, no container runtime required)",
+		})
+		return
+	}
 	info, err := runtime.InspectAgentContainer(ctx, cfg.ContainerName)
 	state := "stopped"
 	if err == nil && info != nil {

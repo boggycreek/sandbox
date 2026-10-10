@@ -726,6 +726,144 @@ func (c *Client) parseXReadResponse(ctx context.Context, val resp.Value) ([]*Mes
 
 // LoadClientFromEnv builds a ClientConfig from standard backplane environment variables
 func LoadClientFromEnv() ClientConfig {
+	profile := os.Getenv("BP_PROFILE")
+	if profile == "" {
+		profile = "default"
+	}
+	cfg, err := LoadClientWithProfile(profile)
+	if err != nil {
+		// Fallback to legacy env loading if profile file does not exist
+		return loadClientDirectEnv()
+	}
+	return cfg
+}
+
+// LoadClientWithProfile loads client configuration from ~/.local/state/bp/profiles/<profile>.env
+// falling back to legacy environment loading if the profile is "default" and the file does not exist.
+func LoadClientWithProfile(profileName string) (ClientConfig, error) {
+	profileName = strings.TrimSpace(profileName)
+	if profileName == "" {
+		profileName = "default"
+	}
+
+	// 1. Check fail-closed condition: BP_MODE=human conflicting with explicit BP_AGENT
+	mode := strings.ToLower(os.Getenv("BP_MODE"))
+	agent := os.Getenv("BP_AGENT")
+	if mode == "human" && agent != "" && agent != os.Getenv("HUMAN_NAME") && agent != "operator" {
+		return ClientConfig{}, fmt.Errorf("conflicting configuration: cannot operate in human operator mode while BP_AGENT is set to %q", agent)
+	}
+
+	// 2. Resolve profile file in ~/.local/state/bp/profiles/<profile>.env
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/tmp"
+	}
+	xdgState := os.Getenv("XDG_STATE_HOME")
+	if xdgState == "" {
+		xdgState = filepath.Join(home, ".local", "state")
+	}
+	profilePath := filepath.Join(xdgState, "bp", "profiles", fmt.Sprintf("%s.env", profileName))
+
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		if profileName == "default" {
+			return loadClientDirectEnv(), nil
+		}
+		return ClientConfig{}, fmt.Errorf("profile %q not found at %s", profileName, profilePath)
+	}
+
+	// Parse key-value lines
+	envMap := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			envMap[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+
+	// Build config using profile values.
+	// For named profiles (non-default), values defined in the profile take precedence over process env.
+	// For default profile, explicit process env overrides.
+	getVal := func(key string) string {
+		if profileName != "default" {
+			if v, ok := envMap[key]; ok && v != "" {
+				return v
+			}
+			return os.Getenv(key)
+		}
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		return envMap[key]
+	}
+
+	host := getVal("BP_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := 6379
+	if portStr := getVal("BP_PORT"); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			port = p
+		}
+	}
+
+	mode = strings.ToLower(getVal("BP_MODE"))
+	var username, password, agentID string
+
+	isAgent := getVal("BP_AGENT") != "" || getVal("AGENT_NAME") != "" || getVal("BP_PASSWORD") != ""
+	if mode == "human" || (mode == "" && !isAgent && getVal("HUMAN_BACKPLANE_PASSWORD") != "") {
+		username = getVal("HUMAN_NAME")
+		if username == "" {
+			username = "operator"
+		}
+		password = getVal("HUMAN_BACKPLANE_PASSWORD")
+		agentID = username
+	} else {
+		agentID = getVal("BP_AGENT")
+		if agentID == "" {
+			agentID = getVal("AGENT_NAME")
+		}
+		username = agentID
+		password = getVal("BP_PASSWORD")
+		if password == "" {
+			password = getVal("AGENT_PASSWORD")
+		}
+	}
+
+	signingKeyPEM := getVal("BP_SIGNING_KEY_PEM")
+	var signingKey ed25519.PrivateKey
+	if keyPath := getVal("BP_SIGNING_KEY"); keyPath != "" {
+		if priv, err := LoadPrivateKeyFromFile(keyPath); err == nil {
+			signingKey = priv
+		}
+	} else if agentID != "" && mode != "human" {
+		xdgData := os.Getenv("XDG_DATA_HOME")
+		if xdgData == "" {
+			xdgData = filepath.Join(home, ".local", "share")
+		}
+		defaultKey := filepath.Join(xdgData, "agent-sandbox", "secrets", strings.ToLower(agentID), "signing-key.pem")
+		if priv, err := LoadPrivateKeyFromFile(defaultKey); err == nil {
+			signingKey = priv
+		}
+	}
+
+	return ClientConfig{
+		Host:          host,
+		Port:          port,
+		Username:      username,
+		Password:      password,
+		AgentID:       agentID,
+		SigningKey:    signingKey,
+		SigningKeyPEM: signingKeyPEM,
+	}, nil
+}
+
+func loadClientDirectEnv() ClientConfig {
 	host := os.Getenv("BP_HOST")
 	if host == "" {
 		host = "localhost"
@@ -742,7 +880,6 @@ func LoadClientFromEnv() ClientConfig {
 	var username, password string
 	var agentID string
 
-	// Auto-detect human operator mode when not running as an explicit agent container
 	isAgent := os.Getenv("BP_AGENT") != "" || os.Getenv("AGENT_NAME") != "" || os.Getenv("BP_PASSWORD") != ""
 	if mode == "human" || (mode == "" && !isAgent && os.Getenv("HUMAN_BACKPLANE_PASSWORD") != "") {
 		username = os.Getenv("HUMAN_NAME")

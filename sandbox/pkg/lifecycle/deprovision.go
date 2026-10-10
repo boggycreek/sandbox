@@ -118,7 +118,9 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	report := NewProvisioningReport(cfg.Name, "deprovision")
 
 	// 1. Destroy container and persistent volume
-	if err := runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName); err != nil {
+	if cfg.IsHost() {
+		report.AddStep("Container & Volume", StatusSkipped, "Host agent has no container or volume to destroy (skipped)", nil)
+	} else if err := runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName); err != nil {
 		report.AddStep("Container & Volume", StatusError, fmt.Sprintf("Failed to remove container/volume: %v", err), err)
 	} else {
 		report.AddStep("Container & Volume", StatusOK, fmt.Sprintf("Removed container (%s) and volume (%s)", cfg.ContainerName, cfg.VolumeName), nil)
@@ -128,12 +130,16 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	if err := config.DeleteAgentConfig(cfg.Name, paths); err != nil {
 		report.AddStep("Local Configuration", StatusError, fmt.Sprintf("Failed to delete local configuration: %v", err), err)
 	} else {
-		report.AddStep("Local Configuration", StatusOK, "Purged local configuration and secrets", nil)
+		report.AddStep("Local Configuration", StatusOK, "Purged local configuration, secrets, and profile", nil)
 	}
 
 	// 3. Clear per-agent known hosts
-	runtime.ClearAgentKnownHosts(cfg.Name, paths)
-	report.AddStep("Known Hosts", StatusOK, "Cleared agent SSH known hosts entry", nil)
+	if cfg.IsHost() {
+		report.AddStep("Known Hosts", StatusSkipped, "Host agent has no SSH host entry (skipped)", nil)
+	} else {
+		runtime.ClearAgentKnownHosts(cfg.Name, paths)
+		report.AddStep("Known Hosts", StatusOK, "Cleared agent SSH known hosts entry", nil)
+	}
 
 	// 4. Deprovision Valkey ACL user & streams
 	if err := DeprovisionValkeyUser(ctx, cfg.Name); err == nil {
@@ -145,7 +151,9 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 5. Deprovision Gitea user & keys
-	if os.Getenv("GITEA_DISABLED") == "1" {
+	if cfg.IsHost() {
+		report.AddStep("Gitea Account", StatusSkipped, "Host agent has no dedicated Gitea account (skipped)", nil)
+	} else if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea Account", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
 	} else if err := DeprovisionGiteaUser(ctx, cfg.Name); err == nil {
 		report.AddStep("Gitea Account", StatusOK, "Purged Gitea user account and authorized keys", nil)
@@ -156,7 +164,7 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 6. Deprovision SonarQube user & analysis tokens
-	if os.Getenv("SONAR_DISABLED") == "1" || (cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "") {
+	if cfg.IsHost() || os.Getenv("SONAR_DISABLED") == "1" || (cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "") {
 		report.AddStep("SonarQube Account", StatusSkipped, "SonarQube is disabled or not provisioned for agent (skipped)", nil)
 	} else if err := DeprovisionSonarUser(ctx, cfg.Name); err == nil {
 		report.AddStep("SonarQube Account", StatusOK, "Purged SonarQube user account and analysis tokens", nil)
@@ -167,7 +175,9 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 7. Update SSH config file
-	if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
+	if cfg.IsHost() {
+		report.AddStep("SSH Configuration", StatusSkipped, "Host agent has no SSH config stanza (skipped)", nil)
+	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
 		report.AddStep("SSH Configuration", StatusWarning, fmt.Sprintf("Failed to synchronize SSH config: %v", err), err)
 	} else {
 		report.AddStep("SSH Configuration", StatusOK, "Synchronized host SSH config", nil)

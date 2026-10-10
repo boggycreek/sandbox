@@ -14,6 +14,7 @@ import (
 // Paths holds XDG-compliant filesystem paths for the sandbox
 type Paths struct {
 	DataHome      string
+	StateHome     string
 	AgentsDir     string
 	SecretsDir    string
 	BinDir        string
@@ -21,6 +22,7 @@ type Paths struct {
 	SSHDir        string
 	IDEKeyFile    string
 	SSHConfigFile string
+	BPProfilesDir string
 }
 
 // GetPaths returns standard paths resolved against XDG environment variables
@@ -35,11 +37,18 @@ func GetPaths() Paths {
 		xdgData = filepath.Join(home, ".local", "share")
 	}
 
+	xdgState := os.Getenv("XDG_STATE_HOME")
+	if xdgState == "" {
+		xdgState = filepath.Join(home, ".local", "state")
+	}
+
 	dataHome := filepath.Join(xdgData, "agent-sandbox")
 	sshDir := filepath.Join(home, ".ssh")
+	bpProfilesDir := filepath.Join(xdgState, "bp", "profiles")
 
 	return Paths{
 		DataHome:      dataHome,
+		StateHome:     xdgState,
 		AgentsDir:     filepath.Join(dataHome, "agents"),
 		SecretsDir:    filepath.Join(dataHome, "secrets"),
 		BinDir:        filepath.Join(home, ".local", "bin"),
@@ -47,12 +56,13 @@ func GetPaths() Paths {
 		SSHDir:        sshDir,
 		IDEKeyFile:    filepath.Join(sshDir, "agent-sandbox"),
 		SSHConfigFile: filepath.Join(dataHome, "ssh_config"),
+		BPProfilesDir: bpProfilesDir,
 	}
 }
 
 // EnsureDirectories creates required data and secrets directories
 func (p Paths) EnsureDirectories() error {
-	for _, dir := range []string{p.DataHome, p.AgentsDir, p.SecretsDir, p.BinDir, p.SSHDir} {
+	for _, dir := range []string{p.DataHome, p.AgentsDir, p.SecretsDir, p.BinDir, p.SSHDir, p.BPProfilesDir} {
 		if dir == "" {
 			continue
 		}

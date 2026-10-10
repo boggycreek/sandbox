@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -67,20 +68,72 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	cmd := strings.ToLower(args[0])
-	cmdArgs := args[1:]
-
 	loadDefaultEnv()
+
+	// Parse optional leading --profile flag before subcommand dispatch
+	var profileName string
+	var remainingArgs []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--profile" || arg == "-profile" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(stderr, "bp: --profile flag requires an argument")
+				return 1
+			}
+			profileName = args[i+1]
+			i++
+		} else if strings.HasPrefix(arg, "--profile=") {
+			profileName = strings.TrimPrefix(arg, "--profile=")
+		} else if strings.HasPrefix(arg, "-profile=") {
+			profileName = strings.TrimPrefix(arg, "-profile=")
+		} else {
+			remainingArgs = append(remainingArgs, args[i:]...)
+			break
+		}
+	}
+
+	if len(remainingArgs) == 0 {
+		printUsage(stdout)
+		return 1
+	}
+
+	cmd := strings.ToLower(remainingArgs[0])
+	cmdArgs := remainingArgs[1:]
+
+	// Check for help --ai or --help --ai
+	if (cmd == "help" || cmd == "-h" || cmd == "--help") && len(cmdArgs) > 0 && strings.ToLower(cmdArgs[0]) == "--ai" {
+		printAIHelp(stdout)
+		return 0
+	}
+
+	if cmd == "help" || cmd == "-h" || cmd == "--help" {
+		printUsage(stdout)
+		return 0
+	}
+
+	// Resolve configuration with profile
+	if profileName == "" {
+		profileName = os.Getenv("BP_PROFILE")
+	}
+	if profileName == "" {
+		profileName = "default"
+	}
+
+	cfg, err := libbp.LoadClientWithProfile(profileName)
+	if err != nil {
+		fmt.Fprintf(stderr, "bp error: %v\n", err)
+		return 2
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cfg := libbp.LoadClientFromEnv()
-
 	switch cmd {
-	case "help", "-h", "--help":
-		printUsage(stdout)
-		return 0
+	case "whoami":
+		return handleWhoami(cfg, stdout)
+
+	case "profile":
+		return handleProfile(cmdArgs, stdout, stderr)
 
 	case "say":
 		return handleSay(ctx, cfg, cmdArgs, stdin, stdout, stderr)
@@ -127,10 +180,76 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 }
 
+func handleWhoami(cfg libbp.ClientConfig, stdout io.Writer) int {
+	mode := "agent"
+	if strings.ToLower(os.Getenv("BP_MODE")) == "human" || cfg.AgentID == os.Getenv("HUMAN_NAME") || cfg.AgentID == "operator" {
+		mode = "human"
+	}
+	pubKeyB64 := "none"
+	if cfg.SigningKey != nil {
+		pubKeyB64 = libbp.EncodePublicKeyBase64(cfg.SigningKey.Public().(ed25519.PublicKey))
+	}
+
+	fmt.Fprintf(stdout, "Agent ID:   %s\n", cfg.AgentID)
+	fmt.Fprintf(stdout, "Mode:       %s\n", mode)
+	fmt.Fprintf(stdout, "Host:       %s:%d\n", cfg.Host, cfg.Port)
+	fmt.Fprintf(stdout, "Public Key: %s\n", pubKeyB64)
+	return 0
+}
+
+func handleProfile(args []string, stdout, stderr io.Writer) int {
+	sub := "list"
+	if len(args) > 0 {
+		sub = strings.ToLower(args[0])
+	}
+
+	switch sub {
+	case "list":
+		home, _ := os.UserHomeDir()
+		if home == "" {
+			home = "/tmp"
+		}
+		xdgState := os.Getenv("XDG_STATE_HOME")
+		if xdgState == "" {
+			xdgState = filepath.Join(home, ".local", "state")
+		}
+		profilesDir := filepath.Join(xdgState, "bp", "profiles")
+
+		entries, err := os.ReadDir(profilesDir)
+		if err != nil || len(entries) == 0 {
+			fmt.Fprintln(stdout, "Available profiles:")
+			fmt.Fprintln(stdout, "  default (active fallback)")
+			return 0
+		}
+
+		fmt.Fprintln(stdout, "Available profiles:")
+		hasDefault := false
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".env") {
+				name := strings.TrimSuffix(e.Name(), ".env")
+				if name == "default" {
+					hasDefault = true
+				}
+				fmt.Fprintf(stdout, "  %s\n", name)
+			}
+		}
+		if !hasDefault {
+			fmt.Fprintln(stdout, "  default (operator fallback)")
+		}
+		return 0
+
+	default:
+		fmt.Fprintf(stderr, "bp: unknown profile subcommand %q (expected 'list')\n", sub)
+		return 1
+	}
+}
+
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, `Usage: bp <command> [args...]
+	fmt.Fprintln(out, `Usage: bp [--profile <name>] <command> [args...]
 
 Commands:
+  whoami                           Print current resolved identity, mode, and public key
+  profile list                     List configured backplane connection profiles
   say <message> [--file <path>]    Broadcast message to the fleet (<id>:out)
   post <file> [to <agent>]         Publish long-form message with first line as summary
   cat <blob-key>                   Output parked payload blob to stdout (alias: get)
@@ -149,7 +268,45 @@ Commands:
   state set <key> <val>            Update field in shared synaptic state (ADR 00040)
   state show                       Display entire shared synaptic state JSON (ADR 00040)
   state queue <push|pop|list>      Manage shared inter-lobe directive queue (ADR 00040)
-  help                             Show this help message`)
+  help [--ai]                      Show this help message (or AI agent protocol instructions)`)
+}
+
+func printAIHelp(out io.Writer) {
+	fmt.Fprintln(out, `# Valkey Backplane CLI ('bp') — Agent Execution & Protocol Guide
+
+## Overview
+The 'bp' CLI is the inter-agent and host-agent communication tool for the Agent Sandbox.
+Every command is cryptographically authenticated using Ed25519 signatures and Valkey ACLs.
+
+## Profile & Identity Resolution
+- Execution is stateless and thread-safe.
+- Specify profile via '--profile <name>' flag or 'BP_PROFILE=<name>' environment variable.
+- Profiles are stored in '$XDG_STATE_HOME/bp/profiles/<name>.env'.
+- Check active identity:
+    bp [--profile <name>] whoami
+
+## Message Passing Conventions
+1. Broadcast ('bp say'):
+   - Use 'bp say "<message>"' for short team-wide status updates, milestones, and discoveries.
+   - For long logs or patches, park payload: 'bp say "<summary>" --file <path>'.
+2. Direct Messaging ('bp tell'):
+   - Send point-to-point directives: 'bp tell <agent> "<message>"'.
+   - Attach files/diffs: 'bp tell <agent> "<message>" --file <path>'.
+3. Threaded Replies ('bp reply'):
+   - Quote citations when replying: 'bp reply <citation> <recipient> "<message>"' (e.g., 'bp reply alice#3 alice "acknowledged"').
+4. Consuming Inboxes ('bp recv'):
+   - Read unread incoming messages: 'bp recv [--block <sec>] [--json]'.
+   - Messages are automatically verified and cursored.
+
+## Shared State & Coordination (ADR 00040)
+- Inspect cluster state: 'bp state show'
+- Read / write state keys: 'bp state get <key>' / 'bp state set <key> <value>'
+- Directive queue: 'bp state queue push "<task>"' / 'bp state queue pop'
+
+## Agent Behavioral Rules
+- Never snoop or guess private inboxes.
+- Never impersonate other agents or the human operator.
+- Always include citations in replies to preserve lineage.`)
 }
 
 func getClient(ctx context.Context, cfg libbp.ClientConfig, stderr io.Writer) (*libbp.Client, error) {

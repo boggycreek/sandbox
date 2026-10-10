@@ -92,6 +92,17 @@ func TestPathsAndAgentConfig(t *testing.T) {
 		t.Errorf("expected error for nonexistent agent")
 	}
 
+	// Host-agent test
+	cfg.Runtime = "host"
+	if !cfg.IsHost() {
+		t.Errorf("expected IsHost() to return true when Runtime=host")
+	}
+	cfg.Runtime = "container"
+	cfg.HostOnly = true
+	if !cfg.IsHost() {
+		t.Errorf("expected IsHost() to return true when HostOnly=true")
+	}
+
 	// 5. Delete agent
 	if err := DeleteAgentConfig("test-agent", paths); err != nil {
 		t.Errorf("DeleteAgentConfig error: %v", err)

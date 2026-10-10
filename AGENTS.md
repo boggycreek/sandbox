@@ -69,14 +69,14 @@ Contributors and AI coding agents working on the `agent-sandbox` repository itse
 ### 1. Host Management CLI (`sndbx`)
 Installed to `~/.local/bin/sndbx`, provides host-side management:
 - **Agent Lifecycle**:
-  - `sndbx agent create <name> [as <type>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
-  - `sndbx agent start <name>`: Starts container via Podman.
+  - `sndbx agent create <name> [as <type>] [--role <role>] [--host|--host-only] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
+  - `sndbx agent start <name>`: Starts container via Podman (or reports first-class host agent status).
   - `sndbx agent tmux <name>`: Attaches interactively to container tmux supervisor.
   - `sndbx agent open <name> [in <ide>] [--no-launch]`: Launches desktop IDE remote development (VS Code, JetBrains).
   - `sndbx agent ssh <name>`: Direct SSH into unprivileged agent environment.
   - `sndbx agent ssh-config [name] [--all]`: Emits OpenSSH configuration stanzas for IDE Remote-SSH discovery.
   - `sndbx agent doctor <name>`: Diagnoses agent configuration, keys, storage, and infrastructure provisioning, and auto-heals defects.
-  - `sndbx agent list [--json]`: Lists all agents, container status, and dynamic SSH ports.
+  - `sndbx agent list [--json]`: Lists all agents, container status (or HOST), and dynamic SSH ports.
   - `sndbx agent stop [name] [--all]`: Stops agent containers.
   - `sndbx agent clean <name>`: Removes container while preserving home volume.
   - `sndbx agent retire <name> [--force]`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Gitea account.
@@ -95,6 +95,9 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
 ### 2. Backplane Messaging CLI & Protocol (`bp`, `pkg/libbp`)
 Cross-agent communication bus built on Valkey/Redis Streams:
 - **Commands**:
+  - `bp [--profile <name>] whoami`: Prints current resolved identity, mode, and public key fingerprint.
+  - `bp profile list`: Lists configured connection profiles (`$XDG_STATE_HOME/bp/profiles/*.env`).
+  - `bp help --ai`: Renders AI-agent optimized markdown execution protocol and conventions.
   - `bp say <message> [--file <path>]`: Broadcasts message to public feed.
   - `bp tell <agent> <message> [--file <path>]`: Sends point-to-point message to inbox.
   - `bp reply <id> <recipient> <message>`: Replies to a specific threaded message citation.
@@ -108,6 +111,7 @@ Cross-agent communication bus built on Valkey/Redis Streams:
   - Every message is signed with the agent's Ed25519 private key (`crypto/ed25519`).
   - Messages carry canonical citations (`<agent>#<seq>`).
   - Valkey ACLs isolate agent access (`~<name>:*` read/write, `~*:inbox` write-only).
+  - Profiles are stateless and thread-safe via `--profile <name>` flag or `BP_PROFILE=<name>` env.
 
 ### 3. Local Gitea Forge (`pkg/gitea`)
 - Automated user creation, public SSH key registration, and `fleet` organization membership on `sndbx agent create`.

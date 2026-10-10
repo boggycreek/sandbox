@@ -272,7 +272,9 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 3. Gitea Account & Keys
-	if os.Getenv("GITEA_DISABLED") == "1" {
+	if cfg.IsHost() {
+		report.AddStep("Gitea User & Keys", StatusSkipped, "Host agent does not require dedicated in-container Gitea SSH key (skipped)", nil)
+	} else if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea User & Keys", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
 	} else if err := RegisterGiteaUser(ctx, cfg, paths); err == nil {
 		report.AddStep("Gitea User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
@@ -283,7 +285,9 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 4. SonarQube User & Analysis Token
-	if os.Getenv("SONAR_DISABLED") == "1" {
+	if cfg.IsHost() {
+		report.AddStep("SonarQube Account & Token", StatusSkipped, "Host agent operates directly on host tools (skipped)", nil)
+	} else if os.Getenv("SONAR_DISABLED") == "1" {
 		report.AddStep("SonarQube Account & Token", StatusSkipped, "SonarQube infrastructure is disabled via SONAR_DISABLED (skipped)", nil)
 	} else if err := RegisterSonarUser(ctx, cfg, paths); err == nil {
 		report.AddStep("SonarQube Account & Token", StatusOK, "Registered user account and generated analysis token", nil)
@@ -294,7 +298,9 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 5. Host SSH Configuration Sync
-	if err := runtime.SyncSSHConfigFile(ctx, paths); err == nil {
+	if cfg.IsHost() {
+		report.AddStep("SSH Configuration", StatusSkipped, "Host agent does not expose container SSH daemon (skipped)", nil)
+	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err == nil {
 		report.AddStep("SSH Configuration", StatusOK, "Synchronized host SSH config", nil)
 	} else {
 		report.AddStep("SSH Configuration", StatusWarning, fmt.Sprintf("Failed to synchronize SSH config: %v", err), err)

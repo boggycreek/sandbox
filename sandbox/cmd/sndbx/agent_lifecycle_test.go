@@ -258,6 +258,20 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	if !strings.Contains(out, "stopped") {
 		t.Errorf("expected stop success output, got: %s", out)
 	}
+
+	// 4. Start host agent
+	cfgHost, _ := config.NewAgentConfig("host-lifecycle-bot", "base", "developer")
+	cfgHost.Runtime = "host"
+	cfgHost.HostOnly = true
+	_ = config.SaveAgentConfig(cfgHost, paths)
+
+	code, out, errOut = runSndbx([]string{"agent", "start", "host-lifecycle-bot"})
+	if code != 0 {
+		t.Errorf("agent start host-lifecycle-bot failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "first-class host agent") {
+		t.Errorf("expected host execution message, got: %s", out)
+	}
 }
 
 func TestAgentListTableMultipleAgents(t *testing.T) {
@@ -269,15 +283,22 @@ func TestAgentListTableMultipleAgents(t *testing.T) {
 
 	cfg1, _ := config.NewAgentConfig("alpha-bot", "base", "researcher")
 	cfg2, _ := config.NewAgentConfig("beta-bot", "opencode", "coder")
+	cfgHost, _ := config.NewAgentConfig("gamma-host-bot", "base", "assistant")
+	cfgHost.Runtime = "host"
+	cfgHost.HostOnly = true
 	_ = config.SaveAgentConfig(cfg1, paths)
 	_ = config.SaveAgentConfig(cfg2, paths)
+	_ = config.SaveAgentConfig(cfgHost, paths)
 
 	code, out, errOut := runSndbx([]string{"agent", "list"})
 	if code != 0 {
 		t.Fatalf("agent list failed: code=%d err=%s", code, errOut)
 	}
-	if !strings.Contains(out, "alpha-bot") || !strings.Contains(out, "beta-bot") {
-		t.Errorf("expected both agents in table output, got: %s", out)
+	if !strings.Contains(out, "alpha-bot") || !strings.Contains(out, "beta-bot") || !strings.Contains(out, "gamma-host-bot") {
+		t.Errorf("expected all agents in table output, got: %s", out)
+	}
+	if !strings.Contains(out, "HOST") {
+		t.Errorf("expected HOST status in table output, got: %s", out)
 	}
 	if !strings.Contains(out, "AGENT_NAME") || !strings.Contains(out, "STATUS") {
 		t.Errorf("expected table header in list output, got: %s", out)

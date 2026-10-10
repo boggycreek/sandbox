@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -520,6 +521,39 @@ func TestLoadClientFromEnv(t *testing.T) {
 	cfgFallbackAgent := LoadClientFromEnv()
 	if cfgFallbackAgent.AgentID != "agent-fallback-id" || cfgFallbackAgent.Password != "agent-fallback-pw" || cfgFallbackAgent.Port != 6379 {
 		t.Errorf("unexpected LoadClientFromEnv agent fallback: %+v", cfgFallbackAgent)
+	}
+
+	// Test Fail-Closed on conflicting BP_MODE=human and BP_AGENT
+	os.Setenv("BP_MODE", "human")
+	os.Setenv("BP_AGENT", "conflicting-agent")
+	os.Setenv("HUMAN_NAME", "admin-user")
+	if _, err := LoadClientWithProfile("default"); err == nil {
+		t.Errorf("expected fail-closed error for conflicting BP_MODE=human and BP_AGENT")
+	}
+	os.Unsetenv("BP_MODE")
+	os.Unsetenv("BP_AGENT")
+
+	// Test LoadClientWithProfile from file
+	os.Unsetenv("BP_PORT")
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	profilesDir := filepath.Join(stateDir, "bp", "profiles")
+	_ = os.MkdirAll(profilesDir, 0700)
+	testProfilePath := filepath.Join(profilesDir, "testprof.env")
+	profileEnv := "BP_AGENT=profile-agent\nBP_PASSWORD=prof-pass\nBP_PORT=6399\n"
+	_ = os.WriteFile(testProfilePath, []byte(profileEnv), 0600)
+
+	cfgProf, err := LoadClientWithProfile("testprof")
+	if err != nil {
+		t.Fatalf("LoadClientWithProfile failed: %v", err)
+	}
+	if cfgProf.AgentID != "profile-agent" || cfgProf.Password != "prof-pass" || cfgProf.Port != 6399 {
+		t.Errorf("unexpected profile config: %+v", cfgProf)
+	}
+
+	// Missing profile error
+	if _, err := LoadClientWithProfile("nonexistent-profile"); err == nil {
+		t.Errorf("expected error for missing non-default profile")
 	}
 }
 
