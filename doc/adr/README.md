@@ -40,14 +40,16 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Sandboxes execute strictly as unprivileged user `agent` (UID/GID 1000) under restricted Linux capabilities and rootless subuid mappings.
 - **[00005 — Persisted Home Volume Across Container Recreation](00005-PersistedHomeVolumeAcrossRecreation.md)**  
   *Executive Summary:* Agent persistent state and memory reside in a dedicated named volume mounted to `/home/agent` that survives container restarts, updates, and recreation.
-- **[00006 — Layered OCI Container Hierarchy and Resolution](00006-LayeredOciContainerHierarchy.md)**  
+- **[00006 — Layered OCI Container Hierarchy and Resolution](00006-LayeredOciContainerHierarchy.md)** *(Superseded by 00043)*  
   *Executive Summary:* Agent images follow a strict inheritance chain (`sndbx-base` -> preset variants) resolved from local storage before falling back to external registries.
 - **[00026 — Deno as Standard JavaScript Runtime for OCI Container Agents](00026-DenoAsStandardJsRuntimeForOciContainerAgents.md)**  
   *Executive Summary:* Deno 2.x replaces Node.js as the standard JavaScript/TypeScript runtime in all agent OCI images, providing native TypeScript execution, granular capability sandboxing, and a leaner container footprint without compromising npm ecosystem compatibility.
 - **[00036 — PiG Derivative Agent OCI Image](00036-PiGDerivativeAgentOciImage.md)**  
   *Executive Summary:* Introduces PiG (Pi in Go) as a first-class derivative agent harness OCI image (`agent-sandbox-pig:latest`), integrating single-binary Go execution, non-root isolation, tmux session supervision, and native sndbx lifecycle preset management.
-- **[00043 — Layered Host-Connected Tool Containers and Ephemeral Workspace Projections](00043-LayeredHostConnectedToolContainersAndEphemeralWorkspaceProjections.md)**  
-  *Executive Summary:* Establishes a dual-tier OCI container architecture separating 24/7 background daemon sandboxes from interactive host-connected tool containers, projecting the operator's current working directory into an unprivileged rootless container with preserved host file ownership (keep-id) and open host networking.
+- **[00043 — Decoupled Base OCI Hierarchy for Daemon Sandboxes and Tool Containers](00043-DecoupledBaseOciHierarchyForDaemonSandboxesAndToolContainers.md)**  
+  *Executive Summary:* Refactors the agent OCI image inheritance hierarchy into a neutral foundation (agent-sandbox-core) and two specialized intermediate base layers: daemon-base (providing background process supervision, SSH, and multiplexed sessions for fleet workers) and tool-base (providing direct, foreground CLI tool execution without daemon overhead for interactive pair programming). Supersedes ADR 00006.
+- **[00044 — Host Working Directory Projection and User ID Preservation](00044-HostWorkingDirectoryProjectionAndUserIdPreservation.md)**  
+  *Executive Summary:* Enables interactive host-connected agent containers to bind the operator's current working directory directly into /home/agent/workspace using Podman user namespace mapping (--userns=keep-id), ensuring zero file ownership or permission drift on the physical host.
 
 ### Agent Lifecycle & Process Model (`THEME-LIFECYCLE`)
 - **[00007 — Agent Lifecycle Phase Separation](00007-AgentLifecyclePhaseSeparation.md)**  
