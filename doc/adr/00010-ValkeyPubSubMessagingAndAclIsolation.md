@@ -3,7 +3,8 @@ adr: "00010"
 title: "Valkey Streams Messaging Bus and ACL Isolation"
 topic: "Security, Backplane & Messaging"
 theme: "THEME-SECURITY"
-status: "accepted"
+status: "superseded"
+superseded_by: "00042"
 version: "v0.1.0-alpha"
 as_built: true
 tags:

@@ -543,13 +543,19 @@ func TestLoadClientFromEnv(t *testing.T) {
 	profileEnv := "BP_AGENT=\"profile-agent\"\nBP_PASSWORD='prof-pass'\nBP_PORT=\"6399\"\n"
 	_ = os.WriteFile(testProfilePath, []byte(profileEnv), 0600)
 
+	// Even with ambient BP_MODE=human and HUMAN_NAME exported, named profile must NOT be hijacked
+	t.Setenv("BP_MODE", "human")
+	t.Setenv("HUMAN_NAME", "brian-operator")
+
 	cfgProf, err := LoadClientWithProfile("testprof")
 	if err != nil {
 		t.Fatalf("LoadClientWithProfile failed: %v", err)
 	}
 	if cfgProf.AgentID != "profile-agent" || cfgProf.Password != "prof-pass" || cfgProf.Port != 6399 || cfgProf.Mode != "agent" {
-		t.Errorf("unexpected profile config: %+v", cfgProf)
+		t.Errorf("unexpected profile config (hijacked by ambient env?): %+v", cfgProf)
 	}
+	os.Unsetenv("BP_MODE")
+	os.Unsetenv("HUMAN_NAME")
 
 	// Quoted BP_SIGNING_KEY that does not exist should return error
 	testKeyFailPath := filepath.Join(profilesDir, "keyfail.env")

@@ -747,11 +747,13 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 		profileName = "default"
 	}
 
-	// 1. Check fail-closed condition: BP_MODE=human conflicting with explicit BP_AGENT
-	mode := strings.ToLower(os.Getenv("BP_MODE"))
-	agent := os.Getenv("BP_AGENT")
-	if mode == "human" && agent != "" && agent != os.Getenv("HUMAN_NAME") && agent != "operator" {
-		return ClientConfig{}, fmt.Errorf("conflicting configuration: cannot operate in human operator mode while BP_AGENT is set to %q", agent)
+	// 1. Check fail-closed condition for default profile: BP_MODE=human conflicting with explicit BP_AGENT
+	if profileName == "default" {
+		mode := strings.ToLower(os.Getenv("BP_MODE"))
+		agent := os.Getenv("BP_AGENT")
+		if mode == "human" && agent != "" && agent != os.Getenv("HUMAN_NAME") && agent != "operator" {
+			return ClientConfig{}, fmt.Errorf("conflicting configuration: cannot operate in human operator mode while BP_AGENT is set to %q", agent)
+		}
 	}
 
 	// 2. Resolve profile file in ~/.local/state/bp/profiles/<profile>.env
@@ -795,14 +797,16 @@ func LoadClientWithProfile(profileName string) (ClientConfig, error) {
 	}
 
 	// Build config using profile values.
-	// For named profiles (non-default), values defined in the profile take precedence over process env.
-	// For default profile, explicit process env overrides.
+	// For named profiles (non-default), values must come strictly from the profile file
+	// and MUST NOT inherit ambient identity/mode env vars (BP_MODE, BP_AGENT, AGENT_NAME,
+	// HUMAN_NAME, BP_PASSWORD, AGENT_PASSWORD, HUMAN_BACKPLANE_PASSWORD, BP_SIGNING_KEY).
+	// Only host/port infrastructure connection settings may fall back to ambient env.
 	getVal := func(key string) string {
 		var val string
 		if profileName != "default" {
 			if v, ok := envMap[key]; ok && v != "" {
 				val = v
-			} else {
+			} else if key == "BP_HOST" || key == "BP_PORT" {
 				val = os.Getenv(key)
 			}
 		} else {
