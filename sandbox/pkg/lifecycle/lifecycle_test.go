@@ -234,3 +234,38 @@ func TestSonarProvisionAndDeprovision(t *testing.T) {
 		t.Errorf("expected error on EnsureUser failure")
 	}
 }
+
+func TestEnsureIDEKeypair(t *testing.T) {
+	tmpDir := t.TempDir()
+	paths := config.Paths{
+		DataHome:   filepath.Join(tmpDir, "data"),
+		SSHDir:     filepath.Join(tmpDir, "ssh"),
+		IDEKeyFile: filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+	}
+
+	// 1. Empty IDEKeyFile path
+	if err := EnsureIDEKeypair(config.Paths{}); err != nil {
+		t.Errorf("expected nil error for empty IDEKeyFile, got %v", err)
+	}
+
+	// 2. Initial generation
+	if err := EnsureIDEKeypair(paths); err != nil {
+		t.Fatalf("EnsureIDEKeypair initial generation failed: %v", err)
+	}
+	if _, err := os.Stat(paths.IDEKeyFile); err != nil {
+		t.Errorf("expected private key file to exist: %v", err)
+	}
+	pubFile := paths.IDEKeyFile + ".pub"
+	if _, err := os.Stat(pubFile); err != nil {
+		t.Errorf("expected public key file to exist: %v", err)
+	}
+
+	// 3. Regeneration when pub file missing
+	_ = os.Remove(pubFile)
+	if err := EnsureIDEKeypair(paths); err != nil {
+		t.Fatalf("EnsureIDEKeypair regeneration failed: %v", err)
+	}
+	if _, err := os.Stat(pubFile); err != nil {
+		t.Errorf("expected regenerated public key file to exist: %v", err)
+	}
+}

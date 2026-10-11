@@ -175,8 +175,8 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 7. Update SSH config file
-	if cfg.IsHost() {
-		report.AddStep("SSH Configuration", StatusSkipped, "Host agent has no SSH config stanza (skipped)", nil)
+	if cfg.IsBareHost() {
+		report.AddStep("SSH Configuration", StatusSkipped, "Bare host agent has no SSH config stanza (skipped)", nil)
 	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
 		report.AddStep("SSH Configuration", StatusWarning, fmt.Sprintf("Failed to synchronize SSH config: %v", err), err)
 	} else {
