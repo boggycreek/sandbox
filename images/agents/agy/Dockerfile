@@ -1,10 +1,10 @@
 # Derivative OCI Image: Antigravity (agy) Agent Sandbox
-# Extends neutral agent-sandbox-base with Antigravity CLI runner
-FROM agent-sandbox-base:latest
+# Extends neutral agent-sandbox-daemon-base with Antigravity CLI runner
+FROM agent-sandbox-daemon-base:latest
 
 USER root
 
-# Install Python3 and build tooling for agy plugins/MCP servers (Deno provided by base)
+# Install Python3 and build tooling for agy plugins/MCP servers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \

@@ -107,15 +107,35 @@ func TestPathsAndAgentConfig(t *testing.T) {
 		t.Errorf("expected error for nonexistent agent")
 	}
 
-	// Host-agent test
-	cfg.Runtime = "host"
-	if !cfg.IsHost() {
-		t.Errorf("expected IsHost() to return true when Runtime=host")
+	// Host-agent tests
+	cfg.Runtime = "bare-host"
+	if !cfg.IsBareHost() || !cfg.IsHost() || cfg.IsHostContainer() {
+		t.Errorf("expected IsBareHost()=true, IsHost()=true, IsHostContainer()=false when Runtime=bare-host")
+	}
+	cfg.Runtime = "host-container"
+	cfg.WorkspacePath = "/tmp"
+	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsBareHost() {
+		t.Errorf("expected IsHostContainer()=true, IsHost()=true, IsBareHost()=false when Runtime=host-container")
 	}
 	cfg.Runtime = "container"
 	cfg.HostOnly = true
-	if !cfg.IsHost() {
-		t.Errorf("expected IsHost() to return true when HostOnly=true")
+	if !cfg.IsBareHost() || !cfg.IsHost() {
+		t.Errorf("expected IsBareHost() and IsHost() to return true when HostOnly=true")
+	}
+	cfg.HostOnly = false
+	if cfg.IsHost() || cfg.IsHostContainer() || cfg.IsBareHost() {
+		t.Errorf("expected all host helpers to return false for standard container")
+	}
+
+	// New image presets
+	if img := ResolveImage("core"); img != "agent-sandbox-core:latest" {
+		t.Errorf("expected core preset to resolve to agent-sandbox-core:latest, got %q", img)
+	}
+	if img := ResolveImage("daemon"); img != "agent-sandbox-daemon-base:latest" {
+		t.Errorf("expected daemon preset to resolve to agent-sandbox-daemon-base:latest, got %q", img)
+	}
+	if img := ResolveImage("tool"); img != "agent-sandbox-tool-base:latest" {
+		t.Errorf("expected tool preset to resolve to agent-sandbox-tool-base:latest, got %q", img)
 	}
 
 	// 5. Delete agent

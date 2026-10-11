@@ -8,7 +8,9 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -371,5 +373,93 @@ func TestRootlessNetNSAutoHealing(t *testing.T) {
 	restoreRun()
 	if err != nil || !runRetried {
 		t.Errorf("StartAgentContainer new failed to auto-heal: %v", err)
+	}
+}
+
+func TestStartHostAgentContainer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	tmpDir := t.TempDir()
+	wsDir := filepath.Join(tmpDir, "workspace")
+	_ = os.MkdirAll(wsDir, 0755)
+
+	// 1. Nonexistent workspace path error
+	cfgMissing := &config.AgentConfig{
+		Name:          "host-missing",
+		Runtime:       "host-container",
+		WorkspacePath: filepath.Join(tmpDir, "missing-dir"),
+	}
+	if err := StartAgentContainer(ctx, cfgMissing, config.Paths{}, "127.0.0.1", 6379); err == nil {
+		t.Errorf("expected error for nonexistent workspace path")
+	}
+
+	// 2. Existing container start
+	var recordedCmds []string
+	restoreMock := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		recordedCmds = append(recordedCmds, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		if len(args) >= 3 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		return exec.Command("true")
+	})
+	defer restoreMock()
+
+	cfgHost := &config.AgentConfig{
+		Name:          "host-worker",
+		Runtime:       "host-container",
+		ContainerName: "sndbx-agent-host-worker",
+		VolumeName:    "sndbx-agent-host-worker-home",
+		WorkspacePath: wsDir,
+		Image:         "agent-sandbox-tool-base:latest",
+		ModelURL:      "http://localhost:8080/v1",
+		ModelName:     "qwen2.5",
+	}
+
+	err := StartAgentContainer(ctx, cfgHost, config.Paths{}, "127.0.0.1", 6379)
+	if err != nil {
+		t.Errorf("StartAgentContainer failed on existing host container: %v", err)
+	}
+	if len(recordedCmds) == 0 || !strings.Contains(recordedCmds[len(recordedCmds)-1], "podman start sndbx-agent-host-worker") {
+		t.Errorf("expected podman start command, got: %v", recordedCmds)
+	}
+
+	// 3. New host container run with --net=host, keep-id, and workspace mount
+	recordedCmds = nil
+	SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		recordedCmds = append(recordedCmds, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		if len(args) >= 3 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	})
+
+	err = StartAgentContainer(ctx, cfgHost, config.Paths{}, "127.0.0.1", 6379)
+	if err != nil {
+		t.Errorf("StartAgentContainer failed for new host container: %v", err)
+	}
+
+	var runCmd string
+	for _, c := range recordedCmds {
+		if strings.Contains(c, "podman run") {
+			runCmd = c
+			break
+		}
+	}
+	if runCmd == "" {
+		t.Fatalf("expected podman run command in: %v", recordedCmds)
+	}
+	if !strings.Contains(runCmd, "--network agent-sandbox-infra") {
+		t.Errorf("expected --network agent-sandbox-infra in run command, got: %s", runCmd)
+	}
+	if !strings.Contains(runCmd, "--add-host llm-gateway:host-gateway") {
+		t.Errorf("expected --add-host in run command, got: %s", runCmd)
+	}
+	if !strings.Contains(runCmd, "--userns=keep-id:uid=1000,gid=1000") {
+		t.Errorf("expected keep-id userns mapping in run command, got: %s", runCmd)
+	}
+	expectedMount := fmt.Sprintf("-v %s:/home/agent/workspace:z", wsDir)
+	if !strings.Contains(runCmd, expectedMount) {
+		t.Errorf("expected workspace mount in run command, got: %s", runCmd)
 	}
 }

@@ -165,11 +165,21 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 # --- OCI Image Build Targets (Podman) ---
 
-build-images: build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
+build-images: build-image-core build-image-daemon-base build-image-tool-base build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
 
-build-image-base: ## Build neutral agent-sandbox-base OCI image with Podman
-	@echo "==> Building agent-sandbox-base OCI image..."
-	podman build -t agent-sandbox-base:latest -f images/agent-base/Dockerfile .
+build-image-core: ## Build foundational agent-sandbox-core OCI image with Podman (ADR 00043)
+	@echo "==> Building agent-sandbox-core OCI image..."
+	podman build -t agent-sandbox-core:latest -f images/agent-core/Dockerfile .
+
+build-image-daemon-base: build-image-core ## Build autonomous fleet agent-sandbox-daemon-base OCI image with Podman (ADR 00043)
+	@echo "==> Building agent-sandbox-daemon-base OCI image..."
+	podman build -t agent-sandbox-daemon-base:latest -t agent-sandbox-base:latest -f images/agent-daemon-base/Dockerfile .
+
+build-image-tool-base: build-image-core ## Build interactive agent-sandbox-tool-base OCI image with Podman (ADR 00043)
+	@echo "==> Building agent-sandbox-tool-base OCI image..."
+	podman build -t agent-sandbox-tool-base:latest -f images/agent-tool-base/Dockerfile .
+
+build-image-base: build-image-daemon-base ## Build legacy agent-sandbox-base alias (maps to daemon-base)
 
 build-image-native: build-image-base ## Build Native Agent derivative agent OCI image with Podman
 	@echo "==> Building agent-sandbox-native OCI image..."

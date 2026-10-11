@@ -3,7 +3,8 @@ adr: "00006"
 title: "Layered OCI Container Hierarchy and Resolution"
 topic: "Container Runtime & Storage"
 theme: "THEME-RUNTIME"
-status: "accepted"
+status: "superseded"
+superseded_by: "00043"
 version: "v0.1.0-alpha"
 as_built: true
 tags:

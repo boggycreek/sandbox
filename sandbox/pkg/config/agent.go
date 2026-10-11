@@ -22,6 +22,9 @@ import (
 // Well-known image presets
 var WellKnownImages = map[string]string{
 	"base":     "agent-sandbox-base:latest",
+	"core":     "agent-sandbox-core:latest",
+	"daemon":   "agent-sandbox-daemon-base:latest",
+	"tool":     "agent-sandbox-tool-base:latest",
 	"native":   "agent-sandbox-native:latest",
 	"sndbx":    "agent-sandbox-native:latest",
 	"opencode": "agent-sandbox-opencode:latest",
@@ -38,6 +41,7 @@ type AgentConfig struct {
 	Image         string    `json:"image"`
 	ContainerName string    `json:"container_name,omitempty"`
 	VolumeName    string    `json:"volume_name,omitempty"`
+	WorkspacePath string    `json:"workspace_path,omitempty"`
 	Password      string    `json:"password"`
 	SigningKeyPEM string    `json:"signing_key_pem"`
 	PublicKeyB64  string    `json:"public_key_b64"`
@@ -45,14 +49,24 @@ type AgentConfig struct {
 	ModelName     string    `json:"model_name,omitempty"`
 	ModelAPIKey   string    `json:"model_api_key,omitempty"`
 	SonarToken    string    `json:"sonar_token,omitempty"`
-	Runtime       string    `json:"runtime,omitempty"` // "container" (default) or "host"
+	Runtime       string    `json:"runtime,omitempty"` // "container" (default), "host-container", or "bare-host"
 	HostOnly      bool      `json:"host_only,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// IsHost returns true if the agent runs directly on the host rather than in a container
+// IsBareHost returns true if the agent runs directly on the bare host without any container
+func (c *AgentConfig) IsBareHost() bool {
+	return c.HostOnly || c.Runtime == "bare-host" || (c.Runtime == "host" && c.WorkspacePath == "" && c.ContainerName == "")
+}
+
+// IsHostContainer returns true if the agent runs as a host-connected container with workspace projection
+func (c *AgentConfig) IsHostContainer() bool {
+	return c.Runtime == "host-container" || (c.Runtime == "host" && (c.WorkspacePath != "" || c.ContainerName != ""))
+}
+
+// IsHost returns true if the agent operates in host context (bare host or host-connected container)
 func (c *AgentConfig) IsHost() bool {
-	return c.HostOnly || c.Runtime == "host"
+	return c.IsBareHost() || c.IsHostContainer()
 }
 
 // ResolveImage returns the canonical OCI image name for a given input or preset

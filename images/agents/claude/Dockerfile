@@ -1,19 +1,21 @@
 # Derivative OCI Image: Claude Code Agent Sandbox
-# Extends neutral agent-sandbox-base with Claude Code CLI
-FROM agent-sandbox-base:latest
+# Extends neutral agent-sandbox-daemon-base with Claude Code CLI
+FROM agent-sandbox-daemon-base:latest
 
 USER root
 
-# Install Python and build dependencies (Deno provided by base)
+# Install Node.js, npm, Python, and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    nodejs \
+    npm \
     python3 \
     python3-pip \
     python3-venv \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Anthropic Claude Code CLI via Deno npm compatibility layer
-RUN deno install --global --allow-scripts=npm:@anthropic-ai/claude-code -n claude npm:@anthropic-ai/claude-code
+# Install Anthropic Claude Code CLI via npm
+RUN npm install -g @anthropic-ai/claude-code
 
 # Copy default settings with broad permissions (acceptEdits)
 RUN mkdir -p /etc/claude

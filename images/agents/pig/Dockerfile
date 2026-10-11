@@ -6,11 +6,11 @@
 # Use of this source code is governed by an MIT-style
 # license that can be found in the LICENSE file.
 
-FROM agent-sandbox-base:latest
+FROM agent-sandbox-daemon-base:latest
 
 USER root
 
-# Install Python, YAML, and build dependencies (Deno provided by base)
+# Install Python, YAML, and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \

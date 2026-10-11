@@ -2,7 +2,7 @@
 
 A local, host-managed, multi-agent containerization platform designed to run autonomous AI coding agents in isolated Podman environments on physical machines (macOS and Linux).
 
-The sandbox gives AI agents autonomous execution capability (`git`, `deno`, `rm`, compilers, file edits) inside rootless containers without per-command human approval prompts, isolating agent workloads and protecting host files and credentials.
+The sandbox gives AI agents autonomous execution capability (`git`, `npm`, `rm`, compilers, file edits) inside rootless containers without per-command human approval prompts, isolating agent workloads and protecting host files and credentials.
 
 ---
 
@@ -41,7 +41,9 @@ The installer recognizes the local checkout and sets it up as the active sandbox
 ## Core Architecture & Components
 
 - **Layered OCI Container Hierarchy**:
-  - `images/agent-base/`: Neutral base image with Debian Bookworm, unprivileged user (`agent`, UID 1000), internal SSH daemon (port 2222), tmux supervisor, Deno 2.x runtime, and the `bpd` entrypoint daemon.
+  - `images/agent-core/`: Minimal base image with Debian Bookworm, unprivileged user (`agent`, UID 1000), and base utilities.
+  - `images/agent-daemon-base/`: Daemon base image with internal SSH daemon (port 2222), tmux supervisor, and the `bpd` entrypoint daemon.
+  - `images/agent-tool-base/`: Ephemeral foreground tool container base image.
   - `images/agents/`: Derivative agent harnesses (`opencode`, `claude`, `agy`).
 - **Native Go Monorepo & Zero-Dependency Binaries**:
   - `sndbx`: Unified host CLI for managing agent lifecycles, shared infrastructure, and IDE plugins.
