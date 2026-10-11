@@ -20,6 +20,7 @@ RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr
 # Configure default agy settings
 RUN mkdir -p /etc/agy
 COPY images/agents/agy/agy-config.json /etc/agy/agy-config.json
+COPY images/agents/agy/agy-settings.json /etc/agy/agy-settings.json
 
 # Copy derivative entrypoint
 COPY images/agents/agy/agy-entrypoint.sh /usr/local/bin/agy-entrypoint.sh

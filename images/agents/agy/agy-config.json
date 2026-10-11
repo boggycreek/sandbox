@@ -1,4 +1,5 @@
 {
   "mode": "accept-edits",
-  "autoApprove": true
+  "autoApprove": true,
+  "dangerouslySkipPermissions": true
 }

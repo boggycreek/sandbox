@@ -74,6 +74,7 @@ COPY images/agent-base/doc/ /usr/local/share/doc/agent-sandbox/
 COPY images/agent-base/doc/ /home/agent/doc/
 COPY images/agent-base/agent-install /usr/local/bin/agent-install
 COPY images/agent-base/configs/ /etc/agent-sandbox/configs/
+COPY images/agent-base/templates/ /etc/agent-sandbox/templates/
 RUN chmod +x /usr/local/bin/agent-install && \
     chown -R agent:agent /home/agent/doc
 
