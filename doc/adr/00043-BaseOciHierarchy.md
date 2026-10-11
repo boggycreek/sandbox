@@ -1,6 +1,6 @@
 ---
 adr: "00043"
-title: "Decoupled Base OCI Hierarchy for Daemon Sandboxes and Tool Containers"
+title: "Base OCI Hierarchy"
 topic: "Container Runtime & Storage"
 theme: "THEME-RUNTIME"
 status: "accepted"
@@ -18,7 +18,7 @@ tags:
 executive_summary: "Refactors the agent OCI image inheritance hierarchy into a neutral foundation (agent-sandbox-core) and two specialized intermediate base layers: daemon-base (providing background process supervision, SSH, and multiplexed sessions for fleet workers) and tool-base (providing direct, foreground CLI tool execution without daemon overhead for interactive pair programming). Supersedes ADR 00006."
 ---
 
-# 00043. Decoupled Base OCI Hierarchy for Daemon Sandboxes and Tool Containers
+# 00043. Base OCI Hierarchy
 
 ## Context
 

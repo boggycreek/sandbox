@@ -47,6 +47,15 @@ if [ -d "/usr/local/share/doc/agent-sandbox" ]; then
   cp -ru /usr/local/share/doc/agent-sandbox/* "${DOC_DIR}/" 2>/dev/null || cp -r /usr/local/share/doc/agent-sandbox/* "${DOC_DIR}/" 2>/dev/null || true
 fi
 
+# Ensure NVM and default Node LTS are seeded into persistent home if missing
+if [ ! -d "/home/agent/.nvm" ]; then
+  if [ -d "/usr/local/share/nvm-template" ]; then
+    cp -a /usr/local/share/nvm-template /home/agent/.nvm 2>/dev/null || true
+  elif [ -d "/etc/skel/.nvm" ]; then
+    cp -a /etc/skel/.nvm /home/agent/.nvm 2>/dev/null || true
+  fi
+fi
+
 # Start backplane daemon (bpd) in background if available and configured
 if command -v bpd >/dev/null 2>&1 && [ -n "${BP_HOST:-}" ] && [ "${BPD_DISABLED:-0}" != "1" ]; then
   bpd &
@@ -71,6 +80,13 @@ if command -v fleet-tasks >/dev/null 2>&1; then
     sleep 1
     fleet-tasks init >/dev/null 2>&1 || true
   ) &
+fi
+
+# Just-in-time install target agent harness if requested and missing
+if [ -n "${AGENT_HARNESS:-}" ] && [ ! -x "/home/agent/.local/bin/${AGENT_HARNESS}" ]; then
+  if command -v agent-install >/dev/null 2>&1; then
+    agent-install "${AGENT_HARNESS}" || echo "agent-base: JIT install of ${AGENT_HARNESS} failed, continuing" >&2
+  fi
 fi
 
 # Set default prompt

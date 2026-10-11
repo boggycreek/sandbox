@@ -149,7 +149,7 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	if code != 0 {
 		t.Errorf("host container connect failed: code %d, stderr: %s", code, stderr.String())
 	}
-	expectedHostConnect := fmt.Sprintf("podman exec -it %s /bin/bash", cfgHostContainer.ContainerName)
+	expectedHostConnect := fmt.Sprintf("podman exec -it --user 1000 %s /bin/bash", cfgHostContainer.ContainerName)
 	if len(executedCmds) == 0 || !strings.Contains(executedCmds[len(executedCmds)-1], expectedHostConnect) {
 		t.Errorf("expected %s command, got: %v", expectedHostConnect, executedCmds)
 	}

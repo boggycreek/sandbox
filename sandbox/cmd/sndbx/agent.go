@@ -258,6 +258,12 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		return 1
 	}
 
+	lowerHarness := strings.ToLower(strings.TrimSpace(image))
+	switch lowerHarness {
+	case "agy", "claude", "opencode", "pig":
+		cfg.Harness = lowerHarness
+	}
+
 	if isHostContainer {
 		cfg.Runtime = "host-container"
 		cfg.WorkspacePath = absPwd
@@ -411,7 +417,7 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 			fmt.Fprintf(stderr, "sndbx error: container %s is not running (start via: sndbx agent start %s)\n", cfg.ContainerName, cfg.Name)
 			return 1
 		}
-		cmd := execCommandContext(ctx, "podman", "exec", "-it", cfg.ContainerName, "/bin/bash")
+		cmd := execCommandContext(ctx, "podman", "exec", "-it", "--user", "1000", cfg.ContainerName, "/bin/bash")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr

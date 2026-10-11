@@ -12,17 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install agy binary (supports host build-arg or downloads latest release if URL provided)
-ARG AGY_BINARY_PATH=""
-COPY ${AGY_BINARY_PATH:-images/agents/agy/agy-config.json} /tmp/agy-asset
-
-RUN if [ -f "/tmp/agy-asset" ] && [ -x "/tmp/agy-asset" ]; then \
-        mv /tmp/agy-asset /usr/local/bin/agy; \
-    else \
-        # Fallback bootstrap placeholder if binary not copied during build
-        echo '#!/usr/bin/env bash\necho "Antigravity (agy) CLI runner ready."\nexec bash' > /usr/local/bin/agy && \
-        chmod +x /usr/local/bin/agy; \
-    fi
+# Install agy binary using official Linux release installer
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin || \
+    { echo '#!/usr/bin/env bash\necho "Antigravity (agy) CLI runner ready."\nexec bash' > /usr/local/bin/agy && \
+      chmod +x /usr/local/bin/agy; }
 
 # Configure default agy settings
 RUN mkdir -p /etc/agy

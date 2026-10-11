@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/schema.json",
+  "autoupdate": false,
+  "permission": {
+    "acceptEdits": true,
+    "allowExecution": true
+  }
+}
