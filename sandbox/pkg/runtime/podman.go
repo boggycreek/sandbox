@@ -394,6 +394,9 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		return nil
 	}
 
+	netName := "agent-sandbox-infra"
+	_ = EnsureNetwork(ctx, netName)
+
 	// Build run arguments for host-connected container
 	sshKeyPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
 	var mounts []string
@@ -404,19 +407,20 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent:z", cfg.VolumeName))
 	}
 	if cfg.WorkspacePath != "" {
-		mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent/workspace:Z", cfg.WorkspacePath))
+		mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent/workspace:z", cfg.WorkspacePath))
 	}
 
 	containerBPHost := bpHost
-	if containerBPHost == "" || containerBPHost == infraValkeyContainer {
-		containerBPHost = "127.0.0.1"
+	if containerBPHost == "localhost" || containerBPHost == "127.0.0.1" || containerBPHost == "::1" || containerBPHost == "" {
+		containerBPHost = infraValkeyContainer
 	}
 
 	args := []string{
 		"run", "-d", "-i", "-t",
 		"--name", cfg.ContainerName,
 		"--hostname", fmt.Sprintf("%s-sandbox", cfg.Name),
-		"--net=host",
+		"--network", netName,
+		"--add-host", "llm-gateway:host-gateway",
 		"--userns=keep-id:uid=1000,gid=1000",
 		"-e", fmt.Sprintf("AGENT_NAME=%s", cfg.Name),
 		"-e", fmt.Sprintf("AGENT_ROLE=%s", cfg.Role),
@@ -437,10 +441,15 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 	args = append(args, "-e", fmt.Sprintf("HUMAN_NAME=%s", humanName))
 
 	if cfg.ModelURL != "" {
+		// Translate localhost / 127.0.0.1 to llm-gateway for container-to-host bridge access
+		containerModelURL := cfg.ModelURL
+		containerModelURL = strings.ReplaceAll(containerModelURL, "://localhost", "://llm-gateway")
+		containerModelURL = strings.ReplaceAll(containerModelURL, "://127.0.0.1", "://llm-gateway")
+
 		args = append(args,
-			"-e", fmt.Sprintf("OPENAI_BASE_URL=%s", cfg.ModelURL),
-			"-e", fmt.Sprintf("OPENAI_API_BASE=%s", cfg.ModelURL),
-			"-e", fmt.Sprintf("MODEL_URL=%s", cfg.ModelURL),
+			"-e", fmt.Sprintf("OPENAI_BASE_URL=%s", containerModelURL),
+			"-e", fmt.Sprintf("OPENAI_API_BASE=%s", containerModelURL),
+			"-e", fmt.Sprintf("MODEL_URL=%s", containerModelURL),
 		)
 	}
 

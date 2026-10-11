@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/boggycreek/sandbox/pkg/config"
+	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 func TestAgentTmuxAndConnect(t *testing.T) {
@@ -131,10 +132,17 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 		t.Errorf("expected host container tmux guard error, got code %d: %s", code, stderr.String())
 	}
 
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	mockExec := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		executedCmds = append(executedCmds, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		if len(args) >= 3 && args[0] == "inspect" {
+			return exec.Command("echo", `[{"Id":"test-id","Names":["host-cont-agent"],"State":{"Status":"running","Running":true}}]`)
+		}
 		return exec.Command("true")
 	}
+	execCommandContext = mockExec
+	restoreRuntime2 := runtime.SetExecCommandContextForTesting(mockExec)
+	defer restoreRuntime2()
+
 	stdout.Reset()
 	stderr.Reset()
 	code = Run([]string{"agent", "connect", "host-cont-agent"}, &stdout, &stderr)

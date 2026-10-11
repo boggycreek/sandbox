@@ -1,6 +1,6 @@
 # Derivative OCI Image: OpenCode Agent Sandbox
-# Extends neutral agent-sandbox-base with OpenCode agent CLI
-FROM agent-sandbox-base:latest
+# Extends neutral agent-sandbox-daemon-base with OpenCode agent CLI
+FROM agent-sandbox-daemon-base:latest
 
 USER root
 

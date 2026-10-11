@@ -89,19 +89,53 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 		t.Errorf("expected sndbx error, got: %s", stderr.String())
 	}
 
-	// 7. Host agent (cannot use container IDE forwarding)
+	// 7. Bare host agent (cannot use container IDE forwarding)
 	hostCfg, _ := config.NewAgentConfig("host-open-bot", "base", "developer")
-	hostCfg.Runtime = "host"
+	hostCfg.Runtime = "bare-host"
 	hostCfg.HostOnly = true
 	_ = config.SaveAgentConfig(hostCfg, paths)
 
 	stderr.Reset()
 	code = Run([]string{"agent", "open", "host-open-bot"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("expected code 1 for host agent open, got %d", code)
+		t.Errorf("expected code 1 for bare host agent open, got %d", code)
 	}
 	if !strings.Contains(stderr.String(), "runs directly on host, no container SSH IDE forwarding") {
 		t.Errorf("expected host agent IDE error, got: %s", stderr.String())
+	}
+
+	// 8. Host container agent (opens local workspace path directly)
+	hostCtrCfg, _ := config.NewAgentConfig("host-ctr-open", "tool", "developer")
+	hostCtrCfg.Runtime = "host-container"
+	hostCtrCfg.WorkspacePath = "/tmp/test-host-workspace"
+	_ = config.SaveAgentConfig(hostCtrCfg, paths)
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "host-ctr-open", "--no-launch"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("expected code 0 for host container open --no-launch, got %d: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Host workspace directory: /tmp/test-host-workspace") {
+		t.Errorf("expected host workspace output, got: %s", stdout.String())
+	}
+
+	// 9. Host container agent launch path
+	origExec := execCommandContext
+	defer func() { execCommandContext = origExec }()
+	var executedOpen []string
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		executedOpen = append(executedOpen, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		return exec.Command("true")
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "host-ctr-open"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("expected code 0 for host container open, got %d: %s", code, stderr.String())
+	}
+	if len(executedOpen) == 0 || !strings.Contains(executedOpen[0], "/tmp/test-host-workspace") {
+		t.Errorf("expected local IDE launch with workspace path, got: %v", executedOpen)
 	}
 }
 

@@ -539,6 +539,25 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 		t.Errorf("expected nonexistent workspace error, got code %d: %s", code, errOut)
 	}
 
+	// 2b. Root and system path projection denial
+	code, _, errOut = runSndbx([]string{"agent", "create", "bad-root-bot", "--host", "--pwd", "/"})
+	if code != 1 || !strings.Contains(errOut, "cannot project root filesystem") {
+		t.Errorf("expected root projection denial error, got code %d: %s", code, errOut)
+	}
+
+	code, _, errOut = runSndbx([]string{"agent", "create", "bad-sys-bot", "--host", "--pwd", "/etc"})
+	if code != 1 || !strings.Contains(errOut, "cannot project system directory") {
+		t.Errorf("expected system directory projection denial error, got code %d: %s", code, errOut)
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	if homeDir != "" {
+		code, _, errOut = runSndbx([]string{"agent", "create", "bad-home-bot", "--host", "--pwd", homeDir})
+		if code != 1 || !strings.Contains(errOut, "projecting user home directory") {
+			t.Errorf("expected home directory projection denial error, got code %d: %s", code, errOut)
+		}
+	}
+
 	// 3. Create host-connected container agent with --host and --pwd
 	code, out, errOut := runSndbx([]string{"agent", "create", "host-coder", "as", "tool", "--host", "--pwd", wsDir, "--role", "interactive-pair"})
 	if code != 0 {
@@ -624,13 +643,16 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if runCmd == "" {
 		t.Fatalf("expected podman run command to be executed, executed: %v", executedCmds)
 	}
-	if !strings.Contains(runCmd, "--net=host") {
-		t.Errorf("expected --net=host in run command, got: %s", runCmd)
+	if !strings.Contains(runCmd, "--network agent-sandbox-infra") {
+		t.Errorf("expected --network agent-sandbox-infra in run command, got: %s", runCmd)
+	}
+	if !strings.Contains(runCmd, "--add-host llm-gateway:host-gateway") {
+		t.Errorf("expected --add-host in run command, got: %s", runCmd)
 	}
 	if !strings.Contains(runCmd, "--userns=keep-id:uid=1000,gid=1000") {
 		t.Errorf("expected keep-id userns mapping in run command, got: %s", runCmd)
 	}
-	expectedMount := fmt.Sprintf("-v %s:/home/agent/workspace:Z", wsDir)
+	expectedMount := fmt.Sprintf("-v %s:/home/agent/workspace:z", wsDir)
 	if !strings.Contains(runCmd, expectedMount) {
 		t.Errorf("expected workspace mount %q in run command, got: %s", expectedMount, runCmd)
 	}

@@ -1,5 +1,14 @@
 # Autonomous Fleet Base OCI Image (ADR 00043)
 # Extends agent-sandbox-core with bpd supervisor, unprivileged OpenSSH, and tmux
+FROM docker.io/library/golang:1.27-bookworm AS builder
+WORKDIR /src
+COPY go.work ./
+COPY agent/ ./agent/
+COPY backplane/ ./backplane/
+COPY mcp/ ./mcp/
+COPY sandbox/ ./sandbox/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bpd ./backplane/cmd/bpd
+
 FROM agent-sandbox-core:latest
 
 USER root
@@ -14,10 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY images/agent-base/sshd_config /etc/ssh/sshd_config
 RUN mkdir -p /var/run/sshd && chmod 755 /var/run/sshd
 
-# Install agent-runner and fleet-tasks
+# Install bpd, agent-runner, and fleet-tasks
+COPY --from=builder /build/bpd /usr/local/bin/bpd
 COPY images/agent-base/agent-runner /usr/local/bin/agent-runner
 COPY images/agent-base/fleet-tasks /usr/local/bin/fleet-tasks
-RUN chmod +x /usr/local/bin/agent-runner /usr/local/bin/fleet-tasks
+RUN chmod +x /usr/local/bin/bpd /usr/local/bin/agent-runner /usr/local/bin/fleet-tasks
 
 # Install tmux configuration and entrypoint
 COPY images/agent-base/tmux.conf /home/agent/.tmux.conf

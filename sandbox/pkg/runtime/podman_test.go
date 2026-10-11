@@ -449,13 +449,16 @@ func TestStartHostAgentContainer(t *testing.T) {
 	if runCmd == "" {
 		t.Fatalf("expected podman run command in: %v", recordedCmds)
 	}
-	if !strings.Contains(runCmd, "--net=host") {
-		t.Errorf("expected --net=host in run command, got: %s", runCmd)
+	if !strings.Contains(runCmd, "--network agent-sandbox-infra") {
+		t.Errorf("expected --network agent-sandbox-infra in run command, got: %s", runCmd)
+	}
+	if !strings.Contains(runCmd, "--add-host llm-gateway:host-gateway") {
+		t.Errorf("expected --add-host in run command, got: %s", runCmd)
 	}
 	if !strings.Contains(runCmd, "--userns=keep-id:uid=1000,gid=1000") {
 		t.Errorf("expected keep-id userns mapping in run command, got: %s", runCmd)
 	}
-	expectedMount := fmt.Sprintf("-v %s:/home/agent/workspace:Z", wsDir)
+	expectedMount := fmt.Sprintf("-v %s:/home/agent/workspace:z", wsDir)
 	if !strings.Contains(runCmd, expectedMount) {
 		t.Errorf("expected workspace mount in run command, got: %s", runCmd)
 	}

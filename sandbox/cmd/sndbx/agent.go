@@ -207,6 +207,30 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 			fmt.Fprintf(stderr, "sndbx error: workspace directory %q does not exist or is not a directory\n", absPwd)
 			return 1
 		}
+		realPwd, err := filepath.EvalSymlinks(absPwd)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx error resolving symlinks for %q: %v\n", absPwd, err)
+			return 1
+		}
+		cleanPwd := filepath.Clean(realPwd)
+
+		// Disallow projecting root, system paths, or user home directly
+		homeDir, _ := os.UserHomeDir()
+		if cleanPwd == "/" {
+			fmt.Fprintln(stderr, "sndbx error: cannot project root filesystem '/' as workspace directory")
+			return 1
+		}
+		if homeDir != "" && cleanPwd == filepath.Clean(homeDir) {
+			fmt.Fprintf(stderr, "sndbx error: projecting user home directory %q directly is not permitted (specify a project subdirectory via --pwd)\n", cleanPwd)
+			return 1
+		}
+		for _, sysDir := range []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/lib", "/dev", "/proc", "/sys", "/boot"} {
+			if cleanPwd == sysDir || strings.HasPrefix(cleanPwd, sysDir+"/") {
+				fmt.Fprintf(stderr, "sndbx error: cannot project system directory %q as workspace directory\n", cleanPwd)
+				return 1
+			}
+		}
+		absPwd = cleanPwd
 	}
 
 	if image == "" {
@@ -219,7 +243,13 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 
 	resolvedImage := image
 	if !isBareHost {
-		resolvedImage, _ = runtime.ResolveAgentImage(ctx, image)
+		var isLocal bool
+		resolvedImage, isLocal = runtime.ResolveAgentImage(ctx, image)
+		if resolvedImage == "" {
+			fmt.Fprintf(stderr, "sndbx error: unable to resolve image %q\n", image)
+			return 1
+		}
+		_ = isLocal
 	}
 
 	cfg, err := config.NewAgentConfig(agentName, resolvedImage, role, modelURL, modelName, modelKey)
@@ -376,6 +406,11 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 	name := args[0]
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err == nil && cfg.IsHostContainer() {
+		info, err := runtime.InspectAgentContainer(ctx, cfg.ContainerName)
+		if err != nil || info == nil || info.State != "running" {
+			fmt.Fprintf(stderr, "sndbx error: container %s is not running (start via: sndbx agent start %s)\n", cfg.ContainerName, cfg.Name)
+			return 1
+		}
 		cmd := execCommandContext(ctx, "podman", "exec", "-it", cfg.ContainerName, "/bin/bash")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = stdout
@@ -453,9 +488,26 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	if cfg.IsHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
+	if cfg.IsBareHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a bare host agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
 		return 1
+	}
+
+	if cfg.IsHostContainer() {
+		if noLaunch {
+			fmt.Fprintf(stdout, "Host workspace directory: %s\n", cfg.WorkspacePath)
+			fmt.Fprintf(stdout, "Launch command: %s %s\n", target.BinaryName, cfg.WorkspacePath)
+			return 0
+		}
+		fmt.Fprintf(stdout, "Opening %s in %s (Path: %s)...\n", name, target.DisplayName, cfg.WorkspacePath)
+		cmd := execCommandContext(ctx, target.Path, cfg.WorkspacePath)
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, err)
+			return 1
+		}
+		return 0
 	}
 
 	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
