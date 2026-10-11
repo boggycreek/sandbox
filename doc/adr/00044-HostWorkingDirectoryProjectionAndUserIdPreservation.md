@@ -34,17 +34,19 @@ Conversely, naively bind-mounting the host's working directory into a standard r
 
 We establish **Host Working Directory Projection** for interactive host-connected agent containers:
 
-1. **Direct Workspace Mount**: The operator's current working directory (`pwd` or explicit `--pwd <path>`) is mounted directly to the container's workspace path:
+1. **Direct Workspace Mount**: The operator's current working directory (`pwd` or explicit `--pwd <path>`) is mounted directly to the container's workspace path using the shared SELinux volume flag (`:z`):
    ```
-   -v "${HOST_WORKSPACE_PATH}:/home/agent/workspace:Z"
+   -v "${HOST_WORKSPACE_PATH}:/home/agent/workspace:z"
    ```
+   Using lowercase `:z` ensures that host desktop editors, compilers, and host git commands continue to have read/write access without being locked out by private container MCS labels (`:Z`).
 2. **User Namespace Mapping (`keep-id`)**: The container executes with explicit user namespace preservation:
    ```
    --userns=keep-id:uid=1000,gid=1000
    ```
    This maps the container's internal `agent` user (UID/GID 1000) directly to the physical operator's host UID and GID.
 3. **Preserved File Ownership**: All files, directories, compiled artifacts, and git checkouts created by the agent container on disk remain owned by the physical host user with exact native host permissions.
-4. **Lifecycle Independence**: Deprovisioning or recreating the agent container (`clean` / `retire`) does not delete or alter the physical host workspace directory.
+4. **Isolated Home Volume Persistence**: In containerized host mode, the agent retains its dedicated named volume (`sndbx-agent-<name>-home`) mounted to `/home/agent:z` ([ADR 00005](00005-PersistedHomeVolumeAcrossRecreation.md)). This stores agent identity, backplane profile credentials, tool settings, and memories across container lifecycles without leaking or polluting the operator's physical host `$HOME`. The projected project directory is mounted strictly inside `/home/agent/workspace`.
+5. **Lifecycle Independence**: Deprovisioning or recreating the agent container (`clean` / `retire`) destroys the container and internal home volume, but strictly preserves the physical host workspace directory without modification.
 
 ---
 
