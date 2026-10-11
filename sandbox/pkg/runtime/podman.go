@@ -310,6 +310,10 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		"-e", fmt.Sprintf("VALKEY_PASSWORD=%s", cfg.Password),
 	}
 
+	if cfg.Harness != "" {
+		args = append(args, "-e", fmt.Sprintf("AGENT_HARNESS=%s", cfg.Harness))
+	}
+
 	humanName := os.Getenv("HUMAN_NAME")
 	if humanName == "" {
 		humanName = "operator"
@@ -432,6 +436,10 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		"-e", fmt.Sprintf("BP_SIGNING_KEY_PEM=%s", cfg.SigningKeyPEM),
 		"-e", fmt.Sprintf("VALKEY_ADDR=%s:%d", containerBPHost, bpPort),
 		"-e", fmt.Sprintf("VALKEY_PASSWORD=%s", cfg.Password),
+	}
+
+	if cfg.Harness != "" {
+		args = append(args, "-e", fmt.Sprintf("AGENT_HARNESS=%s", cfg.Harness))
 	}
 
 	humanName := os.Getenv("HUMAN_NAME")

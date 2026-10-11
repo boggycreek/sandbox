@@ -1,0 +1,6 @@
+{
+  "autoUpdaterStatus": "disabled",
+  "permissions": {
+    "defaultMode": "acceptEdits"
+  }
+}

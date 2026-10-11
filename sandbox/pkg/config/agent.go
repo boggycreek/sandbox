@@ -39,6 +39,7 @@ type AgentConfig struct {
 	Name          string    `json:"name"`
 	Role          string    `json:"role"`
 	Image         string    `json:"image"`
+	Harness       string    `json:"harness,omitempty"`
 	ContainerName string    `json:"container_name,omitempty"`
 	VolumeName    string    `json:"volume_name,omitempty"`
 	WorkspacePath string    `json:"workspace_path,omitempty"`

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Boggy Creek Software LLC
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file.
+
+# Just-In-Time In-Container Agent Harness Installer
+# Runs unprivileged inside container as user 'agent' (UID 1000).
+# Installs/updates target agent CLI directly into /home/agent/.local/bin.
+
+set -euo pipefail
+
+TARGET="${1:-${AGENT_HARNESS:-}}"
+if [[ -z "${TARGET}" ]]; then
+  echo "Usage: agent-install <agy|claude|opencode|pig>" >&2
+  exit 1
+fi
+
+BIN_DIR="/home/agent/.local/bin"
+mkdir -p "${BIN_DIR}"
+export PATH="${BIN_DIR}:${PATH}"
+
+# Ensure NVM is available in environment if present
+export NVM_DIR="/home/agent/.nvm"
+if [ -s "${NVM_DIR}/nvm.sh" ]; then
+  # shellcheck source=/dev/null
+  \. "${NVM_DIR}/nvm.sh" 2>/dev/null || true
+fi
+
+case "${TARGET}" in
+  agy)
+    echo "==> [JIT] Installing Antigravity (agy) CLI..."
+    curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir "${BIN_DIR}"
+    # Configure default agy settings if missing
+    mkdir -p /home/agent/.gemini/antigravity-cli
+    if [[ ! -f /home/agent/.gemini/antigravity-cli/config.json && -f /etc/agent-sandbox/configs/agy-config.json ]]; then
+      cp /etc/agent-sandbox/configs/agy-config.json /home/agent/.gemini/antigravity-cli/config.json
+    fi
+    ;;
+
+  claude)
+    echo "==> [JIT] Installing Claude Code CLI..."
+    curl -fsSL https://claude.ai/install.sh | bash
+    # Configure default claude settings if missing
+    mkdir -p /home/agent/.claude
+    if [[ ! -f /home/agent/.claude/settings.json && -f /etc/agent-sandbox/configs/claude-settings.json ]]; then
+      cp /etc/agent-sandbox/configs/claude-settings.json /home/agent/.claude/settings.json
+    fi
+    ;;
+
+  opencode)
+    echo "==> [JIT] Installing OpenCode CLI..."
+    curl -fsSL https://opencode.ai/install | bash
+    ln -sf /home/agent/.opencode/bin/opencode "${BIN_DIR}/opencode"
+    # Configure default opencode settings if missing
+    mkdir -p /home/agent/.config/opencode
+    if [[ ! -f /home/agent/.config/opencode/config.json && -f /etc/agent-sandbox/configs/opencode.json ]]; then
+      cp /etc/agent-sandbox/configs/opencode.json /home/agent/.config/opencode/config.json
+    fi
+    ;;
+
+  pig)
+    echo "==> [JIT] Installing PiG (Pi in Go) CLI..."
+    TARGETARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+    case "${TARGETARCH}" in
+      amd64|x86_64) ARCH="amd64" ;;
+      arm64|aarch64) ARCH="arm64" ;;
+      *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;;
+    esac
+    PIG_VERSION="${PIG_VERSION:-0.4.1}"
+    TMP_PIG="/tmp/pig-install-$$.tar.gz"
+    curl -fsSL -o "${TMP_PIG}" "https://github.com/MichaelKinsy/PiG/releases/download/v${PIG_VERSION}/pig-${PIG_VERSION}-linux-${ARCH}.tar.gz"
+    tar -xzf "${TMP_PIG}" -C /tmp
+    mv "/tmp/pig-${PIG_VERSION}-linux-${ARCH}/pig" "${BIN_DIR}/pig"
+    chmod +x "${BIN_DIR}/pig"
+    rm -rf "${TMP_PIG}" "/tmp/pig-${PIG_VERSION}-linux-${ARCH}"
+    ;;
+
+  *)
+    echo "agent-install: Unknown harness '${TARGET}'. Supported: agy, claude, opencode, pig" >&2
+    exit 1
+    ;;
+esac
+
+echo "==> [JIT] Successfully provisioned ${TARGET} into ${BIN_DIR}."

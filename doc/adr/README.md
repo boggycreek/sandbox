@@ -42,14 +42,16 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Agent persistent state and memory reside in a dedicated named volume mounted to `/home/agent` that survives container restarts, updates, and recreation.
 - **[00006 — Layered OCI Container Hierarchy and Resolution](00006-LayeredOciContainerHierarchy.md)** *(Superseded by 00043)*  
   *Executive Summary:* Agent images follow a strict inheritance chain (`sndbx-base` -> preset variants) resolved from local storage before falling back to external registries.
-- **[00026 — Deno as Standard JavaScript Runtime for OCI Container Agents](00026-DenoAsStandardJsRuntimeForOciContainerAgents.md)** *(Deprecated)*  
-  *Executive Summary:* Deprecated. Deno was previously adopted as the standard in-container JS/TS runtime. Following Cloudflare's acquisition of Deno and the planned 1-year abandonment timeline, Deno has been removed from the foundational container hierarchy. Base images omit JavaScript runtimes unless specifically required by downstream harnesses.
+- **[00026 — Deno as Standard JavaScript Runtime for OCI Container Agents](00026-DenoAsStandardJsRuntimeForOciContainerAgents.md)** *(Superseded by 00045)*  
+  *Executive Summary:* Deprecated. Deno was previously adopted as the standard in-container JS/TS runtime. Following Cloudflare's acquisition of Deno and the planned 1-year abandonment timeline, Deno has been superseded by Node Version Manager (NVM) scoped to the persistent agent home.
 - **[00036 — PiG Derivative Agent OCI Image](00036-PiGDerivativeAgentOciImage.md)**  
   *Executive Summary:* Introduces PiG (Pi in Go) as a first-class derivative agent harness OCI image (`agent-sandbox-pig:latest`), integrating single-binary Go execution, non-root isolation, tmux session supervision, and native sndbx lifecycle preset management.
-- **[00043 — Decoupled Base OCI Hierarchy for Daemon Sandboxes and Tool Containers](00043-DecoupledBaseOciHierarchyForDaemonSandboxesAndToolContainers.md)**  
+- **[00043 — Base OCI Hierarchy](00043-BaseOciHierarchy.md)**  
   *Executive Summary:* Refactors the agent OCI image inheritance hierarchy into a neutral foundation (agent-sandbox-core) and two specialized intermediate base layers: daemon-base (providing background process supervision, SSH, and multiplexed sessions for fleet workers) and tool-base (providing direct, foreground CLI tool execution without daemon overhead for interactive pair programming). Supersedes ADR 00006.
 - **[00044 — Host Working Directory Projection and User ID Preservation](00044-HostWorkingDirectoryProjectionAndUserIdPreservation.md)**  
   *Executive Summary:* Enables interactive host-connected agent containers to bind the operator's current working directory directly into /home/agent/workspace using Podman user namespace mapping (--userns=keep-id), ensuring zero file ownership or permission drift on the physical host.
+- **[00045 — Node Version Manager (NVM) Scoped to Agent Persistent Home](00045-NodeVersionManagerInAgentHome.md)**  
+  *Executive Summary:* Adopts Node Version Manager (NVM) scoped to the unprivileged agent's persistent home directory (/home/agent/.nvm) with the greatest LTS release pre-installed as default. Decoupled from OCI image creation, allowing the operator and agent to manage and switch Node versions dynamically without rebuilding OCI images. Supersedes ADR 00026.
 
 ### Agent Lifecycle & Process Model (`THEME-LIFECYCLE`)
 - **[00007 — Agent Lifecycle Phase Separation](00007-AgentLifecyclePhaseSeparation.md)**  

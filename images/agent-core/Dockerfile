@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tar \
     gzip \
     unzip \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Beads (bd) CLI — system-wide, root-owned, available to all users
@@ -68,10 +69,41 @@ COPY --from=builder /build/beads-mcp /usr/local/bin/beads-mcp
 COPY --from=builder /build/sonar-mcp /usr/local/bin/sonar-mcp
 RUN chmod +x /usr/local/bin/bp /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp /usr/local/bin/sonar-mcp
 
-# Install in-container documentation
+# Install in-container documentation and JIT harness installer
 COPY images/agent-base/doc/ /usr/local/share/doc/agent-sandbox/
 COPY images/agent-base/doc/ /home/agent/doc/
-RUN chown -R agent:agent /home/agent/doc
+COPY images/agent-base/agent-install /usr/local/bin/agent-install
+COPY images/agent-base/configs/ /etc/agent-sandbox/configs/
+RUN chmod +x /usr/local/bin/agent-install && \
+    chown -R agent:agent /home/agent/doc
+
+# Install NVM (Node Version Manager) and latest Node.js LTS release
+ENV NVM_DIR=/home/agent/.nvm
+ARG NVM_VERSION=0.40.8
+RUN NVM_TEMPLATE_DIR="/usr/local/share/nvm-template" && \
+    mkdir -p "${NVM_TEMPLATE_DIR}" && \
+    export NVM_DIR="${NVM_TEMPLATE_DIR}" && \
+    curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh" | bash && \
+    bash -c 'source "${NVM_DIR}/nvm.sh" && nvm install --lts && nvm alias default "lts/*"' && \
+    chmod -R 777 "${NVM_TEMPLATE_DIR}" && \
+    LTS_NODE_BIN="$(find "${NVM_TEMPLATE_DIR}/versions/node" -maxdepth 2 -type d -name bin | head -n 1)" && \
+    ln -s "${LTS_NODE_BIN}/node" /usr/local/bin/node && \
+    ln -s "${LTS_NODE_BIN}/npm" /usr/local/bin/npm && \
+    ln -s "${LTS_NODE_BIN}/npx" /usr/local/bin/npx && \
+    cp -a "${NVM_TEMPLATE_DIR}" /etc/skel/.nvm && \
+    cp -a "${NVM_TEMPLATE_DIR}" /home/agent/.nvm && \
+    chown -R agent:agent /home/agent/.nvm && \
+    echo 'export NVM_DIR="/home/agent/.nvm"' > /etc/profile.d/nvm.sh && \
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /etc/profile.d/nvm.sh && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /etc/profile.d/nvm.sh && \
+    chmod 644 /etc/profile.d/nvm.sh && \
+    cat /etc/profile.d/nvm.sh >> /etc/bash.bashrc
+
+# Ensure agent user profile loads nvm
+RUN echo 'export NVM_DIR="/home/agent/.nvm"' >> /home/agent/.bashrc && \
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> /home/agent/.bashrc && \
+    echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> /home/agent/.bashrc && \
+    chown agent:agent /home/agent/.bashrc
 
 USER agent
 WORKDIR /home/agent/workspace
