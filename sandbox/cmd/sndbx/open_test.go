@@ -264,7 +264,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		t.Errorf("expected anthropic.claude-code installation command, got: %v", executedCmds)
 	}
 
-	// Test 5: webstorm launch (JetBrains family via --remote-dev)
+	// Test 5: webstorm launch (JetBrains family)
 	executedCmds = nil
 	stdout.Reset()
 	stderr.Reset()
@@ -276,14 +276,14 @@ func TestAgentOpenExecution(t *testing.T) {
 	if !strings.Contains(outStr, "Opening ide-agent in WebStorm via Remote Development") {
 		t.Errorf("expected WebStorm opening message, got: %s", outStr)
 	}
-	foundRemoteDev := false
+	foundWebStorm := false
 	for _, cmd := range executedCmds {
-		if strings.Contains(cmd, "--remote-dev") && strings.Contains(cmd, "ssh://agent@localhost") {
-			foundRemoteDev = true
+		if strings.Contains(cmd, "webstorm") && !strings.Contains(cmd, "--remote-dev") {
+			foundWebStorm = true
 		}
 	}
-	if !foundRemoteDev {
-		t.Errorf("expected --remote-dev ssh:// command for webstorm, got: %v", executedCmds)
+	if !foundWebStorm {
+		t.Errorf("expected clean webstorm launch command without --remote-dev, got: %v", executedCmds)
 	}
 
 	// Test 6: VS Code launch failure

@@ -936,6 +936,19 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 	buf.WriteString("# Agent Sandbox Auto-Generated SSH Configuration\n")
 	buf.WriteString("# Managed automatically by sndbx. Do not edit manually.\n\n")
 
+	ideKeyFile := paths.IDEKeyFile
+	if ideKeyFile == "" {
+		home, _ := os.UserHomeDir()
+		if home == "" {
+			home = "/tmp"
+		}
+		ideKeyFile = filepath.Join(home, ".ssh", "agent-sandbox")
+	}
+	buf.WriteString("Match host 127.0.0.1,localhost user agent\n")
+	buf.WriteString(fmt.Sprintf("    IdentityFile %s\n", ideKeyFile))
+	buf.WriteString("    IdentitiesOnly yes\n")
+	buf.WriteString("    StrictHostKeyChecking accept-new\n\n")
+
 	runningCount := 0
 	for _, c := range configs {
 		port, err := GetAgentSSHPort(ctx, c.ContainerName)

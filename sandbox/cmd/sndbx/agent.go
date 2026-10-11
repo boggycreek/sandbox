@@ -22,6 +22,7 @@ import (
 	"github.com/boggycreek/sandbox/pkg/doctor"
 	"github.com/boggycreek/sandbox/pkg/ide"
 	"github.com/boggycreek/sandbox/pkg/lifecycle"
+	"github.com/boggycreek/sandbox/pkg/plugin"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
@@ -357,7 +358,7 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 	}
 
 	if cfg.IsHostContainer() {
-		lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
+		lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 		fmt.Fprintf(stdout, "Host agent %q started (%s) with workspace %s.\n", cfg.Name, cfg.ContainerName, cfg.WorkspacePath)
 		fmt.Fprintf(stdout, "Connect: sndbx agent connect %s\n", cfg.Name)
 		fmt.Fprintf(stdout, "SSH:     sndbx agent ssh %s\n", cfg.Name)
@@ -365,7 +366,7 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 		return 0
 	}
 
-	lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
+	lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 
 	fmt.Fprintf(stdout, "Agent %q started (%s).\n", cfg.Name, cfg.ContainerName)
 	fmt.Fprintf(stdout, "SSH:   sndbx agent ssh %s\n", cfg.Name)
@@ -538,7 +539,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		}
 	}
 
-	if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
+	if err := syncAllSSHConfigs(ctx, paths); err != nil {
 		fmt.Fprintf(stderr, "sndbx error syncing SSH config: %v\n", err)
 		return 1
 	}
@@ -557,7 +558,8 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 			fmt.Fprintf(stdout, "Launch command: %s --file-uri %s\n", target.BinaryName, vsCodeURI)
 		case ide.FamilyJetBrains:
 			fmt.Fprintf(stdout, "Connect via %s with Host %q (Port: %d).\n", target.DisplayName, hostAlias, port)
-			fmt.Fprintf(stdout, "Launch command: %s --remote-dev %q\n", target.BinaryName, jbSSHURI)
+			fmt.Fprintf(stdout, "SSH URI: %s\n", jbSSHURI)
+			fmt.Fprintf(stdout, "Launch command: %s\n", target.BinaryName)
 		}
 		return 0
 	}
@@ -582,7 +584,8 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 
 	case ide.FamilyJetBrains:
 		fmt.Fprintf(stdout, "Opening %s in %s via Remote Development...\n", name, target.DisplayName)
-		cmd := execCommandContext(ctx, target.Path, "--remote-dev", jbSSHURI)
+		fmt.Fprintf(stdout, "Connect via %s -> Remote Development -> SSH (Host: %s, Port: %d).\n", target.DisplayName, hostAlias, port)
+		cmd := execCommandContext(ctx, target.Path)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
@@ -592,6 +595,15 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	}
 
 	return 0
+}
+
+func syncAllSSHConfigs(ctx context.Context, paths config.Paths) error {
+	if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
+		return err
+	}
+	_ = plugin.EnsureSSHConfigManagedHosts(ctx, paths, "")
+	_ = plugin.SyncToolboxSSHSettings(ctx, paths, "")
+	return nil
 }
 
 func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
@@ -718,7 +730,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 			lifecycle.WarnOnErr(stderr, runtime.StopAgentContainer(ctx, c.ContainerName), "stop container "+c.ContainerName)
 			fmt.Fprintf(stdout, "Stopped %s\n", c.Name)
 		}
-		lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
+		lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 		return 0
 	}
 
@@ -738,7 +750,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 		fmt.Fprintf(stderr, "sndbx error stopping %s: %v\n", cfg.Name, err)
 		return 1
 	}
-	lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
+	lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 	fmt.Fprintf(stdout, "Agent %q stopped.\n", cfg.Name)
 	return 0
 }
@@ -764,7 +776,7 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 		fmt.Fprintf(stderr, "sndbx error cleaning %s: %v\n", cfg.Name, err)
 		return 1
 	}
-	lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
+	lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 	fmt.Fprintf(stdout, "Agent container %q removed (home volume preserved).\n", cfg.ContainerName)
 	return 0
 }
