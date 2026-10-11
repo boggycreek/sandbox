@@ -283,8 +283,10 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 		_ = exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "agent-sandbox-ide", "-f", paths.IDEKeyFile).Run()
 		healedKey = true
 	} else if _, err := os.Stat(sshPub); os.IsNotExist(err) {
-		_ = exec.Command("ssh-keygen", "-y", "-f", paths.IDEKeyFile).Run()
-		healedKey = true
+		if out, err := exec.Command("ssh-keygen", "-y", "-f", paths.IDEKeyFile).Output(); err == nil && len(out) > 0 {
+			_ = os.WriteFile(sshPub, out, 0644)
+			healedKey = true
+		}
 	}
 
 	// Check managed ssh_config and ~/.ssh/config Include
@@ -647,7 +649,16 @@ func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths c
 		}
 		var msg string
 		if state == "running" {
-			msg = fmt.Sprintf("Host container running with workspace %s (connect via `sndbx agent connect %s`)", cfg.WorkspacePath, cfg.Name)
+			sshPort := 0
+			if p, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName); err == nil && p > 0 {
+				sshPort = p
+			}
+			_ = runtime.SyncSSHConfigFile(ctx, paths)
+			if sshPort > 0 {
+				msg = fmt.Sprintf("Host container running (SSH port %d, alias: ssh sndbx-%s, connect: `sndbx agent connect %s`)", sshPort, cfg.Name, cfg.Name)
+			} else {
+				msg = fmt.Sprintf("Host container running with workspace %s (connect via `sndbx agent connect %s`)", cfg.WorkspacePath, cfg.Name)
+			}
 		} else {
 			msg = fmt.Sprintf("Host container %s (start via `sndbx agent start %s`)", state, cfg.Name)
 		}

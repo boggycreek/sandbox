@@ -11,6 +11,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -188,6 +189,36 @@ func EnsureAgentKeys(cfg *config.AgentConfig, paths config.Paths) error {
 	return config.SaveAgentConfig(cfg, paths)
 }
 
+// EnsureIDEKeypair guarantees the dedicated host IDE keypair exists at paths.IDEKeyFile (~/.ssh/agent-sandbox).
+func EnsureIDEKeypair(paths config.Paths) error {
+	if paths.IDEKeyFile == "" {
+		return nil
+	}
+	sshPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
+	if _, err := os.Stat(paths.IDEKeyFile); os.IsNotExist(err) {
+		_ = os.MkdirAll(filepath.Dir(paths.IDEKeyFile), 0700)
+		cmd := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "agent-sandbox-ide", "-f", paths.IDEKeyFile)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed generating IDE keypair: %w (%s)", err, string(out))
+		}
+		_ = os.Chmod(paths.IDEKeyFile, 0600)
+		_ = os.Chmod(sshPub, 0644)
+	} else if _, err := os.Stat(sshPub); os.IsNotExist(err) {
+		// Regenerate public key from private key
+		cmd := exec.Command("ssh-keygen", "-y", "-f", paths.IDEKeyFile)
+		out, err := cmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed deriving IDE public key: %w", err)
+		}
+		if len(out) > 0 {
+			if err := os.WriteFile(sshPub, out, 0644); err != nil {
+				return fmt.Errorf("failed writing IDE public key: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 // EnsureOperatorKeys provisions the host operator's Ed25519 signing keypair and backplane identity.
 func EnsureOperatorKeys(ctx context.Context, paths config.Paths, humanName string) (*libbp.IdentityRecord, error) {
 	if humanName == "" {
@@ -257,6 +288,9 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	report := NewProvisioningReport(cfg.Name, "provision")
 
 	// 1. Cryptographic Keys
+	if err := EnsureIDEKeypair(paths); err != nil {
+		report.AddStep("Host IDE Keypair", StatusWarning, fmt.Sprintf("Failed ensuring host IDE keypair: %v", err), err)
+	}
 	if err := EnsureAgentKeys(cfg, paths); err == nil {
 		report.AddStep("Cryptographic Signing Keys", StatusOK, "Verified Ed25519 signing keypair and on-disk secret", nil)
 	} else {
@@ -299,8 +333,8 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 5. Host SSH Configuration Sync
-	if cfg.IsHost() {
-		report.AddStep("SSH Configuration", StatusSkipped, "Host agent does not expose container SSH daemon (skipped)", nil)
+	if cfg.IsBareHost() {
+		report.AddStep("SSH Configuration", StatusSkipped, "Bare host agent does not expose container SSH daemon (skipped)", nil)
 	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err == nil {
 		report.AddStep("SSH Configuration", StatusOK, "Synchronized host SSH config", nil)
 	} else {

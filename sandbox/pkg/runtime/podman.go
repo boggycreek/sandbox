@@ -424,6 +424,7 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		"--name", cfg.ContainerName,
 		"--hostname", fmt.Sprintf("%s-sandbox", cfg.Name),
 		"--network", netName,
+		"-p", "127.0.0.1::2222",
 		"--add-host", "llm-gateway:host-gateway",
 		"--userns=keep-id:uid=1000,gid=1000",
 		"-e", fmt.Sprintf("AGENT_NAME=%s", cfg.Name),

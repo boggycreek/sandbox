@@ -357,8 +357,11 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 	}
 
 	if cfg.IsHostContainer() {
+		lifecycle.WarnOnErr(stderr, runtime.SyncSSHConfigFile(ctx, paths), "sync ssh config")
 		fmt.Fprintf(stdout, "Host agent %q started (%s) with workspace %s.\n", cfg.Name, cfg.ContainerName, cfg.WorkspacePath)
 		fmt.Fprintf(stdout, "Connect: sndbx agent connect %s\n", cfg.Name)
+		fmt.Fprintf(stdout, "SSH:     sndbx agent ssh %s\n", cfg.Name)
+		fmt.Fprintf(stdout, "IDE:     sndbx agent open %s\n", cfg.Name)
 		return 0
 	}
 
@@ -460,8 +463,12 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	if len(installedNames) > 0 {
 		ideHelp = "Target IDE (installed: " + strings.Join(installedNames, ", ") + ")"
 	}
+	var isLocal bool
+	var isRemote bool
 	fs.StringVar(&ideName, "ide", ideName, ideHelp)
 	fs.BoolVar(&noLaunch, "no-launch", noLaunch, "Prepare SSH configuration without launching IDE")
+	fs.BoolVar(&isLocal, "local", false, "Open local workspace folder directly on physical host instead of remote container")
+	fs.BoolVar(&isRemote, "remote", false, "Connect to container via Remote-SSH/Gateway (default for host containers)")
 	if err := fs.Parse(flagArgs); err != nil {
 		return 1
 	}
@@ -499,7 +506,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	if cfg.IsHostContainer() {
+	if cfg.IsHostContainer() && isLocal {
 		if noLaunch {
 			fmt.Fprintf(stdout, "Host workspace directory: %s\n", cfg.WorkspacePath)
 			fmt.Fprintf(stdout, "Launch command: %s %s\n", target.BinaryName, cfg.WorkspacePath)
@@ -515,6 +522,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		}
 		return 0
 	}
+	_ = isRemote
 
 	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 	if err != nil || port <= 0 {
@@ -598,8 +606,8 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 		return 1
 	}
 
-	if cfg.IsHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host, no SSH connection required)\n", cfg.Name)
+	if cfg.IsBareHost() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a bare host agent (runs directly on host, no SSH connection required)\n", cfg.Name)
 		return 1
 	}
 
@@ -915,17 +923,15 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 
 		sshPort := 0
 		ideConnect := ""
-		if c.IsHostContainer() {
-			if state == "running" {
-				ideConnect = fmt.Sprintf("host:%s", c.WorkspacePath)
-			} else {
-				ideConnect = c.WorkspacePath
-			}
-		} else if state == "running" {
+		if state == "running" {
 			if p, err := runtime.GetAgentSSHPort(ctx, c.ContainerName); err == nil && p > 0 {
 				sshPort = p
 				ideConnect = fmt.Sprintf("agent@localhost:%d", p)
+			} else if c.IsHostContainer() {
+				ideConnect = fmt.Sprintf("host:%s", c.WorkspacePath)
 			}
+		} else if c.IsHostContainer() {
+			ideConnect = c.WorkspacePath
 		}
 
 		statuses = append(statuses, runtime.AgentStatus{
