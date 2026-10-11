@@ -21,7 +21,7 @@ const (
 	// support the vscode-remote://ssh-remote+<host>/<path> URI scheme via --file-uri.
 	FamilyVSCode Family = iota
 	// FamilyJetBrains covers all IntelliJ-platform IDEs managed by JetBrains
-	// Toolbox. Remote development is opened via the --remote-dev ssh:// flag.
+	// Toolbox. Remote development connects via the prepared OpenSSH host alias.
 	FamilyJetBrains
 )
 
@@ -49,7 +49,7 @@ var knownIDEs = []IDE{
 	{Name: "cursor", DisplayName: "Cursor", BinaryName: "cursor", Family: FamilyVSCode},
 	{Name: "windsurf", DisplayName: "Windsurf", BinaryName: "windsurf", Family: FamilyVSCode},
 
-	// JetBrains family — all use --remote-dev "ssh://agent@host:port/path"
+	// JetBrains family — connects via SSH host alias sndbx-<name>
 	{Name: "goland", DisplayName: "GoLand", BinaryName: "goland", Family: FamilyJetBrains},
 	{Name: "clion", DisplayName: "CLion", BinaryName: "clion", Family: FamilyJetBrains},
 	{Name: "webstorm", DisplayName: "WebStorm", BinaryName: "webstorm", Family: FamilyJetBrains},
