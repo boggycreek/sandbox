@@ -251,6 +251,9 @@ func StopEgressFilterContainer(ctx context.Context, agentOrContainerName string)
 // StartAgentContainer runs or starts an agent container with Podman
 func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, bpHost string, bpPort int) error {
 	ClearAgentKnownHosts(cfg.Name, paths)
+	if cfg.IsHostContainer() {
+		return startHostAgentContainer(ctx, cfg, paths, bpHost, bpPort)
+	}
 	netName := "agent-sandbox-infra"
 	_ = EnsureNetwork(ctx, netName)
 	_ = EnsureVolume(ctx, cfg.VolumeName)
@@ -365,6 +368,104 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 			}
 		}
 		return fmt.Errorf("failed running podman container %s with image %s: %v (%s)", cfg.ContainerName, cfg.Image, err, string(out))
+	}
+	return nil
+}
+
+// startHostAgentContainer starts or creates a host-connected container with workspace projection and keep-id mapping (ADR 00043/00044)
+func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, bpHost string, bpPort int) error {
+	if cfg.WorkspacePath != "" {
+		if _, err := os.Stat(cfg.WorkspacePath); err != nil {
+			return fmt.Errorf("host workspace directory %q does not exist: %w", cfg.WorkspacePath, err)
+		}
+	}
+	if cfg.VolumeName != "" {
+		_ = EnsureVolume(ctx, cfg.VolumeName)
+	}
+
+	// Check if container already exists
+	checkCmd := execCommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
+	if err := checkCmd.Run(); err == nil {
+		// Container exists, start if stopped
+		startCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
+		if out, err := startCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed starting existing host container %s: %v (%s)", cfg.ContainerName, err, string(out))
+		}
+		return nil
+	}
+
+	// Build run arguments for host-connected container
+	sshKeyPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
+	var mounts []string
+	if _, err := os.Stat(sshKeyPub); err == nil {
+		mounts = append(mounts, "-v", fmt.Sprintf("%s:/tmp/host-keys/agent-sandbox.pub:ro", sshKeyPub))
+	}
+	if cfg.VolumeName != "" {
+		mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent:z", cfg.VolumeName))
+	}
+	if cfg.WorkspacePath != "" {
+		mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent/workspace:Z", cfg.WorkspacePath))
+	}
+
+	containerBPHost := bpHost
+	if containerBPHost == "" || containerBPHost == infraValkeyContainer {
+		containerBPHost = "127.0.0.1"
+	}
+
+	args := []string{
+		"run", "-d", "-i", "-t",
+		"--name", cfg.ContainerName,
+		"--hostname", fmt.Sprintf("%s-sandbox", cfg.Name),
+		"--net=host",
+		"--userns=keep-id:uid=1000,gid=1000",
+		"-e", fmt.Sprintf("AGENT_NAME=%s", cfg.Name),
+		"-e", fmt.Sprintf("AGENT_ROLE=%s", cfg.Role),
+		"-e", fmt.Sprintf("ROLE=%s", cfg.Role),
+		"-e", fmt.Sprintf("BP_AGENT=%s", cfg.Name),
+		"-e", fmt.Sprintf("BP_PASSWORD=%s", cfg.Password),
+		"-e", fmt.Sprintf("BP_HOST=%s", containerBPHost),
+		"-e", fmt.Sprintf("BP_PORT=%d", bpPort),
+		"-e", fmt.Sprintf("BP_SIGNING_KEY_PEM=%s", cfg.SigningKeyPEM),
+		"-e", fmt.Sprintf("VALKEY_ADDR=%s:%d", containerBPHost, bpPort),
+		"-e", fmt.Sprintf("VALKEY_PASSWORD=%s", cfg.Password),
+	}
+
+	humanName := os.Getenv("HUMAN_NAME")
+	if humanName == "" {
+		humanName = "operator"
+	}
+	args = append(args, "-e", fmt.Sprintf("HUMAN_NAME=%s", humanName))
+
+	if cfg.ModelURL != "" {
+		args = append(args,
+			"-e", fmt.Sprintf("OPENAI_BASE_URL=%s", cfg.ModelURL),
+			"-e", fmt.Sprintf("OPENAI_API_BASE=%s", cfg.ModelURL),
+			"-e", fmt.Sprintf("MODEL_URL=%s", cfg.ModelURL),
+		)
+	}
+
+	if cfg.ModelName != "" {
+		args = append(args,
+			"-e", fmt.Sprintf("MODEL_NAME=%s", cfg.ModelName),
+			"-e", fmt.Sprintf("OPENAI_MODEL=%s", cfg.ModelName),
+			"-e", fmt.Sprintf("LLM_MODEL=%s", cfg.ModelName),
+		)
+	}
+
+	if cfg.ModelAPIKey != "" {
+		args = append(args,
+			"-e", fmt.Sprintf("OPENAI_API_KEY=%s", cfg.ModelAPIKey),
+		)
+	} else if cfg.ModelURL != "" {
+		args = append(args, "-e", "OPENAI_API_KEY=local-openai-key")
+	}
+
+	args = append(args, mounts...)
+	args = append(args, cfg.Image)
+
+	cmd := execCommandContext(ctx, "podman", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed running host agent container %s: %v (%s)", cfg.ContainerName, err, string(out))
 	}
 	return nil
 }

@@ -107,4 +107,42 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected error when exec fails, got %d", code)
 	}
+
+	// 4. Host container connect and tmux guards
+	cfgBareHost, _ := config.NewAgentConfig("bare-test-agent", "base", "developer")
+	cfgBareHost.Runtime = "bare-host"
+	cfgBareHost.HostOnly = true
+	_ = config.SaveAgentConfig(cfgBareHost, paths)
+
+	stderr.Reset()
+	code = Run([]string{"agent", "tmux", "bare-test-agent"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "bare host agent") {
+		t.Errorf("expected bare host tmux guard error, got code %d: %s", code, stderr.String())
+	}
+
+	cfgHostContainer, _ := config.NewAgentConfig("host-cont-agent", "tool", "developer")
+	cfgHostContainer.Runtime = "host-container"
+	cfgHostContainer.WorkspacePath = tmpDir
+	_ = config.SaveAgentConfig(cfgHostContainer, paths)
+
+	stderr.Reset()
+	code = Run([]string{"agent", "tmux", "host-cont-agent"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "host tool container without tmux") {
+		t.Errorf("expected host container tmux guard error, got code %d: %s", code, stderr.String())
+	}
+
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		executedCmds = append(executedCmds, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+		return exec.Command("true")
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"agent", "connect", "host-cont-agent"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("host container connect failed: code %d, stderr: %s", code, stderr.String())
+	}
+	expectedHostConnect := fmt.Sprintf("podman exec -it %s /bin/bash", cfgHostContainer.ContainerName)
+	if len(executedCmds) == 0 || !strings.Contains(executedCmds[len(executedCmds)-1], expectedHostConnect) {
+		t.Errorf("expected %s command, got: %v", expectedHostConnect, executedCmds)
+	}
 }

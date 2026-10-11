@@ -118,8 +118,8 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	report := NewProvisioningReport(cfg.Name, "deprovision")
 
 	// 1. Destroy container and persistent volume
-	if cfg.IsHost() {
-		report.AddStep("Container & Volume", StatusSkipped, "Host agent has no container or volume to destroy (skipped)", nil)
+	if cfg.IsBareHost() {
+		report.AddStep("Container & Volume", StatusSkipped, "Bare host agent has no container or volume to destroy (skipped)", nil)
 	} else if err := runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName); err != nil {
 		report.AddStep("Container & Volume", StatusError, fmt.Sprintf("Failed to remove container/volume: %v", err), err)
 	} else {

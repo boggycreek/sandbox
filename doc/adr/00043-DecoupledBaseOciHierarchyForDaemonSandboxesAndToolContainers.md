@@ -37,8 +37,8 @@ We replace the monolithic base image hierarchy with a **three-tier, decoupled OC
 ```
                          ┌──────────────────────────────────┐
                          │    agent-sandbox-core:latest     │
-                         │    (Debian Bookworm, Deno 2.x,   │
-                         │     bd, git, bp CLI, agent user) │
+                         │    (Debian Bookworm, bd, git,    │
+                         │     bp CLI, agent user 1000)     │
                          └─────────────────┬────────────────┘
                                            │
                   ┌────────────────────────┴────────────────────────┐
@@ -63,7 +63,7 @@ We replace the monolithic base image hierarchy with a **three-tier, decoupled OC
 ### 1. Foundational Core (`agent-sandbox-core:latest`)
 - Minimal Debian Bookworm rootless foundation.
 - Configures unprivileged user `agent` (UID/GID 1000).
-- Installs universal runtimes and utilities: Deno, Beads (`bd`), backplane CLI (`bp`), `git`, `jq`, `ripgrep`, and standard developer utilities.
+- Installs universal runtimes and utilities: Beads (`bd`), backplane CLI (`bp`), `git`, `jq`, `ripgrep`, and standard developer utilities.
 - Contains no process supervisors, no OpenSSH server, and no multiplexers.
 
 ### 2. Autonomous Fleet Base (`agent-sandbox-daemon-base:latest`)

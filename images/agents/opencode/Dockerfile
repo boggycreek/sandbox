@@ -4,7 +4,7 @@ FROM agent-sandbox-base:latest
 
 USER root
 
-# Install Python and build dependencies (Deno provided by base)
+# Install Python and build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \

@@ -327,12 +327,52 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 }
 
 func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, report *DoctorReport) {
-	if cfg.IsHost() {
+	if cfg.IsBareHost() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Podman Storage",
 			Status:  StatusOK,
-			Message: "Host agent (direct host execution, no container storage required)",
+			Message: "Bare host agent (direct host execution, no container storage required)",
 		})
+		return
+	}
+	if cfg.IsHostContainer() {
+		if cfg.WorkspacePath != "" {
+			if st, err := os.Stat(cfg.WorkspacePath); err != nil || !st.IsDir() {
+				report.Checks = append(report.Checks, CheckItem{
+					Name:         "Host Workspace Directory",
+					Status:       StatusError,
+					Message:      fmt.Sprintf("Host workspace directory %q does not exist or is not a directory", cfg.WorkspacePath),
+					Unrepairable: true,
+				})
+				report.UnrepairableCount++
+			} else {
+				report.Checks = append(report.Checks, CheckItem{
+					Name:    "Host Workspace Directory",
+					Status:  StatusOK,
+					Message: fmt.Sprintf("Projected workspace directory intact: %s", cfg.WorkspacePath),
+				})
+			}
+		}
+		if cfg.VolumeName != "" {
+			volCmd := exec.CommandContext(ctx, "podman", "volume", "exists", cfg.VolumeName)
+			if err := volCmd.Run(); err != nil {
+				if err := runtime.EnsureVolume(ctx, cfg.VolumeName); err == nil {
+					report.Checks = append(report.Checks, CheckItem{
+						Name:    "Podman Storage",
+						Status:  StatusHealed,
+						Message: fmt.Sprintf("Created persistent home volume %s for host agent", cfg.VolumeName),
+						Healed:  true,
+					})
+					report.HealedCount++
+					return
+				}
+			}
+			report.Checks = append(report.Checks, CheckItem{
+				Name:    "Podman Storage",
+				Status:  StatusOK,
+				Message: fmt.Sprintf("Host container storage verified (volume: %s)", cfg.VolumeName),
+			})
+		}
 		return
 	}
 	healed := false
@@ -591,11 +631,30 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
+	if cfg.IsBareHost() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Container & Runtime",
 			Status:  StatusOK,
-			Message: "Host agent (direct host execution, no container runtime required)",
+			Message: "Bare host agent (direct host execution, no container runtime required)",
+		})
+		return
+	}
+	if cfg.IsHostContainer() {
+		info, err := runtime.InspectAgentContainer(ctx, cfg.ContainerName)
+		state := "stopped"
+		if err == nil && info != nil {
+			state = info.State
+		}
+		var msg string
+		if state == "running" {
+			msg = fmt.Sprintf("Host container running with workspace %s (connect via `sndbx agent connect %s`)", cfg.WorkspacePath, cfg.Name)
+		} else {
+			msg = fmt.Sprintf("Host container %s (start via `sndbx agent start %s`)", state, cfg.Name)
+		}
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Container & Runtime",
+			Status:  StatusOK,
+			Message: msg,
 		})
 		return
 	}

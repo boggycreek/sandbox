@@ -215,6 +215,26 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		}
 	}
 
+	// Test host-connected container agent handling
+	hostContCfg := &config.AgentConfig{
+		Name:          "host-cont-test",
+		Runtime:       "host-container",
+		ContainerName: "sndbx-agent-host-cont-test",
+		VolumeName:    "sndbx-agent-host-cont-test-home",
+		WorkspacePath: tmpDir,
+	}
+	reportHostCont := &DoctorReport{AgentName: "host-cont-test"}
+	checkAndHealPodmanStorage(ctx, hostContCfg, reportHostCont)
+	checkAndHealContainer(ctx, hostContCfg, paths, reportHostCont)
+	if len(reportHostCont.Checks) < 2 {
+		t.Errorf("expected at least 2 checks for host container agent, got %d", len(reportHostCont.Checks))
+	}
+	for _, chk := range reportHostCont.Checks {
+		if chk.Status != StatusOK && chk.Status != StatusHealed {
+			t.Errorf("expected StatusOK or StatusHealed for host container check %s, got %s: %s", chk.Name, chk.Status, chk.Message)
+		}
+	}
+
 	// 11. Signing key check when key file is corrupt
 	keyPath := filepath.Join(paths.SecretsDir, cfg.Name, "signing-key.pem")
 	_ = os.WriteFile(keyPath, []byte("bad-pem-data"), 0600)

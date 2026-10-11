@@ -37,9 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Deno — system-wide, root-owned, available to all users
-RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
-
 # Install Beads (bd) CLI — system-wide, root-owned, available to all users
 ARG BEADS_VERSION=1.3.0
 RUN TARGETARCH=$(dpkg --print-architecture) && \
@@ -63,7 +60,7 @@ ENV LANG=en_US.UTF-8 \
 # Create unprivileged agent user (UID 1000, GID 1000)
 RUN groupadd -g 1000 agent && \
     useradd -u 1000 -g agent -m -s /bin/bash agent && \
-    mkdir -p /home/agent/workspace /home/agent/tasks /home/agent/.ssh /home/agent/.local/bin /home/agent/.config /home/agent/doc /home/agent/.cache/deno && \
+    mkdir -p /home/agent/workspace /home/agent/tasks /home/agent/.ssh /home/agent/.local/bin /home/agent/.config /home/agent/doc && \
     chown -R agent:agent /home/agent
 
 # Configure OpenSSH daemon for unprivileged execution
@@ -98,8 +95,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh && \
 USER agent
 WORKDIR /home/agent/workspace
 
-ENV DENO_DIR=/home/agent/.cache/deno \
-    PATH="/home/agent/.local/bin:/usr/local/bin:${PATH}" \
+ENV PATH="/home/agent/.local/bin:/usr/local/bin:${PATH}" \
     HOME="/home/agent" \
     TERM=xterm-256color
 

@@ -269,7 +269,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	if code != 0 {
 		t.Errorf("agent start host-lifecycle-bot failed: code=%d err=%s", code, errOut)
 	}
-	if !strings.Contains(out, "first-class host agent") {
+	if !strings.Contains(out, "first-class bare host agent") {
 		t.Errorf("expected host execution message, got: %s", out)
 	}
 
@@ -509,5 +509,129 @@ func TestAgentCloneAndRemote(t *testing.T) {
 	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "invalid-sub"})
 	if code != 1 || !strings.Contains(errOut, "unknown subcommand") {
 		t.Errorf("expected unknown subcommand error, got code %d: %s", code, errOut)
+	}
+}
+
+func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	wsDir := filepath.Join(tmpDir, "my-workspace")
+	if err := os.MkdirAll(wsDir, 0755); err != nil {
+		t.Fatalf("failed creating workspace dir: %v", err)
+	}
+
+	paths := config.GetPaths()
+	_ = paths.EnsureDirectories()
+
+	// 1. Conflicting flags --host and --no-container
+	code, _, errOut := runSndbx([]string{"agent", "create", "bad-bot", "--host", "--no-container"})
+	if code != 1 || !strings.Contains(errOut, "cannot specify both --host and --no-container") {
+		t.Errorf("expected conflicting flags error, got code %d: %s", code, errOut)
+	}
+
+	// 2. Nonexistent --pwd path
+	code, _, errOut = runSndbx([]string{"agent", "create", "bad-pwd-bot", "--host", "--pwd", filepath.Join(tmpDir, "nonexistent")})
+	if code != 1 || !strings.Contains(errOut, "does not exist") {
+		t.Errorf("expected nonexistent workspace error, got code %d: %s", code, errOut)
+	}
+
+	// 3. Create host-connected container agent with --host and --pwd
+	code, out, errOut := runSndbx([]string{"agent", "create", "host-coder", "as", "tool", "--host", "--pwd", wsDir, "--role", "interactive-pair"})
+	if code != 0 {
+		t.Fatalf("agent create --host failed: code=%d err=%s out=%s", code, errOut, out)
+	}
+	if !strings.Contains(out, "host-container (host workspace projection)") {
+		t.Errorf("expected host-container runtime in create output, got: %s", out)
+	}
+	if !strings.Contains(out, wsDir) {
+		t.Errorf("expected workspace directory in output, got: %s", out)
+	}
+
+	cfg, err := config.LoadAgentConfig("host-coder", paths)
+	if err != nil {
+		t.Fatalf("failed loading created host-coder config: %v", err)
+	}
+	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsBareHost() {
+		t.Errorf("expected IsHostContainer()=true, IsHost()=true, got IsHostContainer=%v, IsHost=%v, IsBareHost=%v",
+			cfg.IsHostContainer(), cfg.IsHost(), cfg.IsBareHost())
+	}
+	if cfg.WorkspacePath != wsDir {
+		t.Errorf("expected WorkspacePath=%q, got %q", wsDir, cfg.WorkspacePath)
+	}
+	if cfg.ContainerName != "sndbx-agent-host-coder" {
+		t.Errorf("expected ContainerName 'sndbx-agent-host-coder', got %q", cfg.ContainerName)
+	}
+
+	// 4. Create bare host agent with --no-container
+	code, out, errOut = runSndbx([]string{"agent", "create", "bare-bot", "--no-container", "--role", "host-script"})
+	if code != 0 {
+		t.Fatalf("agent create --no-container failed: code=%d err=%s out=%s", code, errOut, out)
+	}
+	if !strings.Contains(out, "bare-host (direct host execution, no container)") {
+		t.Errorf("expected bare-host runtime in output, got: %s", out)
+	}
+
+	cfgBare, err := config.LoadAgentConfig("bare-bot", paths)
+	if err != nil {
+		t.Fatalf("failed loading bare-bot config: %v", err)
+	}
+	if !cfgBare.IsBareHost() || !cfgBare.IsHost() || cfgBare.IsHostContainer() {
+		t.Errorf("expected IsBareHost()=true for bare-bot, got: IsBareHost=%v, IsHostContainer=%v",
+			cfgBare.IsBareHost(), cfgBare.IsHostContainer())
+	}
+
+	// 5. Start host-connected container with Podman mock
+	var executedCmds []string
+	origExec := execCommandContext
+	defer func() { execCommandContext = origExec }()
+
+	mockFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
+		executedCmds = append(executedCmds, cmdStr)
+		if len(args) >= 3 && args[0] == "container" && args[1] == "exists" {
+			// Container does not exist yet; trigger 'podman run'
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	execCommandContext = mockFn
+	restoreRuntime := runtime.SetExecCommandContextForTesting(mockFn)
+	defer restoreRuntime()
+
+	code, out, errOut = runSndbx([]string{"agent", "start", "host-coder"})
+	if code != 0 {
+		t.Fatalf("agent start host-coder failed: code=%d err=%s", code, errOut)
+	}
+	if !strings.Contains(out, "Host agent \"host-coder\" started") {
+		t.Errorf("expected Host agent started message, got: %s", out)
+	}
+	if !strings.Contains(out, "Connect: sndbx agent connect host-coder") {
+		t.Errorf("expected connect instruction in output, got: %s", out)
+	}
+
+	// Verify podman run args included --net=host, keep-id, and workspace mount
+	var runCmd string
+	for _, c := range executedCmds {
+		if strings.Contains(c, "podman run") {
+			runCmd = c
+			break
+		}
+	}
+	if runCmd == "" {
+		t.Fatalf("expected podman run command to be executed, executed: %v", executedCmds)
+	}
+	if !strings.Contains(runCmd, "--net=host") {
+		t.Errorf("expected --net=host in run command, got: %s", runCmd)
+	}
+	if !strings.Contains(runCmd, "--userns=keep-id:uid=1000,gid=1000") {
+		t.Errorf("expected keep-id userns mapping in run command, got: %s", runCmd)
+	}
+	expectedMount := fmt.Sprintf("-v %s:/home/agent/workspace:Z", wsDir)
+	if !strings.Contains(runCmd, expectedMount) {
+		t.Errorf("expected workspace mount %q in run command, got: %s", expectedMount, runCmd)
 	}
 }
