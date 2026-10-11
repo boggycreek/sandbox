@@ -1,0 +1,7 @@
+{
+  "trustedWorkspaces": [
+    "/home/agent/workspace",
+    "/home/agent"
+  ],
+  "allowNonWorkspaceAccess": true
+}

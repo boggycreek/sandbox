@@ -28,13 +28,21 @@ if [ ! -f "${AGY_CONFIG_DIR}/config.json" ] && [ -f /etc/agy/agy-config.json ]; 
   cp /etc/agy/agy-config.json "${AGY_CONFIG_DIR}/config.json"
 fi
 
+if [ ! -f "${AGY_CONFIG_DIR}/settings.json" ] && [ -f /etc/agy/agy-settings.json ]; then
+  cp /etc/agy/agy-settings.json "${AGY_CONFIG_DIR}/settings.json"
+fi
+
+if [ -f /home/agent/GEMINI.md ]; then
+  ln -sf /home/agent/GEMINI.md "${AGY_CONFIG_DIR}/GEMINI.md" 2>/dev/null || true
+fi
+
 # Run base entrypoint initialization (sshd, host keys, valkey announce) in background
 /usr/local/bin/entrypoint.sh true &
 
 # Start agy interactive session in tmux
 if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
   tmux new-session -d -s "${TMUX_SESSION}" -c "/home/agent/workspace" bash
-  tmux send-keys -t "${TMUX_SESSION}" "agy --mode=accept-edits" C-m
+  tmux send-keys -t "${TMUX_SESSION}" "agy --mode=accept-edits --dangerously-skip-permissions" C-m
 fi
 
 echo "Antigravity (agy) Sandbox container initialized [$(hostname)]. Session: ${TMUX_SESSION}"
