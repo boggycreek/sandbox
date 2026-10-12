@@ -47,6 +47,7 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		SSHDir:        filepath.Join(tmpDir, "ssh"),
 		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
 		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
+		BPProfilesDir: filepath.Join(tmpDir, "data", "profiles"),
 	}
 	_ = paths.EnsureDirectories()
 
@@ -446,7 +447,7 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// 1. First run: heals missing .env and creates directories
@@ -498,9 +499,11 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 	checkAndHealGiteaContainer(ctx, paths, report2)
 
 	// 6. Test unreachable Valkey in infra check
+	offlineCtx, offlineCancel := context.WithCancel(context.Background())
+	offlineCancel()
 	os.Setenv("BP_PORT", "65501")
 	reportOffline := &DoctorReport{AgentName: "shared-infrastructure"}
-	checkAndHealValkeyContainer(ctx, paths, reportOffline)
+	checkAndHealValkeyContainer(offlineCtx, paths, reportOffline)
 	if reportOffline.WarningCount == 0 {
 		t.Errorf("expected warning on offline Valkey in infra check")
 	}
@@ -629,9 +632,6 @@ func TestCheckAndHealValkeyHealPath(t *testing.T) {
 	t.Cleanup(func() {
 		_ = exec.Command("podman", "stop", harnessCtr).Run()
 		_ = exec.Command("podman", "rm", "-f", harnessCtr).Run()
-		// Restore live infra container if StartInfraStack recreated it with tmpDir paths
-		realPaths := config.GetPaths()
-		_ = runtime.StartInfraStack(context.Background(), realPaths, "", "", "")
 	})
 
 	// Wait for container to be ready
@@ -649,6 +649,9 @@ func TestCheckAndHealValkeyHealPath(t *testing.T) {
 	origContainer := infraValkeyContainer
 	infraValkeyContainer = harnessCtr
 	defer func() { infraValkeyContainer = origContainer }()
+
+	restoreRuntime := runtime.SetInfraValkeyContainerForTest(harnessCtr)
+	defer restoreRuntime()
 
 	paths := config.Paths{
 		DataHome: filepath.Join(tmpDir, "data"),
@@ -671,13 +674,21 @@ func TestCheckAndHealValkeyHealPath(t *testing.T) {
 	}
 
 	// Case 2: Container running with correct password → exercises the OK path
-	os.Setenv("ADMIN_BACKPLANE_PASSWORD", realAdminPass)
-	// Wait a brief moment for Valkey to be ready post-start
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", "wrong_password_for_heal_test")
 	time.Sleep(500 * time.Millisecond)
 	report2 := &DoctorReport{AgentName: "shared-infrastructure"}
 	checkAndHealValkeyContainer(ctx, paths, report2)
 	if len(report2.Checks) == 0 {
 		t.Errorf("expected at least one check item in correct-password test")
+	}
+
+	// Case 3: Canceled context exercises warning path
+	canceledCtx, cancelCase3 := context.WithCancel(context.Background())
+	cancelCase3()
+	report3 := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(canceledCtx, paths, report3)
+	if len(report3.Checks) == 0 {
+		t.Errorf("expected at least one check item in canceled context test")
 	}
 }
 

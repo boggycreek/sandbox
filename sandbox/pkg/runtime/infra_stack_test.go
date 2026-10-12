@@ -242,6 +242,20 @@ func TestInfraStackOrchestrationScenarios(t *testing.T) {
 	restore9 := SetExecCommandContextForTesting(mockNetnsRetry)
 	_ = StartInfraStack(ctx, paths, "p1", "p2", "u1")
 	restore9()
+
+	// 10. Valkey exists with mount mismatch → triggers recreate branch
+	mockMountMismatch := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
+			return exec.Command("true")
+		}
+		if name == "podman" && len(args) > 2 && args[0] == "inspect" && args[1] == "--type" && args[2] == "container" {
+			return exec.Command("sh", "-c", `echo '[{"Id":"123","Name":"valkey","State":{"Status":"running","Running":true},"Mounts":[{"Destination":"/etc/valkey","Source":"/stale/path"}]}]'`)
+		}
+		return exec.Command("true")
+	}
+	restore10 := SetExecCommandContextForTesting(mockMountMismatch)
+	_ = StartInfraStack(ctx, paths, "p1", "p2", "u1")
+	restore10()
 }
 
 func TestBootstrapGiteaEdgeCases(t *testing.T) {
@@ -265,3 +279,45 @@ func TestBootstrapGiteaEdgeCases(t *testing.T) {
 		t.Errorf("expected StartInfraStack with empty credentials to succeed with mocks: %v", err)
 	}
 }
+
+func TestRecreateValkeyContainerScenarios(t *testing.T) {
+	ctx := context.Background()
+	paths := config.Paths{DataHome: t.TempDir()}
+
+	// 1. EnsureNetwork fails
+	mockFailNet := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "network" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore1 := SetExecCommandContextForTesting(mockFailNet)
+	if err := RecreateValkeyContainer(ctx, paths, "p1", "p2", "u1"); err == nil {
+		t.Errorf("expected error when network fails")
+	}
+	restore1()
+
+	// 2. Podman run fails
+	mockFailRun := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 0 && args[0] == "run" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	restore2 := SetExecCommandContextForTesting(mockFailRun)
+	if err := RecreateValkeyContainer(ctx, paths, "p1", "p2", "u1"); err == nil {
+		t.Errorf("expected error when run fails")
+	}
+	restore2()
+
+	// 3. Podman run succeeds with empty credentials (fallback defaults)
+	mockSuccess := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
+	restore3 := SetExecCommandContextForTesting(mockSuccess)
+	if err := RecreateValkeyContainer(ctx, paths, "", "", ""); err != nil {
+		t.Errorf("expected success with mocks: %v", err)
+	}
+	restore3()
+}
+

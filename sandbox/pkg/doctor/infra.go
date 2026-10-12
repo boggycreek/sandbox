@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
@@ -224,43 +225,77 @@ func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report
 		humanPass = "human_backplane_pass"
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	client, dialErr := libbp.Dial(dialCtx, libbp.ClientConfig{
-		Host:     bpCfg.Host,
-		Port:     bpCfg.Port,
-		Username: "admin",
-		Password: adminPass,
-	})
-	cancel()
+	valkeyConfigDir := filepath.Join(paths.DataHome, "valkey")
+	mountMismatch := false
+	if info != nil {
+		for _, m := range info.Mounts {
+			if m.Destination == "/etc/valkey" && filepath.Clean(m.Source) != filepath.Clean(valkeyConfigDir) {
+				mountMismatch = true
+				break
+			}
+		}
+	}
+
+	var dialErr error
+	var client *libbp.Client
+
+	if state == "running" && !mountMismatch {
+		dialCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		client, dialErr = libbp.Dial(dialCtx, libbp.ClientConfig{
+			Host:     bpCfg.Host,
+			Port:     bpCfg.Port,
+			Username: "admin",
+			Password: adminPass,
+		})
+		cancel()
+	} else if mountMismatch {
+		dialErr = fmt.Errorf("mount source mismatch (/etc/valkey not mounted from %s)", valkeyConfigDir)
+	} else {
+		dialErr = fmt.Errorf("container is %s", state)
+	}
 
 	if dialErr != nil {
-		// If container is running, attempt to auto-heal by restarting stack with valid ACL file
-		if state == "running" {
-			healCtx, healCancel := context.WithTimeout(ctx, 10*time.Second)
-			defer healCancel()
+		// Attempt auto-healing: recreate Valkey container with valid mount and synchronized ACL credentials
+		healCtx, healCancel := context.WithTimeout(ctx, 15*time.Second)
+		defer healCancel()
 
-			if err := runtime.StartInfraStack(healCtx, paths, adminPass, humanPass, humanName); err == nil {
-				// Re-test connection after restart
-				retryCtx, retryCancel := context.WithTimeout(ctx, 2*time.Second)
-				clientRetry, retryErr := libbp.Dial(retryCtx, libbp.ClientConfig{
+		if healErr := runtime.RecreateValkeyContainer(healCtx, paths, adminPass, humanPass, humanName); healErr == nil {
+			var clientRetry *libbp.Client
+			var retryErr error
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) {
+				retryCtx, retryCancel := context.WithTimeout(ctx, 1*time.Second)
+				clientRetry, retryErr = libbp.Dial(retryCtx, libbp.ClientConfig{
 					Host:     bpCfg.Host,
 					Port:     bpCfg.Port,
 					Username: "admin",
 					Password: adminPass,
 				})
 				retryCancel()
-
 				if retryErr == nil {
-					defer clientRetry.Close()
-					report.Checks = append(report.Checks, CheckItem{
-						Name:    "Valkey Service",
-						Status:  StatusHealed,
-						Message: "Repaired Valkey container mount and synchronized admin ACL credentials",
-						Healed:  true,
-					})
-					report.HealedCount++
-					return
+					break
 				}
+				time.Sleep(200 * time.Millisecond)
+			}
+
+			if retryErr == nil {
+				defer clientRetry.Close()
+				// Ensure human operator ACL is configured
+				aclArgs := []string{
+					"SETUSER", humanName, "on",
+					">" + humanPass,
+					"~*:%R~*:*", "&*", "+@all",
+				}
+				_, _ = clientRetry.Exec(ctx, "ACL", aclArgs...)
+
+				report.Checks = append(report.Checks, CheckItem{
+					Name:    "Valkey Service",
+					Status:  StatusHealed,
+					Message: "Repaired Valkey container mount and synchronized admin ACL credentials",
+					Healed:  true,
+				})
+				report.HealedCount++
+				return
 			}
 		}
 
