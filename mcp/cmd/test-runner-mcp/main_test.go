@@ -77,7 +77,7 @@ func TestTestRunSuiteArgumentParsing(t *testing.T) {
 	})
 
 	params := mcp.CallToolParams{
-		Name:   "test_get_coverage_gaps",
+		Name:      "test_get_coverage_gaps",
 		Arguments: json.RawMessage("{}"),
 	}
 
@@ -96,8 +96,8 @@ func TestTestRunSuiteDefaultComponentKey(t *testing.T) {
 	server := newTestRunnerServer(t, mockMeasuresHandler(t, body))
 
 	params := mcp.CallToolParams{
-		Name:        "test_get_coverage_gaps",
-		Arguments:   json.RawMessage(`{"project_key":"my-project"}`),
+		Name:      "test_get_coverage_gaps",
+		Arguments: json.RawMessage(`{"project_key":"my-project"}`),
 	}
 
 	result := server.executeTool(context.Background(), params)
@@ -131,8 +131,8 @@ func TestTestRunSuiteSpecificComponentKey(t *testing.T) {
 	server := newTestRunnerServer(t, mockMeasuresHandler(t, body))
 
 	params := mcp.CallToolParams{
-		Name:        "test_get_coverage_gaps",
-		Arguments:   json.RawMessage(`{"project_key":"proj-01","component_key":"detail-12"}`),
+		Name:      "test_get_coverage_gaps",
+		Arguments: json.RawMessage(`{"project_key":"proj-01","component_key":"detail-12"}`),
 	}
 
 	result := server.executeTool(context.Background(), params)
@@ -161,8 +161,8 @@ func TestTestRunSuiteCoverageValues(t *testing.T) {
 	server := newTestRunnerServer(t, mockMeasuresHandler(t, body))
 
 	params := mcp.CallToolParams{
-		Name:        "test_get_coverage_gaps",
-		Arguments:   json.RawMessage(`{"project_key":"proj-01"}`),
+		Name:      "test_get_coverage_gaps",
+		Arguments: json.RawMessage(`{"project_key":"proj-01"}`),
 	}
 
 	result := server.executeTool(context.Background(), params)
@@ -192,8 +192,8 @@ func TestTestRunSuiteBackendError(t *testing.T) {
 	})
 
 	params := mcp.CallToolParams{
-		Name:        "test_get_coverage_gaps",
-		Arguments:   json.RawMessage(`{"project_key":"proj-01"}`),
+		Name:      "test_get_coverage_gaps",
+		Arguments: json.RawMessage(`{"project_key":"proj-01"}`),
 	}
 
 	result := server.executeTool(context.Background(), params)

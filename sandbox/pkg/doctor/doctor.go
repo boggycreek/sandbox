@@ -129,7 +129,7 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 	}
 
 	healed := false
-	if !cfg.IsHost() {
+	if !cfg.IsBareHost() {
 		if cfg.ContainerName == "" {
 			cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
 			healed = true
@@ -417,11 +417,11 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 }
 
 func checkAndHealImage(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
+	if cfg.IsBareHost() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Agent Image",
 			Status:  StatusOK,
-			Message: "Host agent (no OCI container image required)",
+			Message: "Bare host agent (no OCI container image required)",
 		})
 		return
 	}
@@ -509,14 +509,6 @@ func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths conf
 }
 
 func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
-		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Gitea Git Forge",
-			Status:  StatusOK,
-			Message: "Host agent (direct host execution, no dedicated Gitea account required)",
-		})
-		return
-	}
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
@@ -566,14 +558,6 @@ func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
-		report.Checks = append(report.Checks, CheckItem{
-			Name:    "SonarQube Analysis",
-			Status:  StatusOK,
-			Message: "Host agent (direct host execution, no SonarQube account required)",
-		})
-		return
-	}
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin"

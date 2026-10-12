@@ -29,12 +29,13 @@ func handleUpdate(ctx context.Context, paths config.Paths, args []string, stdout
 	if len(args) > 0 {
 		sub := strings.ToLower(args[0])
 		if sub == "help" || sub == "-h" || sub == "--help" {
-			fmt.Fprintln(stdout, `Usage: sndbx update
+			fmt.Fprintf(stdout, `Usage: %s update
 
 Comprehensive update of the Agent Sandbox local environment:
   1. Synchronizes local git repository checkout with remote (git pull)
   2. Updates native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases or source
-  3. Rebuilds all native OCI container images (base, native, opencode, claude, agy, pig)`)
+  3. Rebuilds all native OCI container images (base, native, opencode, claude, agy, pig)
+`, binaryName())
 			return 0
 		}
 	}
@@ -138,7 +139,14 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 		_ = os.Chmod(targetFile, 0755)
 	}
 
+	sndbxTarget := filepath.Join(binDir, "sndbx")
+	sbTarget := filepath.Join(binDir, "sb")
+
 	if downloadedAll {
+		if _, err := os.Stat(sndbxTarget); err == nil {
+			_ = os.Remove(sbTarget)
+			_ = os.Symlink(sndbxTarget, sbTarget)
+		}
 		fmt.Fprintf(stdout, "==> Installed prebuilt native CLI binaries from GitHub Releases to %s\n", binDir)
 		return nil
 	}
@@ -175,6 +183,10 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 			return fmt.Errorf("failed compiling %s: %w", bin, err)
 		}
 		_ = os.Chmod(targetFile, 0755)
+	}
+	if _, err := os.Stat(sndbxTarget); err == nil {
+		_ = os.Remove(sbTarget)
+		_ = os.Symlink(sndbxTarget, sbTarget)
 	}
 	fmt.Fprintf(stdout, "==> Compiled native CLI binaries to %s\n", binDir)
 	return nil

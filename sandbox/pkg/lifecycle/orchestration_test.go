@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -31,6 +30,7 @@ func TestProvisionAgentAndDeprovisionAgentHappyPath(t *testing.T) {
 		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
 	})
 
+	t.Setenv("HOME", tmpDir)
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
@@ -40,8 +40,9 @@ func TestProvisionAgentAndDeprovisionAgentHappyPath(t *testing.T) {
 		SSHConfigFile: filepath.Join(tmpDir, "ssh", "config"),
 	}
 	_ = paths.EnsureDirectories()
-	_ = os.WriteFile(paths.IDEKeyFile, []byte("key"), 0o600)
-	_ = os.WriteFile(paths.IDEKeyFile+".pub", []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA mock-ide-key"), 0o600)
+	if err := EnsureIDEKeypair(paths); err != nil {
+		t.Fatalf("failed generating IDE keypair: %v", err)
+	}
 
 	// Mock Gitea
 	mockGitea := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

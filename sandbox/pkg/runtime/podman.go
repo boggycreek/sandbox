@@ -495,6 +495,14 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		args = append(args, "-e", "OPENAI_API_KEY=local-openai-key")
 	}
 
+	args = append(args,
+		"-e", "SONAR_HOST_URL=http://sonarqube:9000",
+		"-e", "SONARQUBE_URL=http://sonarqube:9000",
+	)
+	if cfg.SonarToken != "" {
+		args = append(args, "-e", fmt.Sprintf("SONAR_TOKEN=%s", cfg.SonarToken))
+	}
+
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
@@ -1086,4 +1094,3 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	}
 	return nil
 }
-

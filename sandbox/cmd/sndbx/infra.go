@@ -19,21 +19,23 @@ import (
 )
 
 func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx infra <up|down|list|doctor>")
+		fmt.Fprintf(stderr, "Usage: %s infra <up|down|list|doctor>\n", bin)
 		return 1
 	}
 
 	sub := strings.ToLower(args[0])
 	switch sub {
 	case "help", "-h", "--help":
-		fmt.Fprintln(stdout, `Usage: sndbx infra <command>
+		fmt.Fprintf(stdout, `Usage: %s infra <command>
 
 Commands:
   up      Start shared Valkey, Gitea, and PostgreSQL services via Podman Compose
   down    Stop shared infrastructure services
   list    Show status of running infrastructure containers
-  doctor  Diagnose shared infrastructure storage, containers, and services, and auto-heal defects`)
+  doctor  Diagnose shared infrastructure storage, containers, and services, and auto-heal defects
+`, bin)
 		return 0
 
 	case "up":

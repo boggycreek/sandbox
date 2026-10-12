@@ -1333,8 +1333,8 @@ type mockSendTool struct {
 	execCount *int
 }
 
-func (m mockSendTool) Name() string { return "fleet_send_message" }
-func (m mockSendTool) Description() string { return "test" }
+func (m mockSendTool) Name() string               { return "fleet_send_message" }
+func (m mockSendTool) Description() string        { return "test" }
 func (m mockSendTool) Parameters() map[string]any { return nil }
 func (m mockSendTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	*m.execCount++
@@ -1442,4 +1442,3 @@ func TestREPLEngineDuplicateToolCallDeduplication(t *testing.T) {
 		t.Errorf("expected fleet_send_message to be executed exactly once due to deduplication, got %d", execCount)
 	}
 }
-

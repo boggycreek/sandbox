@@ -203,17 +203,23 @@ func EnsureIDEKeypair(paths config.Paths) error {
 		}
 		_ = os.Chmod(paths.IDEKeyFile, 0600)
 		_ = os.Chmod(sshPub, 0644)
-	} else if _, err := os.Stat(sshPub); os.IsNotExist(err) {
-		// Regenerate public key from private key
+	} else {
+		// Derive actual public key from private key
 		cmd := exec.Command("ssh-keygen", "-y", "-f", paths.IDEKeyFile)
 		out, err := cmd.Output()
 		if err != nil {
 			return fmt.Errorf("failed deriving IDE public key: %w", err)
 		}
-		if len(out) > 0 {
-			if err := os.WriteFile(sshPub, out, 0644); err != nil {
+		derivedPub := strings.TrimSpace(string(out))
+		existingPubBytes, readErr := os.ReadFile(sshPub)
+		existingPub := strings.TrimSpace(string(existingPubBytes))
+
+		if readErr != nil || len(existingPub) == 0 || existingPub != derivedPub {
+			pubData := append([]byte(derivedPub), '\n')
+			if err := os.WriteFile(sshPub, pubData, 0644); err != nil {
 				return fmt.Errorf("failed writing IDE public key: %w", err)
 			}
+			_ = os.Chmod(sshPub, 0644)
 		}
 	}
 	return nil
@@ -307,9 +313,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 3. Gitea Account & Keys
-	if cfg.IsHost() {
-		report.AddStep("Gitea User & Keys", StatusSkipped, "Host agent does not require dedicated in-container Gitea SSH key (skipped)", nil)
-	} else if os.Getenv("GITEA_DISABLED") == "1" {
+	if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea User & Keys", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
 	} else if err := RegisterGiteaUser(ctx, cfg, paths); err == nil {
 		report.AddStep("Gitea User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
@@ -320,9 +324,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 4. SonarQube User & Analysis Token
-	if cfg.IsHost() {
-		report.AddStep("SonarQube Account & Token", StatusSkipped, "Host agent operates directly on host tools (skipped)", nil)
-	} else if os.Getenv("SONAR_DISABLED") == "1" {
+	if os.Getenv("SONAR_DISABLED") == "1" {
 		report.AddStep("SonarQube Account & Token", StatusSkipped, "SonarQube infrastructure is disabled via SONAR_DISABLED (skipped)", nil)
 	} else if err := RegisterSonarUser(ctx, cfg, paths); err == nil {
 		report.AddStep("SonarQube Account & Token", StatusOK, "Registered user account and generated analysis token", nil)

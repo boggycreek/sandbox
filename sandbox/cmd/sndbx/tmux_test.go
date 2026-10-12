@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -20,7 +19,8 @@ import (
 
 func TestAgentTmuxAndConnect(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
 

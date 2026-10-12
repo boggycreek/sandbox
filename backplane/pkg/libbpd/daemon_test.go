@@ -595,4 +595,3 @@ func TestDaemonFileHelpersEdgeCases(t *testing.T) {
 	}
 	_ = d.clearPendingBatch()
 }
-

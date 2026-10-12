@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,5 +268,62 @@ func TestEnsureIDEKeypair(t *testing.T) {
 	}
 	if _, err := os.Stat(pubFile); err != nil {
 		t.Errorf("expected regenerated public key file to exist: %v", err)
+	}
+
+	// Read genuine public key content
+	genuinePubBytes, err := os.ReadFile(pubFile)
+	if err != nil {
+		t.Fatalf("failed reading genuine public key: %v", err)
+	}
+	genuinePub := strings.TrimSpace(string(genuinePubBytes))
+
+	// 4. Auto-recovering when .pub contains corrupt text
+	if err := os.WriteFile(pubFile, []byte("invalid-corrupted-public-key-text\n"), 0644); err != nil {
+		t.Fatalf("failed writing corrupt pub key: %v", err)
+	}
+	if err := EnsureIDEKeypair(paths); err != nil {
+		t.Fatalf("EnsureIDEKeypair failed to recover from corrupt pub file: %v", err)
+	}
+	recoveredBytes, err := os.ReadFile(pubFile)
+	if err != nil {
+		t.Fatalf("failed reading recovered pub key: %v", err)
+	}
+	if strings.TrimSpace(string(recoveredBytes)) != genuinePub {
+		t.Errorf("expected recovered pub key %q, got %q", genuinePub, string(recoveredBytes))
+	}
+
+	// 5. Auto-recovering when .pub is empty
+	if err := os.WriteFile(pubFile, []byte(""), 0644); err != nil {
+		t.Fatalf("failed writing empty pub key: %v", err)
+	}
+	if err := EnsureIDEKeypair(paths); err != nil {
+		t.Fatalf("EnsureIDEKeypair failed to recover from empty pub file: %v", err)
+	}
+	recoveredEmpty, err := os.ReadFile(pubFile)
+	if err != nil {
+		t.Fatalf("failed reading recovered pub key: %v", err)
+	}
+	if strings.TrimSpace(string(recoveredEmpty)) != genuinePub {
+		t.Errorf("expected recovered pub key %q, got %q", genuinePub, string(recoveredEmpty))
+	}
+
+	// 6. Auto-recovering when .pub contains mismatched valid-looking key
+	mismatchedKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA mock-wrong-key-contents other-comment"
+	if err := os.WriteFile(pubFile, []byte(mismatchedKey), 0600); err != nil {
+		t.Fatalf("failed writing mismatched pub key: %v", err)
+	}
+	if err := EnsureIDEKeypair(paths); err != nil {
+		t.Fatalf("EnsureIDEKeypair failed to recover from mismatched pub file: %v", err)
+	}
+	recoveredMismatch, err := os.ReadFile(pubFile)
+	if err != nil {
+		t.Fatalf("failed reading recovered pub key: %v", err)
+	}
+	if strings.TrimSpace(string(recoveredMismatch)) != genuinePub {
+		t.Errorf("expected recovered pub key %q, got %q", genuinePub, string(recoveredMismatch))
+	}
+	fi, err := os.Stat(pubFile)
+	if err != nil || fi.Mode().Perm() != 0644 {
+		t.Errorf("expected pub file permissions 0644, got %v (err: %v)", fi.Mode().Perm(), err)
 	}
 }

@@ -7,6 +7,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -14,6 +16,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goRuntime "runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,9 +30,63 @@ import (
 	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
+var defaultStdin io.Reader = os.Stdin
+
+// SetStdinForTesting replaces defaultStdin for testing and returns a restore function.
+func SetStdinForTesting(r io.Reader) func() {
+	orig := defaultStdin
+	defaultStdin = r
+	return func() { defaultStdin = orig }
+}
+
+var systemURILauncher = func() string {
+	if goRuntime.GOOS == "darwin" {
+		return "open"
+	}
+	return "xdg-open"
+}
+
+// SetSystemURILauncherForTesting allows tests to mock the system URL launcher command.
+func SetSystemURILauncherForTesting(fn func() string) func() {
+	orig := systemURILauncher
+	systemURILauncher = fn
+	return func() { systemURILauncher = orig }
+}
+
+var isTerminal = func(r io.Reader) bool {
+	if r == nil {
+		return false
+	}
+	if term, ok := r.(interface{ IsTerminal() bool }); ok {
+		return term.IsTerminal()
+	}
+	if f, ok := r.(*os.File); ok {
+		st, err := f.Stat()
+		if err != nil {
+			return false
+		}
+		return (st.Mode() & os.ModeCharDevice) != 0
+	}
+	if sr, ok := r.(*strings.Reader); ok && sr.Len() == 0 {
+		return false
+	}
+	if br, ok := r.(*bytes.Buffer); ok && br.Len() == 0 {
+		return false
+	}
+	return true
+}
+
+// SetIsTerminalForTesting replaces the package-level isTerminal checker and returns a restore function.
+func SetIsTerminalForTesting(fn func(io.Reader) bool) func() {
+	orig := isTerminal
+	isTerminal = fn
+	return func() { isTerminal = orig }
+}
+
 func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent <create|provision|start|tmux|open|ssh|ssh-config|keys|doctor|stop|list|clean|retire|deprovision|clone|remote>")
+		fmt.Fprintf(stderr, "Usage: %s agent <create|provision|start|tmux|open|ssh|ssh-config|keys|doctor|stop|list|clean|retire|deprovision|clone|remote>\n", bin)
 		return 1
 	}
 
@@ -37,7 +95,7 @@ func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout,
 
 	switch sub {
 	case "help", "-h", "--help":
-		fmt.Fprintln(stdout, `Usage: sndbx agent <command> [args...]
+		fmt.Fprintf(stdout, `Usage: %s agent <command> [args...]
 
 Commands:
   create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--host] [--no-container] [--pwd <path>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
@@ -55,7 +113,7 @@ Commands:
   tmux <name>
     Attach interactively to the agent container's tmux supervisor.
 
-  open <name> [in <ide>] [--ide <ide>] [--no-launch]
+  open <name> [in <ide>] [--no-launch]
     Launch desktop IDE remote development environment (VS Code, GoLand, CLion, WebStorm, PyCharm, etc.).
 
   ssh <name>
@@ -89,7 +147,7 @@ Commands:
     Clone a git repository directly into the agent container's workspace.
 
   remote <name> [get|list|set <remote-name> <url>]
-    Inspect or configure git remotes inside the agent container's workspace.`)
+    Inspect or configure git remotes inside the agent container's workspace.`, binaryName())
 		return 0
 	case "tmux":
 		return handleAgentTmux(ctx, paths, subArgs, stdout, stderr)
@@ -108,7 +166,7 @@ Commands:
 		case "start":
 			return handleAgentStart(opCtx, paths, subArgs, stdout, stderr)
 		case "open":
-			return handleAgentOpen(opCtx, paths, subArgs, stdout, stderr)
+			return handleAgentOpen(opCtx, paths, subArgs, defaultStdin, stdout, stderr)
 		case "ssh-config", "sshconfig":
 			return handleAgentSSHConfig(opCtx, paths, subArgs, stdout, stderr)
 		case "keys":
@@ -139,7 +197,7 @@ Commands:
 
 func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--host] [--no-container] [--pwd <path>] [--model-url <url>] [--model-name <name>] [--model-key <key>]")
+		fmt.Fprintf(stderr, "Usage: %s agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--host] [--no-container] [--pwd <path>] [--model-url <url>] [--model-name <name>] [--model-key <key>]\n", binaryName())
 		return 1
 	}
 
@@ -169,7 +227,6 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	fs.StringVar(&modelKey, "model-api-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
 	fs.BoolVar(&isHostContainer, "host", false, "Provision host-connected container agent with workspace projection")
 	fs.BoolVar(&isBareHost, "no-container", false, "Provision bare host agent without a container")
-	fs.BoolVar(&isBareHost, "host-only", false, "Provision bare host agent without a container (alias to --no-container)")
 	fs.StringVar(&pwdPath, "pwd", "", "Host working directory to project into container workspace (default: current directory)")
 
 	var flagArgs []string
@@ -271,11 +328,11 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", cfg.Name)
 		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", cfg.Name)
 	} else if isBareHost {
-		cfg.Runtime = "bare-host"
+		cfg.Runtime = "no-container"
 		cfg.HostOnly = true
 		cfg.ContainerName = ""
 		cfg.VolumeName = ""
-		cfg.Image = "bare-host"
+		cfg.Image = "no-container"
 	}
 
 	if err := config.SaveAgentConfig(cfg, paths); err != nil {
@@ -287,7 +344,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
 	if cfg.IsBareHost() {
-		fmt.Fprintf(stdout, "  Runtime:    bare-host (direct host execution, no container)\n")
+		fmt.Fprintf(stdout, "  Runtime:    no-container (direct host execution, no container)\n")
 		fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
 		fmt.Fprintf(stdout, "  BP Profile: %s\n", filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name)))
 		fmt.Fprintln(stdout, "\nWARNING: Bare host agent runs directly on the host without container isolation. Full access to host filesystem and credentials is permitted.")
@@ -334,7 +391,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 
 func handleAgentStart(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent start <name>")
+		fmt.Fprintf(stderr, "Usage: %s agent start <name>\n", binaryName())
 		return 1
 	}
 
@@ -377,7 +434,7 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 
 func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent tmux <name>")
+		fmt.Fprintf(stderr, "Usage: %s agent tmux <name>\n", binaryName())
 		return 1
 	}
 	name := args[0]
@@ -409,8 +466,8 @@ func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, std
 
 func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Notice: 'sndbx agent connect' is deprecated. Please use 'sndbx agent tmux <name>' instead.")
-		fmt.Fprintln(stderr, "Usage: sndbx agent connect <name>")
+		fmt.Fprintf(stderr, "Notice: '%s agent connect' is deprecated. Please use '%s agent tmux <name>' instead.\n", binaryName(), binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent connect <name>\n", binaryName())
 		return 1
 	}
 	name := args[0]
@@ -435,65 +492,117 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 	return handleAgentTmux(ctx, paths, args, stdout, stderr)
 }
 
-func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	bin := binaryName()
+	if stdin == nil {
+		stdin = defaultStdin
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]")
+		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
 		return 1
 	}
 
 	name := args[0]
-	ideName := "code" // sensible default; overridden if not installed
-	noLaunch := false
+	var ideName string
+	var ideProvided bool
+	var noLaunch bool
+	var flagArgs []string
 
 	// Parse the optional positional "in <ide>" syntax before flag parsing.
-	flagArgs := args[1:]
 	if len(args) >= 3 && strings.ToLower(args[1]) == "in" {
+		if strings.HasPrefix(args[2], "-") {
+			fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
+			return 1
+		}
+		ideProvided = true
 		ideName = args[2]
 		flagArgs = args[3:]
 	} else if len(args) == 2 && strings.ToLower(args[1]) == "in" {
-		fmt.Fprintln(stderr, "Usage: sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]")
+		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
 		return 1
+	} else {
+		flagArgs = args[1:]
 	}
 
 	fs := flag.NewFlagSet("agent open", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-
-	// Build a dynamic help string listing installed IDEs.
-	installedNames := ide.NamesInstalled()
-	ideHelp := "Target IDE"
-	if len(installedNames) > 0 {
-		ideHelp = "Target IDE (installed: " + strings.Join(installedNames, ", ") + ")"
-	}
-	var isLocal bool
-	var isRemote bool
-	fs.StringVar(&ideName, "ide", ideName, ideHelp)
-	fs.BoolVar(&noLaunch, "no-launch", noLaunch, "Prepare SSH configuration without launching IDE")
-	fs.BoolVar(&isLocal, "local", false, "Open local workspace folder directly on physical host instead of remote container")
-	fs.BoolVar(&isRemote, "remote", false, "Connect to container via Remote-SSH/Gateway (default for host containers)")
+	fs.BoolVar(&noLaunch, "no-launch", false, "Prepare SSH configuration without launching IDE")
 	if err := fs.Parse(flagArgs); err != nil {
 		return 1
 	}
 
-	// Resolve the requested IDE against the installed catalog.
-	ideName = strings.ToLower(strings.TrimSpace(ideName))
-	target, installed := ide.Lookup(ideName)
-	if target.Name == "" {
-		// Completely unknown — not even in the catalog.
-		help := "(none detected)"
-		if len(installedNames) > 0 {
-			help = strings.Join(installedNames, ", ")
+	rest := fs.Args()
+	if !ideProvided && len(rest) >= 2 && strings.ToLower(rest[0]) == "in" {
+		if strings.HasPrefix(rest[1], "-") {
+			fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
+			return 1
 		}
-		fmt.Fprintf(stderr, "sndbx error: unknown IDE %q. Installed IDEs: %s\n", ideName, help)
+		ideProvided = true
+		ideName = rest[1]
+		rest = rest[2:]
+	} else if !ideProvided && len(rest) == 1 && strings.ToLower(rest[0]) == "in" {
+		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
 		return 1
 	}
-	if !installed {
+
+	if len(rest) > 0 {
+		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
+		return 1
+	}
+
+	var target ide.IDE
+	if ideProvided {
+		ideName = strings.ToLower(strings.TrimSpace(ideName))
+		var installed bool
+		target, installed = ide.Lookup(ideName)
+		installedNames := ide.NamesInstalled()
 		help := "(none detected)"
 		if len(installedNames) > 0 {
 			help = strings.Join(installedNames, ", ")
 		}
-		fmt.Fprintf(stderr, "sndbx error: %s (%s) is not installed on this host. Installed IDEs: %s\n",
-			target.DisplayName, target.BinaryName, help)
-		return 1
+		if target.Name == "" {
+			fmt.Fprintf(stderr, "sndbx error: unknown IDE %q. Installed IDEs: %s\n", ideName, help)
+			return 1
+		}
+		if !installed {
+			fmt.Fprintf(stderr, "sndbx error: %s (%s) is not installed on this host. Installed IDEs: %s\n",
+				target.DisplayName, target.BinaryName, help)
+			return 1
+		}
+	} else {
+		discovered := ide.Discover()
+		if len(discovered) == 0 {
+			fmt.Fprintln(stderr, "sndbx error: no supported IDEs detected on PATH (supported: code, cursor, goland, clion, webstorm, pycharm, idea, ...)")
+			return 1
+		}
+
+		if !isTerminal(stdin) {
+			names := make([]string, 0, len(discovered))
+			for _, d := range discovered {
+				names = append(names, d.Name)
+			}
+			fmt.Fprintf(stderr, "sndbx error: target IDE is required. Specify 'in <ide>' with one of: %s\n", strings.Join(names, ", "))
+			return 1
+		}
+
+		fmt.Fprintf(stdout, "Select an IDE to open agent %q:\n", name)
+		for i, d := range discovered {
+			fmt.Fprintf(stdout, "  %d) %s (%s)\n", i+1, d.DisplayName, d.Path)
+		}
+		fmt.Fprintf(stdout, "Enter selection [1-%d]: ", len(discovered))
+
+		scanner := bufio.NewScanner(stdin)
+		if !scanner.Scan() {
+			fmt.Fprintln(stderr, "sndbx error: invalid selection")
+			return 1
+		}
+		input := strings.TrimSpace(scanner.Text())
+		choice, err := strconv.Atoi(input)
+		if err != nil || choice < 1 || choice > len(discovered) {
+			fmt.Fprintln(stderr, "sndbx error: invalid selection")
+			return 1
+		}
+		target = discovered[choice-1]
 	}
 
 	cfg, err := config.LoadAgentConfig(name, paths)
@@ -502,28 +611,10 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	if cfg.IsBareHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a bare host agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
+	if cfg.IsNoContainer() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q runs without a container (no container SSH IDE forwarding)\n", cfg.Name)
 		return 1
 	}
-
-	if cfg.IsHostContainer() && isLocal {
-		if noLaunch {
-			fmt.Fprintf(stdout, "Host workspace directory: %s\n", cfg.WorkspacePath)
-			fmt.Fprintf(stdout, "Launch command: %s %s\n", target.BinaryName, cfg.WorkspacePath)
-			return 0
-		}
-		fmt.Fprintf(stdout, "Opening %s in %s (Path: %s)...\n", name, target.DisplayName, cfg.WorkspacePath)
-		cmd := execCommandContext(ctx, target.Path, cfg.WorkspacePath)
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, err)
-			return 1
-		}
-		return 0
-	}
-	_ = isRemote
 
 	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 	if err != nil || port <= 0 {
@@ -549,6 +640,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	// Build connection descriptors for each IDE family.
 	vsCodeURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)
 	jbSSHURI := fmt.Sprintf("ssh://agent@localhost:%d/home/agent/workspace", port)
+	jbGatewayURI := fmt.Sprintf("jetbrains://gateway/ssh/environment?h=127.0.0.1&u=agent&p=%d&launchIde=true&projectHint=/home/agent/workspace", port)
 
 	if noLaunch {
 		fmt.Fprintf(stdout, "SSH host alias prepared: %s (Port: %d)\n", hostAlias, port)
@@ -558,6 +650,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 			fmt.Fprintf(stdout, "Launch command: %s --file-uri %s\n", target.BinaryName, vsCodeURI)
 		case ide.FamilyJetBrains:
 			fmt.Fprintf(stdout, "Connect via %s with Host %q (Port: %d).\n", target.DisplayName, hostAlias, port)
+			fmt.Fprintf(stdout, "JetBrains URI: %s\n", jbGatewayURI)
 			fmt.Fprintf(stdout, "SSH URI: %s\n", jbSSHURI)
 			fmt.Fprintf(stdout, "Launch command: %s\n", target.BinaryName)
 		}
@@ -584,13 +677,22 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 
 	case ide.FamilyJetBrains:
 		fmt.Fprintf(stdout, "Opening %s in %s via Remote Development...\n", name, target.DisplayName)
+		fmt.Fprintf(stdout, "JetBrains URI: %s\n", jbGatewayURI)
 		fmt.Fprintf(stdout, "Connect via %s -> Remote Development -> SSH (Host: %s, Port: %d).\n", target.DisplayName, hostAlias, port)
-		cmd := execCommandContext(ctx, target.Path)
+
+		launcher := systemURILauncher()
+		cmd := execCommandContext(ctx, launcher, jbGatewayURI)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, err)
-			return 1
+			// Fallback: direct IDE binary execution
+			fallbackCmd := execCommandContext(ctx, target.Path)
+			fallbackCmd.Stdout = stdout
+			fallbackCmd.Stderr = stderr
+			if fallbackErr := fallbackCmd.Run(); fallbackErr != nil {
+				fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, fallbackErr)
+				return 1
+			}
 		}
 	}
 
@@ -608,7 +710,7 @@ func syncAllSSHConfigs(ctx context.Context, paths config.Paths) error {
 
 func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent ssh <name>")
+		fmt.Fprintf(stderr, "Usage: %s agent ssh <name>\n", binaryName())
 		return 1
 	}
 	name := args[0]
@@ -697,7 +799,7 @@ func printSSHConfigBlock(w io.Writer, name string, port int, keyFile string) {
 
 func handleAgentDoctor(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent doctor <name>")
+		fmt.Fprintf(stderr, "Usage: %s agent doctor <name>\n", binaryName())
 		return 1
 	}
 
@@ -717,7 +819,7 @@ func handleAgentDoctor(ctx context.Context, paths config.Paths, args []string, s
 
 func handleAgentStop(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent stop <name> [--all]")
+		fmt.Fprintf(stderr, "Usage: %s agent stop <name> [--all]\n", binaryName())
 		return 1
 	}
 
@@ -757,7 +859,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 
 func handleAgentClean(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent clean <name>")
+		fmt.Fprintf(stderr, "Usage: %s agent clean <name>\n", binaryName())
 		return 1
 	}
 	name := args[0]
@@ -782,8 +884,9 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 }
 
 func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent retire <name> [--force]")
+		fmt.Fprintf(stderr, "Usage: %s agent retire <name> [--force]\n", bin)
 		return 1
 	}
 
@@ -798,7 +901,7 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	if name == "" {
-		fmt.Fprintln(stderr, "Usage: sndbx agent retire <name> [--force]")
+		fmt.Fprintf(stderr, "Usage: %s agent retire <name> [--force]\n", bin)
 		return 1
 	}
 	_ = force // Flag parsed and supported for scripts/automation
@@ -825,7 +928,7 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 
 func handleAgentProvision(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent provision <name>")
+		fmt.Fprintf(stderr, "Usage: %s agent provision <name>\n", binaryName())
 		return 1
 	}
 
@@ -978,7 +1081,7 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 
 func handleAgentClone(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent clone <name> <repo-url> [dir]")
+		fmt.Fprintf(stderr, "Usage: %s agent clone <name> <repo-url> [dir]\n", binaryName())
 		return 1
 	}
 
@@ -1039,7 +1142,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 
 func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> [get|list|set <remote-name> <url>] [--dir <dir>]")
+		fmt.Fprintf(stderr, "Usage: %s agent remote <name> [get|list|set <remote-name> <url>] [--dir <dir>]\n", binaryName())
 		return 1
 	}
 
@@ -1122,7 +1225,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "get-url", "--", remoteName}
 	case "set":
 		if len(cleanArgs) < 3 {
-			fmt.Fprintln(stderr, "Usage: sndbx agent remote <name> set <remote-name> <url> [--dir <dir>]")
+			fmt.Fprintf(stderr, "Usage: %s agent remote <name> set <remote-name> <url> [--dir <dir>]\n", binaryName())
 			return 1
 		}
 		remoteName := strings.TrimSpace(cleanArgs[1])

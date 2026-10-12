@@ -134,8 +134,8 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 3. Clear per-agent known hosts
-	if cfg.IsHost() {
-		report.AddStep("Known Hosts", StatusSkipped, "Host agent has no SSH host entry (skipped)", nil)
+	if cfg.IsBareHost() {
+		report.AddStep("Known Hosts", StatusSkipped, "Bare host agent has no SSH host entry (skipped)", nil)
 	} else {
 		runtime.ClearAgentKnownHosts(cfg.Name, paths)
 		report.AddStep("Known Hosts", StatusOK, "Cleared agent SSH known hosts entry", nil)
@@ -151,9 +151,7 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 5. Deprovision Gitea user & keys
-	if cfg.IsHost() {
-		report.AddStep("Gitea Account", StatusSkipped, "Host agent has no dedicated Gitea account (skipped)", nil)
-	} else if os.Getenv("GITEA_DISABLED") == "1" {
+	if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea Account", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
 	} else if err := DeprovisionGiteaUser(ctx, cfg.Name); err == nil {
 		report.AddStep("Gitea Account", StatusOK, "Purged Gitea user account and authorized keys", nil)
@@ -164,7 +162,7 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 6. Deprovision SonarQube user & analysis tokens
-	if cfg.IsHost() || os.Getenv("SONAR_DISABLED") == "1" || (cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "") {
+	if os.Getenv("SONAR_DISABLED") == "1" || (cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "") {
 		report.AddStep("SonarQube Account", StatusSkipped, "SonarQube is disabled or not provisioned for agent (skipped)", nil)
 	} else if err := DeprovisionSonarUser(ctx, cfg.Name); err == nil {
 		report.AddStep("SonarQube Account", StatusOK, "Purged SonarQube user account and analysis tokens", nil)
