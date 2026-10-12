@@ -49,6 +49,7 @@ For in-depth architectural specifications and operational protocols, refer to th
 - **[OCI Image Resolution & Tagging](doc/ai/image-resolution.md)**: 3-tier image resolution, well-known presets, local store discovery, remote OCI refs (ADR 00029).
 - **[Testing Guidelines & Coverage Gates](doc/ai/testing-guidelines.md)**: Strict >=90% test coverage enforcement, rootless Podman cleanup patterns, containerized smoke testing.
 - **[Diagnostic Doctor & Auto-Healing](doc/ai/doctor-diagnostics.md)**: `sndbx agent doctor` and `sndbx infra doctor` diagnostic checks and self-healing.
+- **[Code Review Protocol](doc/ai/code-review.md)**: Architectural, logical, and security review methodology, inspection checklist, and PR reporting format.
 - **[Workstation Setup & Contributor Guide](CONTRIBUTING.md)**: Automated `setup.sh`, XDG multi-version Go management, `--doctor` health check, quality gates, and Beads (`bd`) task tracking.
 
 ---

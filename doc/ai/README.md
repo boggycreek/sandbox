@@ -8,6 +8,7 @@ This directory provides progressive disclosure of architectural principles, engi
 - **[OCI Image Resolution & Tagging](image-resolution.md)** (`agent-sandbox-image-resolution`): 3-tier image resolution, well-known presets, local store discovery, remote OCI refs (ADR 00029).
 - **[Testing Guidelines & Coverage Gates](testing-guidelines.md)** (`agent-sandbox-testing-guidelines`): Strict >=90% test coverage enforcement, rootless Podman cleanup patterns, containerized smoke testing.
 - **[Diagnostic Doctor & Auto-Healing](doctor-diagnostics.md)** (`agent-sandbox-doctor-diagnostics`): `sndbx agent doctor` and `sndbx infra doctor` architecture, check categories, healing behavior.
+- **[Code Review Protocol](code-review.md)** (`agent-sandbox-code-review`): Protocol, inspection checklist, and reporting format for architectural, logical, and security PR reviews.
 
 ## Core Directives for Autonomous Agents
 1. **Never commit directly to `main`**: Create a descriptive feature branch and submit a PR via `gh pr create`.
