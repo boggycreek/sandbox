@@ -47,9 +47,50 @@ type Client struct {
 	writer    *resp.Writer
 	mu        sync.Mutex
 	closed    bool
+	broken    bool
 	lockCh    chan struct{}
 	pubKeys   map[string]ed25519.PublicKey
 	pubKeysMu sync.RWMutex
+}
+
+func (c *Client) connect(ctx context.Context) error {
+	addr := fmt.Sprintf("%s:%d", c.cfg.Host, c.cfg.Port)
+	dialer := net.Dialer{Timeout: c.cfg.ConnectTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed connecting to Valkey at %s: %w", addr, err)
+	}
+
+	c.mu.Lock()
+	c.conn = conn
+	c.reader = resp.NewReader(conn)
+	c.writer = resp.NewWriter(conn)
+	c.broken = false
+	c.mu.Unlock()
+
+	// Authenticate if password provided
+	if c.cfg.Password != "" {
+		var authVal resp.Value
+		user := c.cfg.Username
+		if user == "" && c.cfg.AgentID != "" {
+			user = c.cfg.AgentID
+		}
+		if user != "" {
+			authVal, err = c.execInternal(ctx, "AUTH", user, c.cfg.Password)
+		} else {
+			authVal, err = c.execInternal(ctx, "AUTH", c.cfg.Password)
+		}
+		if err != nil {
+			c.markBroken()
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+		if authVal.Type == resp.TypeError {
+			c.markBroken()
+			return fmt.Errorf("authentication error: %s", authVal.Str)
+		}
+	}
+
+	return nil
 }
 
 // Dial connects and authenticates to the Valkey Backplane
@@ -75,43 +116,15 @@ func Dial(ctx context.Context, cfg ClientConfig) (*Client, error) {
 		}
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	dialer := net.Dialer{Timeout: cfg.ConnectTimeout}
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed connecting to Valkey at %s: %w", addr, err)
-	}
-
 	c := &Client{
 		cfg:     cfg,
-		conn:    conn,
-		reader:  resp.NewReader(conn),
-		writer:  resp.NewWriter(conn),
 		lockCh:  make(chan struct{}, 1),
 		pubKeys: make(map[string]ed25519.PublicKey),
 	}
 	c.lockCh <- struct{}{}
 
-	// Authenticate if password provided
-	if cfg.Password != "" {
-		var authVal resp.Value
-		user := cfg.Username
-		if user == "" && cfg.AgentID != "" {
-			user = cfg.AgentID
-		}
-		if user != "" {
-			authVal, err = c.execInternal(ctx, "AUTH", user, cfg.Password)
-		} else {
-			authVal, err = c.execInternal(ctx, "AUTH", cfg.Password)
-		}
-		if err != nil {
-			c.Close()
-			return nil, fmt.Errorf("authentication failed: %w", err)
-		}
-		if authVal.Type == resp.TypeError {
-			c.Close()
-			return nil, fmt.Errorf("authentication error: %s", authVal.Str)
-		}
+	if err := c.connect(ctx); err != nil {
+		return nil, err
 	}
 
 	return c, nil
@@ -132,12 +145,21 @@ func (c *Client) unlock() {
 
 func (c *Client) markBroken() {
 	c.mu.Lock()
-	c.closed = true
+	c.broken = true
 	conn := c.conn
+	c.conn = nil
+	c.reader = nil
+	c.writer = nil
 	c.mu.Unlock()
 	if conn != nil {
 		_ = conn.Close()
 	}
+}
+
+func (c *Client) isBroken() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.broken || c.conn == nil
 }
 
 func (c *Client) isClosed() bool {
@@ -154,8 +176,13 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closed = true
-	if c.conn != nil {
-		return c.conn.Close()
+	c.broken = true
+	conn := c.conn
+	c.conn = nil
+	c.reader = nil
+	c.writer = nil
+	if conn != nil {
+		return conn.Close()
 	}
 	return nil
 }
@@ -181,6 +208,12 @@ func (c *Client) execInternal(ctx context.Context, cmd string, args ...string) (
 	}
 	if err := ctx.Err(); err != nil {
 		return resp.Value{}, err
+	}
+
+	if c.isBroken() {
+		if err := c.connect(ctx); err != nil {
+			return resp.Value{}, err
+		}
 	}
 
 	minBlockDuration := time.Duration(0)

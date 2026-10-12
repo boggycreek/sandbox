@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,6 +64,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 // RunWithIO executes the CLI command with custom stdin, stdout, and stderr
 func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return RunWithContext(sigCtx, args, stdin, stdout, stderr)
+}
+
+// RunWithContext executes the CLI command with an explicit context and custom I/O
+func RunWithContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printUsage(stdout)
 		return 1
@@ -131,16 +139,22 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	defaultTimeout := 30 * time.Second
 	if cmd == "recv" {
-		peekFs := flag.NewFlagSet("recv-peek", flag.ContinueOnError)
-		peekFs.SetOutput(io.Discard)
-		blockSec := peekFs.Int("block", 0, "")
-		_ = peekFs.Parse(cmdArgs)
+		fs := flag.NewFlagSet("recv", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		blockSec := fs.Int("block", 0, "Block for N seconds waiting for messages")
+		jsonOutput := fs.Bool("json", false, "Output in JSON format")
+		if err := fs.Parse(cmdArgs); err != nil {
+			return 1
+		}
 		if *blockSec > 0 {
 			defaultTimeout = time.Duration(*blockSec)*time.Second + 15*time.Second
 		}
+		cmdCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		defer cancel()
+		return handleRecvParsed(cmdCtx, cfg, *blockSec, *jsonOutput, stdout, stderr)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	cmdCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
 	switch cmd {
@@ -148,40 +162,37 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return handleWhoami(cfg, stdout)
 
 	case "say":
-		return handleSay(ctx, cfg, cmdArgs, stdin, stdout, stderr)
+		return handleSay(cmdCtx, cfg, cmdArgs, stdin, stdout, stderr)
 
 	case "post":
-		return handlePost(ctx, cfg, cmdArgs, stdin, stdout, stderr)
+		return handlePost(cmdCtx, cfg, cmdArgs, stdin, stdout, stderr)
 
 	case "cat", "get":
-		return handleCat(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleCat(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "tell":
-		return handleTell(ctx, cfg, cmdArgs, stdin, stdout, stderr)
+		return handleTell(cmdCtx, cfg, cmdArgs, stdin, stdout, stderr)
 
 	case "reply":
-		return handleReply(ctx, cfg, cmdArgs, stdout, stderr)
-
-	case "recv":
-		return handleRecv(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleReply(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "human":
-		return handleHuman(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleHuman(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "peers":
-		return handlePeers(ctx, cfg, cmdArgs, stdout, stderr)
+		return handlePeers(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "status":
-		return handleStatus(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleStatus(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "finger":
-		return handleFinger(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleFinger(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "liaison":
-		return handleLiaison(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleLiaison(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "interval":
-		return handleInterval(ctx, cfg, cmdArgs, stdout, stderr)
+		return handleInterval(cmdCtx, cfg, cmdArgs, stdout, stderr)
 
 	case "state":
 		return handleState(cmdArgs, stdout, stderr)
@@ -591,28 +602,23 @@ func handleRecv(ctx context.Context, cfg libbp.ClientConfig, args []string, stdo
 		return 1
 	}
 
-	if *blockSec > 0 {
-		needed := time.Duration(*blockSec)*time.Second + 10*time.Second
-		if d, ok := ctx.Deadline(); !ok || time.Until(d) < needed {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(context.Background(), needed)
-			defer cancel()
-		}
-	}
+	return handleRecvParsed(ctx, cfg, *blockSec, *jsonOutput, stdout, stderr)
+}
 
+func handleRecvParsed(ctx context.Context, cfg libbp.ClientConfig, blockSec int, jsonOutput bool, stdout, stderr io.Writer) int {
 	client, err := getClient(ctx, cfg, stderr)
 	if err != nil {
 		return 1
 	}
 	defer client.Close()
 
-	messages, err := client.Recv(ctx, *blockSec)
+	messages, err := client.Recv(ctx, blockSec)
 	if err != nil {
 		fmt.Fprintf(stderr, "bp error: %v\n", err)
 		return 1
 	}
 
-	if *jsonOutput {
+	if jsonOutput {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(messages)

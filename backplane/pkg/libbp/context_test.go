@@ -152,10 +152,11 @@ func TestClientContextDeadlineInFlight(t *testing.T) {
 		t.Errorf("operation blocked too long: %v", elapsed)
 	}
 
-	// Subsequent command on broken client must fail with ErrClosed
+	// Subsequent command on explicitly closed client must fail with ErrClosed
+	_ = client.Close()
 	_, err = client.Exec(context.Background(), "PING")
 	if !errors.Is(err, ErrClosed) {
-		t.Errorf("expected ErrClosed on subsequent Exec after deadline expiry, got: %v", err)
+		t.Errorf("expected ErrClosed on subsequent Exec after Close, got: %v", err)
 	}
 
 	// 2. In-flight cancellation on fresh client
@@ -182,10 +183,57 @@ func TestClientContextDeadlineInFlight(t *testing.T) {
 		t.Errorf("cancellation unblock took too long: %v", elapsed)
 	}
 
-	// Subsequent command on client2 must also fail with ErrClosed
+	// Subsequent command on client2 after explicit Close must also fail with ErrClosed
+	_ = client2.Close()
 	_, err = client2.Exec(context.Background(), "PING")
 	if !errors.Is(err, ErrClosed) {
-		t.Errorf("expected ErrClosed on subsequent Exec after cancellation, got: %v", err)
+		t.Errorf("expected ErrClosed on subsequent Exec after Close, got: %v", err)
+	}
+}
+
+func TestClientLazyReconnectAfterTimeoutOrBreak(t *testing.T) {
+	srv, port := startMockValkeyServer(t)
+	defer srv.close()
+
+	cfg := ClientConfig{
+		Host:    "127.0.0.1",
+		Port:    port,
+		AgentID: "agent-reconnect",
+	}
+	client, err := Dial(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed dialing mock valkey: %v", err)
+	}
+	defer client.Close()
+
+	// 1. Initial command succeeds
+	val, err := client.Exec(context.Background(), "PING")
+	if err != nil || val.Str != "PONG" {
+		t.Fatalf("initial PING failed: val=%+v err=%v", val, err)
+	}
+
+	// 2. Mark client broken (simulating network disconnect / timeout)
+	client.markBroken()
+	if !client.isBroken() {
+		t.Fatalf("expected client to be broken")
+	}
+
+	// 3. Next Exec lazily reconnects and succeeds
+	val, err = client.Exec(context.Background(), "PING")
+	if err != nil || val.Str != "PONG" {
+		t.Fatalf("reconnected PING failed: val=%+v err=%v", val, err)
+	}
+	if client.isBroken() {
+		t.Fatalf("expected client to no longer be broken after reconnect")
+	}
+
+	// 4. Explicit Close makes the client permanently closed
+	if err := client.Close(); err != nil {
+		t.Fatalf("failed closing client: %v", err)
+	}
+	_, err = client.Exec(context.Background(), "PING")
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected ErrClosed after explicit Close, got: %v", err)
 	}
 }
 
