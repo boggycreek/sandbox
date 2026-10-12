@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -140,7 +139,7 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 		"agent-sandbox-sonarqube-extensions",
 		"agent-sandbox-sonarqube-logs",
 	} {
-		volCmd := exec.CommandContext(ctx, "podman", "volume", "exists", vol)
+		volCmd := runtime.CommandContext(ctx, "podman", "volume", "exists", vol)
 		if err := volCmd.Run(); err != nil {
 			if err := runtime.EnsureVolume(ctx, vol); err == nil {
 				healed = true

@@ -249,11 +249,10 @@ func TestSndbxUpdateDomain(t *testing.T) {
 	}
 
 	// 2. Update execution with mocked commands in an isolated repository
-	origExec := execCommandContext
-	defer func() { execCommandContext = origExec }()
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	restoreExec := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.Command("true")
-	}
+	})
+	defer restoreExec()
 
 	tempRepo := t.TempDir()
 	_ = os.WriteFile(filepath.Join(tempRepo, "Makefile"), []byte("all:\n"), 0644)

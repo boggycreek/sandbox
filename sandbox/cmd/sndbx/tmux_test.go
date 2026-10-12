@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 func TestAgentTmuxAndConnect(t *testing.T) {
@@ -68,14 +67,12 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 		t.Fatalf("failed saving agent config: %v", err)
 	}
 
-	origExec := execCommandContext
-	defer func() { execCommandContext = origExec }()
-
 	var executedCmds []string
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	restoreExec := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		executedCmds = append(executedCmds, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
 		return exec.Command("true")
-	}
+	})
+	defer restoreExec()
 
 	stdout.Reset()
 	stderr.Reset()
@@ -100,9 +97,10 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	}
 
 	// Error when podman exec fails
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	restoreFail := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.Command("false")
-	}
+	})
+	defer restoreFail()
 	stderr.Reset()
 	code = Run([]string{"agent", "tmux", "tmux-test-agent"}, &stdout, &stderr)
 	if code != 1 {
@@ -139,8 +137,7 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = mockExec
-	restoreRuntime2 := runtime.SetExecCommandContextForTesting(mockExec)
+	restoreRuntime2 := SetExecCommandContextForTesting(mockExec)
 	defer restoreRuntime2()
 
 	stdout.Reset()
@@ -153,4 +150,26 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	if len(executedCmds) == 0 || !strings.Contains(executedCmds[len(executedCmds)-1], expectedHostConnect) {
 		t.Errorf("expected %s command, got: %v", expectedHostConnect, executedCmds)
 	}
+
+	// 5. Connect empty args
+	stderr.Reset()
+	code = Run([]string{"agent", "connect"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected 1 on empty agent connect args, got %d", code)
+	}
+
+	// 6. Connect stopped host container
+	mockStopped := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if len(args) >= 3 && args[0] == "inspect" {
+			return exec.Command("echo", `[{"Id":"test-id","Names":["host-cont-agent"],"State":{"Status":"stopped","Running":false}}]`)
+		}
+		return exec.Command("true")
+	}
+	restoreStopped := SetExecCommandContextForTesting(mockStopped)
+	stderr.Reset()
+	code = Run([]string{"agent", "connect", "host-cont-agent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected 1 when host container is stopped, got %d", code)
+	}
+	restoreStopped()
 }

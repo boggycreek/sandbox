@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -20,14 +19,21 @@ import (
 	"github.com/boggycreek/sandbox/pkg/config"
 )
 
-var execCommandContext = exec.CommandContext
+
 
 func main() {
 	os.Exit(Run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// Run executes the sndbx command
+// Run executes the sndbx command.
 func Run(args []string, stdout, stderr io.Writer) int {
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return RunWithContext(sigCtx, args, stdout, stderr)
+}
+
+// RunWithContext executes the sndbx command using the provided context.
+func RunWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printUsage(stdout)
 		return 1
@@ -42,26 +48,23 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 	paths.LoadEnv()
 
-	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	switch domain {
 	case "help", "-h", "--help":
 		printUsage(stdout)
 		return 0
 
 	case "agent":
-		return handleAgent(sigCtx, paths, domainArgs, stdout, stderr)
+		return handleAgent(ctx, paths, domainArgs, stdout, stderr)
 
 	case "infra":
-		ctx, cancel := context.WithTimeout(sigCtx, 120*time.Second)
+		infraCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
-		return handleInfra(ctx, paths, domainArgs, stdout, stderr)
+		return handleInfra(infraCtx, paths, domainArgs, stdout, stderr)
 
 	case "plugin":
-		ctx, cancel := context.WithTimeout(sigCtx, 60*time.Second)
+		pluginCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		return handlePlugin(ctx, paths, domainArgs, stdout, stderr)
+		return handlePlugin(pluginCtx, paths, domainArgs, stdout, stderr)
 
 	case "update":
 		updateTimeout := 30 * time.Minute
@@ -70,12 +73,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 				updateTimeout = d
 			}
 		}
-		updateCtx, updateCancel := context.WithTimeout(sigCtx, updateTimeout)
+		updateCtx, updateCancel := context.WithTimeout(ctx, updateTimeout)
 		defer updateCancel()
 		return handleUpdate(updateCtx, paths, domainArgs, stdout, stderr)
 
 	case "gui":
-		return handleGUI(sigCtx, paths, domainArgs, stdout, stderr)
+		return handleGUI(ctx, paths, domainArgs, stdout, stderr)
 
 	default:
 		bin := binaryName()

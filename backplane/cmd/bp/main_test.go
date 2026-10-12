@@ -1012,3 +1012,34 @@ func TestBPStateQueueConcurrent(t *testing.T) {
 		t.Fatalf("expected %d popped items, got %d", expectedCount, poppedCount)
 	}
 }
+
+func TestRecvBlockSizesTimeoutFromStart(t *testing.T) {
+	valkey := harness.StartValkeyHarness(t)
+	defer valkey.Teardown()
+
+	tmpDir := t.TempDir()
+	profilePath := filepath.Join(tmpDir, "bp", "profiles", "agent-2.env")
+	if err := os.MkdirAll(filepath.Dir(profilePath), 0755); err != nil {
+		t.Fatalf("failed creating profile dir: %v", err)
+	}
+	t.Setenv("XDG_STATE_HOME", tmpDir)
+	content := fmt.Sprintf("BP_HOST=127.0.0.1\nBP_PORT=%d\nBP_AGENT=agent-2\nBP_PASSWORD=%s\n", valkey.Port, valkey.Agent2Pass)
+	if err := os.WriteFile(profilePath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed writing profile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	// RunWithContext sizes the timeout from the start for --block 1
+	code := RunWithContext(context.Background(), []string{"--profile", "agent-2", "recv", "--block", "1"}, nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("recv with block 1 failed: code=%d err=%s", code, stderr.String())
+	}
+
+	// Verify cancellation is preserved when parent context is canceled
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel
+	code = RunWithContext(cancelCtx, []string{"--profile", "agent-2", "recv", "--block", "1"}, nil, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit code when parent context is canceled")
+	}
+}

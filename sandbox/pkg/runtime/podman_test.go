@@ -271,15 +271,15 @@ func TestRootlessNetNSAutoHealing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 1. isRootlessNetnsError helper
-	if !isRootlessNetnsError(fmt.Errorf("failed to mount runtime directory for rootless netns: no such file"), []byte("")) {
-		t.Errorf("expected isRootlessNetnsError to return true on netns error")
+	// 1. IsRootlessNetnsError helper
+	if !IsRootlessNetnsError(fmt.Errorf("failed to mount runtime directory for rootless netns: no such file"), []byte("")) {
+		t.Errorf("expected IsRootlessNetnsError to return true on netns error")
 	}
-	if !isRootlessNetnsError(nil, []byte("Error: failed to mount runtime directory for rootless netns: no such file")) {
-		t.Errorf("expected isRootlessNetnsError to return true on stderr match")
+	if !IsRootlessNetnsError(nil, []byte("Error: failed to mount runtime directory for rootless netns: no such file")) {
+		t.Errorf("expected IsRootlessNetnsError to return true on stderr match")
 	}
-	if isRootlessNetnsError(fmt.Errorf("normal failure"), []byte("regular error")) {
-		t.Errorf("expected isRootlessNetnsError to return false on non-netns error")
+	if IsRootlessNetnsError(fmt.Errorf("normal failure"), []byte("regular error")) {
+		t.Errorf("expected IsRootlessNetnsError to return false on non-netns error")
 	}
 
 	// 2. EnsureRootlessNetNS mock

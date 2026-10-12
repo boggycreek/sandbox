@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,17 +31,7 @@ var (
 	infraGiteaContainer    = "agent-sandbox-gitea"
 	infraPostgresContainer = "agent-sandbox-postgres"
 	infraSonarContainer    = "agent-sandbox-sonarqube"
-	execCommandContext     = exec.CommandContext
 )
-
-// SetExecCommandContextForTesting configures command execution mocking for unit tests.
-func SetExecCommandContextForTesting(fn func(ctx context.Context, name string, args ...string) *exec.Cmd) func() {
-	orig := execCommandContext
-	execCommandContext = fn
-	return func() {
-		execCommandContext = orig
-	}
-}
 
 // SetInfraValkeyContainerForTest overrides infraValkeyContainer for unit testing.
 func SetInfraValkeyContainerForTest(name string) func() {
@@ -109,12 +98,12 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 	lower := strings.ToLower(strings.TrimSpace(input))
 	if preset, ok := config.WellKnownImages[lower]; ok {
 		// Check if the preset image exists locally
-		checkCmd := execCommandContext(ctx, "podman", "image", "exists", preset)
+		checkCmd := CommandContext(ctx, "podman", "image", "exists", preset)
 		return preset, checkCmd.Run() == nil
 	}
 	if lower == "" {
 		preset := config.WellKnownImages["base"]
-		checkCmd := execCommandContext(ctx, "podman", "image", "exists", preset)
+		checkCmd := CommandContext(ctx, "podman", "image", "exists", preset)
 		return preset, checkCmd.Run() == nil
 	}
 
@@ -131,7 +120,7 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 	}
 
 	for _, cand := range candidates {
-		checkCmd := execCommandContext(ctx, "podman", "image", "exists", cand)
+		checkCmd := CommandContext(ctx, "podman", "image", "exists", cand)
 		if err := checkCmd.Run(); err == nil {
 			return cand, true
 		}
@@ -142,44 +131,21 @@ func ResolveAgentImage(ctx context.Context, input string) (image string, isLocal
 	if !strings.Contains(resolved, ":") && !strings.Contains(resolved, "@") {
 		resolved = resolved + ":latest"
 	}
-	checkCmd := execCommandContext(ctx, "podman", "image", "exists", resolved)
+	checkCmd := CommandContext(ctx, "podman", "image", "exists", resolved)
 	return resolved, checkCmd.Run() == nil
-}
-
-// EnsureRootlessNetNS reconciles and initializes Podman's rootless network namespace
-// runtime directory structure. In rootless mode, if the temporary runtime directory
-// desynchronizes from the kernel netns mount, running 'podman unshare --rootless-netns true'
-// forces Podman to recreate the internal mount namespace tree.
-func EnsureRootlessNetNS(ctx context.Context) error {
-	uid := os.Getuid()
-	_ = os.MkdirAll(fmt.Sprintf("/run/user/%d/netns", uid), 0700)
-
-	cmd := execCommandContext(ctx, "podman", "unshare", "--rootless-netns", "true")
-	return cmd.Run()
-}
-
-// isRootlessNetnsError checks if a container start or run error is due to a desynchronized
-// rootless network namespace mount directory.
-func isRootlessNetnsError(err error, out []byte) bool {
-	combined := string(out)
-	if err != nil {
-		combined += " " + err.Error()
-	}
-	return strings.Contains(combined, "failed to mount runtime directory for rootless netns") ||
-		strings.Contains(combined, "rootless netns")
 }
 
 // EnsureNetwork creates the bridge network if it does not already exist
 func EnsureNetwork(ctx context.Context, netName string) error {
-	cmd := execCommandContext(ctx, "podman", "network", "exists", netName)
+	cmd := CommandContext(ctx, "podman", "network", "exists", netName)
 	if err := cmd.Run(); err == nil {
 		return nil
 	}
-	createCmd := execCommandContext(ctx, "podman", "network", "create", netName)
+	createCmd := CommandContext(ctx, "podman", "network", "create", netName)
 	if out, err := createCmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
-			retryCmd := execCommandContext(ctx, "podman", "network", "create", netName)
+			retryCmd := CommandContext(ctx, "podman", "network", "create", netName)
 			return retryCmd.Run()
 		}
 		return err
@@ -189,11 +155,11 @@ func EnsureNetwork(ctx context.Context, netName string) error {
 
 // EnsureVolume creates a named volume if missing
 func EnsureVolume(ctx context.Context, volName string) error {
-	cmd := execCommandContext(ctx, "podman", "volume", "exists", volName)
+	cmd := CommandContext(ctx, "podman", "volume", "exists", volName)
 	if err := cmd.Run(); err == nil {
 		return nil
 	}
-	createCmd := execCommandContext(ctx, "podman", "volume", "create", volName)
+	createCmd := CommandContext(ctx, "podman", "volume", "create", volName)
 	return createCmd.Run()
 }
 
@@ -215,13 +181,13 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 	_ = EnsureNetwork(ctx, netName)
 
 	// Check if container already exists
-	checkCmd := execCommandContext(ctx, "podman", "container", "exists", egressName)
+	checkCmd := CommandContext(ctx, "podman", "container", "exists", egressName)
 	if err := checkCmd.Run(); err == nil {
-		startCmd := execCommandContext(ctx, "podman", "start", egressName)
+		startCmd := CommandContext(ctx, "podman", "start", egressName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
-				retryCmd := execCommandContext(ctx, "podman", "start", egressName)
+				retryCmd := CommandContext(ctx, "podman", "start", egressName)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
 					return nil
 				} else {
@@ -243,11 +209,11 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 		EgressImage,
 	}
 
-	cmd := execCommandContext(ctx, "podman", args...)
+	cmd := CommandContext(ctx, "podman", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
-			retryCmd := execCommandContext(ctx, "podman", args...)
+			retryCmd := CommandContext(ctx, "podman", args...)
 			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
 				return nil
 			} else {
@@ -307,14 +273,14 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	_ = EnsureVolume(ctx, cfg.VolumeName)
 
 	// Check if container already exists
-	checkCmd := execCommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
+	checkCmd := CommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
 	if err := checkCmd.Run(); err == nil {
 		// Container exists, start if stopped
-		startCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
+		startCmd := CommandContext(ctx, "podman", "start", cfg.ContainerName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
-				retryCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
+				retryCmd := CommandContext(ctx, "podman", "start", cfg.ContainerName)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
 					return nil
 				} else {
@@ -406,14 +372,14 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
-	cmd := execCommandContext(ctx, "podman", args...)
+	cmd := CommandContext(ctx, "podman", args...)
 	if len(sonarEnv) > 0 {
 		cmd.Env = append(cmd.Environ(), sonarEnv...)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
-			retryCmd := execCommandContext(ctx, "podman", args...)
+			retryCmd := CommandContext(ctx, "podman", args...)
 			if len(sonarEnv) > 0 {
 				retryCmd.Env = append(retryCmd.Environ(), sonarEnv...)
 			}
@@ -440,10 +406,10 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 	}
 
 	// Check if container already exists
-	checkCmd := execCommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
+	checkCmd := CommandContext(ctx, "podman", "container", "exists", cfg.ContainerName)
 	if err := checkCmd.Run(); err == nil {
 		// Container exists, start if stopped
-		startCmd := execCommandContext(ctx, "podman", "start", cfg.ContainerName)
+		startCmd := CommandContext(ctx, "podman", "start", cfg.ContainerName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed starting existing host container %s: %v (%s)", cfg.ContainerName, err, string(out))
 		}
@@ -538,7 +504,7 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
-	cmd := execCommandContext(ctx, "podman", args...)
+	cmd := CommandContext(ctx, "podman", args...)
 	if len(sonarEnv) > 0 {
 		cmd.Env = append(cmd.Environ(), sonarEnv...)
 	}
@@ -550,20 +516,20 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 
 // StopAgentContainer stops a running container
 func StopAgentContainer(ctx context.Context, containerName string) error {
-	cmd := execCommandContext(ctx, "podman", "stop", containerName)
+	cmd := CommandContext(ctx, "podman", "stop", containerName)
 	return cmd.Run()
 }
 
 // CleanAgentContainer removes a container while keeping the named volume
 func CleanAgentContainer(ctx context.Context, containerName string) error {
 	_ = StopAgentContainer(ctx, containerName)
-	cmd := execCommandContext(ctx, "podman", "rm", "-f", containerName)
+	cmd := CommandContext(ctx, "podman", "rm", "-f", containerName)
 	err := cmd.Run()
 
 	// Clean companion egress filter container if present
 	egressName := EgressContainerName(containerName)
 	_ = StopAgentContainer(ctx, egressName)
-	_ = execCommandContext(ctx, "podman", "rm", "-f", egressName).Run()
+	_ = CommandContext(ctx, "podman", "rm", "-f", egressName).Run()
 
 	agentName := strings.TrimPrefix(containerName, "sndbx-agent-")
 	agentName = strings.TrimPrefix(agentName, "sndbx-")
@@ -574,18 +540,18 @@ func CleanAgentContainer(ctx context.Context, containerName string) error {
 // DestroyAgentContainer removes container and persistent volume
 func DestroyAgentContainer(ctx context.Context, containerName, volumeName string) error {
 	_ = CleanAgentContainer(ctx, containerName)
-	cmd := execCommandContext(ctx, "podman", "volume", "rm", "-f", volumeName)
+	cmd := CommandContext(ctx, "podman", "volume", "rm", "-f", volumeName)
 	return cmd.Run()
 }
 
 // GetAgentSSHPort discovers the dynamically assigned host port mapping for port 2222
 func GetAgentSSHPort(ctx context.Context, containerName string) (int, error) {
-	cmd := execCommandContext(ctx, "podman", "port", containerName, "2222")
+	cmd := CommandContext(ctx, "podman", "port", containerName, "2222")
 	out, err := cmd.Output()
 	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		egressName := EgressContainerName(containerName)
 		if egressName != containerName {
-			cmdEgress := execCommandContext(ctx, "podman", "port", egressName, "2222")
+			cmdEgress := CommandContext(ctx, "podman", "port", egressName, "2222")
 			if outEgress, errEgress := cmdEgress.Output(); errEgress == nil && len(strings.TrimSpace(string(outEgress))) > 0 {
 				out = outEgress
 				err = nil
@@ -607,7 +573,7 @@ func GetAgentSSHPort(ctx context.Context, containerName string) (int, error) {
 
 // InspectAgentContainer returns state summary for a container
 func InspectAgentContainer(ctx context.Context, containerName string) (*ContainerInfo, error) {
-	cmd := execCommandContext(ctx, "podman", "inspect", "--type", "container", containerName)
+	cmd := CommandContext(ctx, "podman", "inspect", "--type", "container", containerName)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -714,13 +680,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379",
 	}
 
-	checkValkey := execCommandContext(ctx, "podman", "container", "exists", valkeyContainer)
+	checkValkey := CommandContext(ctx, "podman", "container", "exists", valkeyContainer)
 	if err := checkValkey.Run(); err != nil {
-		cmd := execCommandContext(ctx, "podman", valkeyArgs...)
+		cmd := CommandContext(ctx, "podman", valkeyArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
-				retryCmd := execCommandContext(ctx, "podman", valkeyArgs...)
+				retryCmd := CommandContext(ctx, "podman", valkeyArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
 					return fmt.Errorf("failed starting valkey container: %v (%s)", retryErr, string(retryOut))
 				}
@@ -739,19 +705,19 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 			}
 		}
 		if recreate {
-			_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
-			cmd := execCommandContext(ctx, "podman", valkeyArgs...)
+			_ = CommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+			cmd := CommandContext(ctx, "podman", valkeyArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
 			}
 		} else {
-			startCmd := execCommandContext(ctx, "podman", "start", valkeyContainer)
+			startCmd := CommandContext(ctx, "podman", "start", valkeyContainer)
 			if startOut, err := startCmd.CombinedOutput(); err != nil {
-				_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
-				if isRootlessNetnsError(err, startOut) {
+				_ = CommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+				if IsRootlessNetnsError(err, startOut) {
 					_ = EnsureRootlessNetNS(ctx)
 				}
-				cmd := execCommandContext(ctx, "podman", valkeyArgs...)
+				cmd := CommandContext(ctx, "podman", valkeyArgs...)
 				if out, err := cmd.CombinedOutput(); err != nil {
 					return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
 				}
@@ -782,13 +748,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"docker.io/gitea/gitea:1.22-rootless",
 	}
 
-	checkGitea := execCommandContext(ctx, "podman", "container", "exists", giteaContainer)
+	checkGitea := CommandContext(ctx, "podman", "container", "exists", giteaContainer)
 	if err := checkGitea.Run(); err != nil {
-		cmd := execCommandContext(ctx, "podman", giteaArgs...)
+		cmd := CommandContext(ctx, "podman", giteaArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
-				retryCmd := execCommandContext(ctx, "podman", giteaArgs...)
+				retryCmd := CommandContext(ctx, "podman", giteaArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
 					return fmt.Errorf("failed starting gitea container: %v (%s)", retryErr, string(retryOut))
 				}
@@ -797,13 +763,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 			}
 		}
 	} else {
-		startCmd := execCommandContext(ctx, "podman", "start", giteaContainer)
+		startCmd := CommandContext(ctx, "podman", "start", giteaContainer)
 		if startOut, err := startCmd.CombinedOutput(); err != nil {
-			_ = execCommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
-			if isRootlessNetnsError(err, startOut) {
+			_ = CommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
+			if IsRootlessNetnsError(err, startOut) {
 				_ = EnsureRootlessNetNS(ctx)
 			}
-			cmd := execCommandContext(ctx, "podman", giteaArgs...)
+			cmd := CommandContext(ctx, "podman", giteaArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting gitea container: %v (%s)", err, string(out))
 			}
@@ -828,13 +794,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"docker.io/library/postgres:16-alpine",
 	}
 
-	checkPostgres := execCommandContext(ctx, "podman", "container", "exists", postgresContainer)
+	checkPostgres := CommandContext(ctx, "podman", "container", "exists", postgresContainer)
 	if err := checkPostgres.Run(); err != nil {
-		cmd := execCommandContext(ctx, "podman", postgresArgs...)
+		cmd := CommandContext(ctx, "podman", postgresArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
-				retryCmd := execCommandContext(ctx, "podman", postgresArgs...)
+				retryCmd := CommandContext(ctx, "podman", postgresArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
 					return fmt.Errorf("failed starting postgres container: %v (%s)", retryErr, string(retryOut))
 				}
@@ -843,13 +809,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 			}
 		}
 	} else {
-		startCmd := execCommandContext(ctx, "podman", "start", postgresContainer)
+		startCmd := CommandContext(ctx, "podman", "start", postgresContainer)
 		if startOut, err := startCmd.CombinedOutput(); err != nil {
-			_ = execCommandContext(ctx, "podman", "rm", "-f", postgresContainer).Run()
-			if isRootlessNetnsError(err, startOut) {
+			_ = CommandContext(ctx, "podman", "rm", "-f", postgresContainer).Run()
+			if IsRootlessNetnsError(err, startOut) {
 				_ = EnsureRootlessNetNS(ctx)
 			}
-			cmd := execCommandContext(ctx, "podman", postgresArgs...)
+			cmd := CommandContext(ctx, "podman", postgresArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting postgres container: %v (%s)", err, string(out))
 			}
@@ -873,15 +839,15 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"agent-sandbox-sonarqube:latest",
 	}
 
-	checkSonarImg := execCommandContext(ctx, "podman", "image", "exists", "agent-sandbox-sonarqube:latest")
+	checkSonarImg := CommandContext(ctx, "podman", "image", "exists", "agent-sandbox-sonarqube:latest")
 	if checkSonarImg.Run() == nil {
-		checkSonar := execCommandContext(ctx, "podman", "container", "exists", sonarContainer)
+		checkSonar := CommandContext(ctx, "podman", "container", "exists", sonarContainer)
 		if err := checkSonar.Run(); err != nil {
-			cmd := execCommandContext(ctx, "podman", sonarArgs...)
+			cmd := CommandContext(ctx, "podman", sonarArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
-				if isRootlessNetnsError(err, out) {
+				if IsRootlessNetnsError(err, out) {
 					_ = EnsureRootlessNetNS(ctx)
-					retryCmd := execCommandContext(ctx, "podman", sonarArgs...)
+					retryCmd := CommandContext(ctx, "podman", sonarArgs...)
 					if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
 						return fmt.Errorf("failed starting sonarqube container: %v (%s)", retryErr, string(retryOut))
 					}
@@ -890,13 +856,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 				}
 			}
 		} else {
-			startCmd := execCommandContext(ctx, "podman", "start", sonarContainer)
+			startCmd := CommandContext(ctx, "podman", "start", sonarContainer)
 			if startOut, err := startCmd.CombinedOutput(); err != nil {
-				_ = execCommandContext(ctx, "podman", "rm", "-f", sonarContainer).Run()
-				if isRootlessNetnsError(err, startOut) {
+				_ = CommandContext(ctx, "podman", "rm", "-f", sonarContainer).Run()
+				if IsRootlessNetnsError(err, startOut) {
 					_ = EnsureRootlessNetNS(ctx)
 				}
-				cmd := execCommandContext(ctx, "podman", sonarArgs...)
+				cmd := CommandContext(ctx, "podman", sonarArgs...)
 				if out, err := cmd.CombinedOutput(); err != nil {
 					return fmt.Errorf("failed restarting sonarqube container: %v (%s)", err, string(out))
 				}
@@ -944,7 +910,7 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 	}
 
 	// Ensure admin user via container CLI
-	createAdminCmd := execCommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
+	createAdminCmd := CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
 		"gitea", "admin", "user", "create",
 		"--admin",
 		"--username", "giteaadmin",
@@ -955,7 +921,7 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 	_ = createAdminCmd.Run()
 
 	// Ensure password is sync'd in case user already existed with different password
-	changePassCmd := execCommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
+	changePassCmd := CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
 		"gitea", "admin", "user", "change-password",
 		"--username", "giteaadmin",
 		"--password", adminPass,
@@ -980,10 +946,10 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 
 // StopInfraStack halts shared infrastructure containers
 func StopInfraStack(ctx context.Context) error {
-	_ = execCommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
-	_ = execCommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
-	_ = execCommandContext(ctx, "podman", "stop", infraPostgresContainer).Run()
-	_ = execCommandContext(ctx, "podman", "stop", infraSonarContainer).Run()
+	_ = CommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
+	_ = CommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
+	_ = CommandContext(ctx, "podman", "stop", infraPostgresContainer).Run()
+	_ = CommandContext(ctx, "podman", "stop", infraSonarContainer).Run()
 	return nil
 }
 
@@ -1113,13 +1079,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379",
 	}
 
-	_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+	_ = CommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
 
-	cmd := execCommandContext(ctx, "podman", valkeyArgs...)
+	cmd := CommandContext(ctx, "podman", valkeyArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
-			retryCmd := execCommandContext(ctx, "podman", valkeyArgs...)
+			retryCmd := CommandContext(ctx, "podman", valkeyArgs...)
 			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
 				return fmt.Errorf("failed starting valkey container: %v (%s)", retryErr, string(retryOut))
 			}

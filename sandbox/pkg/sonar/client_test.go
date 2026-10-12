@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -369,5 +370,7 @@ func TestDeactivateUser(t *testing.T) {
 	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
 	if err := client500.DeactivateUser(context.Background(), "agent-bob"); err == nil {
 		t.Fatal("expected error on 500, got nil")
+	} else if !strings.Contains(err.Error(), "POST /api/users/deactivate failed with HTTP 500") {
+		t.Fatalf("expected error to contain method and path, got: %v", err)
 	}
 }

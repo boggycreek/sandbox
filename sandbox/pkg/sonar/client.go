@@ -118,93 +118,91 @@ func NewClient(cfg ClientConfig) *Client {
 	}
 }
 
-// GetSystemStatus queries the health and operational state of SonarQube.
-func (c *Client) GetSystemStatus(ctx context.Context) (*SystemStatus, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/system/status", nil)
+const maxResponseBody = 10 << 20 // 10MB limit
+
+func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values, body io.Reader, result any, acceptableStatuses ...int) error {
+	reqURL := c.baseURL + path
+	if len(query) > 0 {
+		reqURL = fmt.Sprintf("%s?%s", reqURL, query.Encode())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
 	if err != nil {
-		return nil, fmt.Errorf("failed creating status request: %w", err)
+		return fmt.Errorf("failed creating %s %s request: %w", method, path, err)
+	}
+
+	if body != nil && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	c.authenticate(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed executing status request: %w", err)
+		return fmt.Errorf("failed executing %s %s request: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("status request failed with HTTP %d: %s", resp.StatusCode, string(body))
+	if !isAcceptableStatus(resp.StatusCode, acceptableStatuses...) {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		return fmt.Errorf("%s %s failed with HTTP %d: %s", method, path, resp.StatusCode, string(bodyBytes))
 	}
 
+	if result != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(result); err != nil {
+			return fmt.Errorf("failed decoding %s %s response: %w", method, path, err)
+		}
+	}
+
+	return nil
+}
+
+func isAcceptableStatus(status int, acceptableStatuses ...int) bool {
+	if status >= http.StatusOK && status < http.StatusMultipleChoices {
+		return true
+	}
+	for _, code := range acceptableStatuses {
+		if status == code {
+			return true
+		}
+	}
+	return false
+}
+
+// GetSystemStatus queries the health and operational state of SonarQube.
+func (c *Client) GetSystemStatus(ctx context.Context) (*SystemStatus, error) {
 	var status SystemStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return nil, fmt.Errorf("failed decoding system status: %w", err)
+	if err := c.doRequest(ctx, http.MethodGet, "/api/system/status", nil, nil, &status); err != nil {
+		return nil, err
 	}
 	return &status, nil
 }
 
 // GetProjectQualityGate retrieves the Quality Gate status for a project.
 func (c *Client) GetProjectQualityGate(ctx context.Context, projectKey string) (*QualityGateStatus, error) {
-	endpoint := fmt.Sprintf("%s/api/qualitygates/project_status?projectKey=%s", c.baseURL, url.QueryEscape(projectKey))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating quality gate request: %w", err)
-	}
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed executing quality gate request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("quality gate request failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
+	query := url.Values{}
+	query.Set("projectKey", projectKey)
 	var wrapper qualityGateResponseWrapper
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed decoding quality gate response: %w", err)
+	if err := c.doRequest(ctx, http.MethodGet, "/api/qualitygates/project_status", query, nil, &wrapper); err != nil {
+		return nil, err
 	}
 	return &wrapper.ProjectStatus, nil
 }
 
 // GetIssues retrieves static analysis issues matching the given filters.
 func (c *Client) GetIssues(ctx context.Context, projectKey string, severity string, issueType string) (*IssuesResponse, error) {
-	params := url.Values{}
+	query := url.Values{}
 	if projectKey != "" {
-		params.Set("projectKeys", projectKey)
+		query.Set("projectKeys", projectKey)
 	}
 	if severity != "" {
-		params.Set("severities", severity)
+		query.Set("severities", severity)
 	}
 	if issueType != "" {
-		params.Set("types", issueType)
+		query.Set("types", issueType)
 	}
-
-	endpoint := fmt.Sprintf("%s/api/issues/search?%s", c.baseURL, params.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating issues request: %w", err)
-	}
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed executing issues request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("issues request failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
 	var issuesResp IssuesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&issuesResp); err != nil {
-		return nil, fmt.Errorf("failed decoding issues response: %w", err)
+	if err := c.doRequest(ctx, http.MethodGet, "/api/issues/search", query, nil, &issuesResp); err != nil {
+		return nil, err
 	}
 	return &issuesResp, nil
 }
@@ -214,56 +212,17 @@ func (c *Client) CreateProject(ctx context.Context, projectKey, name string) err
 	params := url.Values{}
 	params.Set("project", projectKey)
 	params.Set("name", name)
-
-	endpoint := fmt.Sprintf("%s/api/projects/create", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
-	if err != nil {
-		return fmt.Errorf("failed creating project request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed executing create project request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 200 OK or 400 Bad Request if already exists
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("create project failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return nil
+	return c.doRequest(ctx, http.MethodPost, "/api/projects/create", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest)
 }
 
 // GetComponentMeasures retrieves requested metric values for a project or component.
 func (c *Client) GetComponentMeasures(ctx context.Context, componentKey string, metricKeys []string) ([]Measure, error) {
-	params := url.Values{}
-	params.Set("component", componentKey)
-	params.Set("metricKeys", strings.Join(metricKeys, ","))
-
-	endpoint := fmt.Sprintf("%s/api/measures/component?%s", c.baseURL, params.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed creating measures request: %w", err)
-	}
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed executing measures request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("measures request failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
+	query := url.Values{}
+	query.Set("component", componentKey)
+	query.Set("metricKeys", strings.Join(metricKeys, ","))
 	var wrapper componentMeasuresWrapper
-	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
-		return nil, fmt.Errorf("failed decoding measures response: %w", err)
+	if err := c.doRequest(ctx, http.MethodGet, "/api/measures/component", query, nil, &wrapper); err != nil {
+		return nil, err
 	}
 	return wrapper.Component.Measures, nil
 }
@@ -280,60 +239,19 @@ func (c *Client) EnsureUser(ctx context.Context, login, password, name, email st
 	if email != "" {
 		params.Set("email", email)
 	}
-
-	endpoint := fmt.Sprintf("%s/api/users/create", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
-	if err != nil {
-		return fmt.Errorf("failed creating user request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed executing user create request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 200 OK or 400 Bad Request (if already exists)
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("user create failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return nil
+	return c.doRequest(ctx, http.MethodPost, "/api/users/create", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest)
 }
 
 // GenerateUserToken creates an analysis or user token for the specified user login.
 func (c *Client) GenerateUserToken(ctx context.Context, login, tokenName string) (string, error) {
-	// First revoke any existing token with the same name to prevent conflict
 	_ = c.RevokeUserToken(ctx, login, tokenName)
 
 	params := url.Values{}
 	params.Set("login", login)
 	params.Set("name", tokenName)
-
-	endpoint := fmt.Sprintf("%s/api/user_tokens/generate", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
-	if err != nil {
-		return "", fmt.Errorf("failed creating token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed executing token generate request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("token generation failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
 	var tokenResp generateTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed decoding token response: %w", err)
+	if err := c.doRequest(ctx, http.MethodPost, "/api/user_tokens/generate", nil, strings.NewReader(params.Encode()), &tokenResp); err != nil {
+		return "", err
 	}
 	return tokenResp.Token, nil
 }
@@ -343,52 +261,14 @@ func (c *Client) RevokeUserToken(ctx context.Context, login, tokenName string) e
 	params := url.Values{}
 	params.Set("login", login)
 	params.Set("name", tokenName)
-
-	endpoint := fmt.Sprintf("%s/api/user_tokens/revoke", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
-	if err != nil {
-		return fmt.Errorf("failed creating revoke token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed executing revoke token request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("revoke token failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return nil
+	return c.doRequest(ctx, http.MethodPost, "/api/user_tokens/revoke", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest, http.StatusNotFound)
 }
 
 // DeactivateUser deactivates a user account in SonarQube.
 func (c *Client) DeactivateUser(ctx context.Context, login string) error {
 	params := url.Values{}
 	params.Set("login", login)
-
-	endpoint := fmt.Sprintf("%s/api/users/deactivate", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(params.Encode()))
-	if err != nil {
-		return fmt.Errorf("failed creating deactivate user request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	c.authenticate(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed executing deactivate user request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("deactivate user failed with HTTP %d: %s", resp.StatusCode, string(body))
-	}
-	return nil
+	return c.doRequest(ctx, http.MethodPost, "/api/users/deactivate", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest, http.StatusNotFound)
 }
 
 func (c *Client) authenticate(req *http.Request) {

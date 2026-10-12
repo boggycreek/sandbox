@@ -446,7 +446,7 @@ func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	cmd := execCommandContext(ctx, "podman", "exec", "-it", cfg.ContainerName, "tmux", "attach")
+	cmd := runtime.CommandContext(ctx, "podman", "exec", "-it", cfg.ContainerName, "tmux", "attach")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -471,7 +471,7 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 			fmt.Fprintf(stderr, "sndbx error: container %s is not running (start via: sndbx agent start %s)\n", cfg.ContainerName, cfg.Name)
 			return 1
 		}
-		cmd := execCommandContext(ctx, "podman", "exec", "-it", "--user", "1000", cfg.ContainerName, "/bin/bash")
+		cmd := runtime.CommandContext(ctx, "podman", "exec", "-it", "--user", "1000", cfg.ContainerName, "/bin/bash")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
@@ -640,7 +640,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	switch target.Family {
 	case ide.FamilyVSCode:
 		fmt.Fprintf(stdout, "Opening %s in %s (Host: %s)...\n", name, target.DisplayName, hostAlias)
-		cmd := execCommandContext(ctx, target.Path, "--file-uri", vsCodeURI)
+		cmd := runtime.CommandContext(ctx, target.Path, "--file-uri", vsCodeURI)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
@@ -648,9 +648,9 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 			return 1
 		}
 		// Best-effort: install the Claude Code extension if VS Code server is running.
-		checkServer := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c", "test -d /home/agent/.vscode-server")
+		checkServer := runtime.CommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c", "test -d /home/agent/.vscode-server")
 		if err := checkServer.Run(); err == nil {
-			installCmd := execCommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c",
+			installCmd := runtime.CommandContext(ctx, "podman", "exec", cfg.ContainerName, "sh", "-c",
 				`find /home/agent/.vscode-server/bin -name "code-server" -o -name "code" 2>/dev/null | head -n 1 | xargs -r -I {} {} --install-extension anthropic.claude-code`)
 			lifecycle.WarnOnErr(stderr, installCmd.Run(), "install claude-code extension")
 		}
@@ -661,12 +661,12 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		fmt.Fprintf(stdout, "Connect via %s -> Remote Development -> SSH (Host: %s, Port: %d).\n", target.DisplayName, hostAlias, port)
 
 		launcher := systemURILauncher()
-		cmd := execCommandContext(ctx, launcher, jbGatewayURI)
+		cmd := runtime.CommandContext(ctx, launcher, jbGatewayURI)
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
 			// Fallback: direct IDE binary execution
-			fallbackCmd := execCommandContext(ctx, target.Path)
+			fallbackCmd := runtime.CommandContext(ctx, target.Path)
 			fallbackCmd.Stdout = stdout
 			fallbackCmd.Stderr = stderr
 			if fallbackErr := fallbackCmd.Run(); fallbackErr != nil {
@@ -719,7 +719,7 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 		"agent@localhost",
 	}
 
-	cmd := execCommandContext(ctx, "ssh", sshArgs...)
+	cmd := runtime.CommandContext(ctx, "ssh", sshArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -1084,7 +1084,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 	}
 
 	// Verify container is running or start it
-	checkRunning := execCommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
+	checkRunning := runtime.CommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
 	out, err := checkRunning.Output()
 	if err != nil || strings.TrimSpace(string(out)) != "true" {
 		bpCfg := libbp.LoadClientFromEnv()
@@ -1108,7 +1108,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 		cloneArgs = append(cloneArgs, targetDir)
 	}
 
-	cmd := execCommandContext(ctx, "podman", cloneArgs...)
+	cmd := runtime.CommandContext(ctx, "podman", cloneArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
@@ -1139,7 +1139,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	// Verify container is running or start it
-	checkRunning := execCommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
+	checkRunning := runtime.CommandContext(ctx, "podman", "container", "inspect", "--format", "{{.State.Running}}", cfg.ContainerName)
 	out, err := checkRunning.Output()
 	if err != nil || strings.TrimSpace(string(out)) != "true" {
 		bpCfg := libbp.LoadClientFromEnv()
@@ -1178,10 +1178,10 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		workDir = cleaned
 	} else {
 		// Test if /home/agent/workspace is a git repo
-		checkGit := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "rev-parse", "--is-inside-work-tree")
+		checkGit := runtime.CommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "git", "rev-parse", "--is-inside-work-tree")
 		if err := checkGit.Run(); err != nil {
 			// Find first subdirectory with .git
-			findGit := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "sh", "-c", "find . -maxdepth 2 -name .git -type d | head -n 1")
+			findGit := runtime.CommandContext(ctx, "podman", "exec", "--user", "1000", "-w", "/home/agent/workspace", cfg.ContainerName, "sh", "-c", "find . -maxdepth 2 -name .git -type d | head -n 1")
 			if out, err := findGit.Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
 				detected := strings.TrimSpace(string(out))
 				detected = strings.TrimSuffix(detected, "/.git")
@@ -1211,7 +1211,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		remoteName := strings.TrimSpace(cleanArgs[1])
 		remoteURL := strings.TrimSpace(cleanArgs[2])
 		// Try set-url first, if that fails, add
-		setURLCmd := execCommandContext(ctx, "podman", "exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "set-url", "--", remoteName, remoteURL)
+		setURLCmd := runtime.CommandContext(ctx, "podman", "exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "set-url", "--", remoteName, remoteURL)
 		if err := setURLCmd.Run(); err != nil {
 			gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "add", "--", remoteName, remoteURL}
 		} else {
@@ -1223,7 +1223,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		return 1
 	}
 
-	cmd := execCommandContext(ctx, "podman", gitArgs...)
+	cmd := runtime.CommandContext(ctx, "podman", gitArgs...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
