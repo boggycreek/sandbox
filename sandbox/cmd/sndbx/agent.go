@@ -8,7 +8,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -67,13 +66,7 @@ var isTerminal = func(r io.Reader) bool {
 		}
 		return (st.Mode() & os.ModeCharDevice) != 0
 	}
-	if sr, ok := r.(*strings.Reader); ok && sr.Len() == 0 {
-		return false
-	}
-	if br, ok := r.(*bytes.Buffer); ok && br.Len() == 0 {
-		return false
-	}
-	return true
+	return false
 }
 
 // SetIsTerminalForTesting replaces the package-level isTerminal checker and returns a restore function.
@@ -99,7 +92,7 @@ func handleAgent(ctx context.Context, paths config.Paths, args []string, stdout,
 
 Commands:
   create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--host] [--no-container] [--pwd <path>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
-    Provision a new named agent (container sandbox, host-connected container with --host, or bare host with --no-container).
+    Provision a new named agent (container sandbox, host-connected container with --host, or no-container with --no-container).
 
   provision <name>
     Provision or re-provision agent infrastructure, keys, Valkey ACLs, Gitea accounts, and SonarQube credentials.
@@ -215,7 +208,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 
 	// Flag parsing for overrides
 	isHostContainer := false
-	isBareHost := false
+	isNoContainer := false
 	var pwdPath string
 	fs := flag.NewFlagSet("agent create", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -226,7 +219,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	fs.StringVar(&modelKey, "model-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
 	fs.StringVar(&modelKey, "model-api-key", os.Getenv("OPENAI_API_KEY"), "Model API key (optional)")
 	fs.BoolVar(&isHostContainer, "host", false, "Provision host-connected container agent with workspace projection")
-	fs.BoolVar(&isBareHost, "no-container", false, "Provision bare host agent without a container")
+	fs.BoolVar(&isNoContainer, "no-container", false, "Provision agent without a container (direct host execution)")
 	fs.StringVar(&pwdPath, "pwd", "", "Host working directory to project into container workspace (default: current directory)")
 
 	var flagArgs []string
@@ -239,7 +232,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		return 1
 	}
 
-	if isHostContainer && isBareHost {
+	if isHostContainer && isNoContainer {
 		fmt.Fprintln(stderr, "sndbx error: cannot specify both --host and --no-container")
 		return 1
 	}
@@ -300,7 +293,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	resolvedImage := image
-	if !isBareHost {
+	if !isNoContainer {
 		var isLocal bool
 		resolvedImage, isLocal = runtime.ResolveAgentImage(ctx, image)
 		if resolvedImage == "" {
@@ -327,7 +320,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		cfg.WorkspacePath = absPwd
 		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", cfg.Name)
 		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", cfg.Name)
-	} else if isBareHost {
+	} else if isNoContainer {
 		cfg.Runtime = "no-container"
 		cfg.HostOnly = true
 		cfg.ContainerName = ""
@@ -343,11 +336,11 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	report := lifecycle.ProvisionAgent(ctx, cfg, paths)
 
 	fmt.Fprintf(stdout, "Agent %q created successfully.\n", cfg.Name)
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		fmt.Fprintf(stdout, "  Runtime:    no-container (direct host execution, no container)\n")
 		fmt.Fprintf(stdout, "  Role:       %s\n", cfg.Role)
 		fmt.Fprintf(stdout, "  BP Profile: %s\n", filepath.Join(paths.BPProfilesDir, fmt.Sprintf("%s.env", cfg.Name)))
-		fmt.Fprintln(stdout, "\nWARNING: Bare host agent runs directly on the host without container isolation. Full access to host filesystem and credentials is permitted.")
+		fmt.Fprintln(stdout, "\nWARNING: No-container agent runs directly on the host without container isolation. Full access to host filesystem and credentials is permitted.")
 	} else if cfg.IsHostContainer() {
 		fmt.Fprintf(stdout, "  Runtime:    host-container (host workspace projection)\n")
 		fmt.Fprintf(stdout, "  Workspace:  %s\n", cfg.WorkspacePath)
@@ -381,7 +374,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	if report.HasErrors() {
 		fmt.Fprintf(stderr, "sndbx warning: agent %q provisioned with errors; run 'sndbx agent doctor %s' to diagnose\n", cfg.Name, cfg.Name)
 	}
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		fmt.Fprintf(stdout, "To use:   bp --profile %s tell <recipient> <msg>\n", cfg.Name)
 	} else {
 		fmt.Fprintf(stdout, "To start: sndbx agent start %s\n", cfg.Name)
@@ -402,8 +395,8 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 		return 1
 	}
 
-	if cfg.IsBareHost() {
-		fmt.Fprintf(stdout, "Agent %q is a first-class bare host agent (no container required).\n", cfg.Name)
+	if cfg.IsNoContainer() {
+		fmt.Fprintf(stdout, "Agent %q is a no-container agent (no container required).\n", cfg.Name)
 		fmt.Fprintf(stdout, "Use directly via: bp --profile %s <command>\n", cfg.Name)
 		return 0
 	}
@@ -444,8 +437,8 @@ func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	if cfg.IsBareHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a bare host agent (no container or tmux session)\n", cfg.Name)
+	if cfg.IsNoContainer() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (no container or tmux session)\n", cfg.Name)
 		return 1
 	}
 	if cfg.IsHostContainer() {
@@ -506,22 +499,21 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	var ideName string
 	var ideProvided bool
 	var noLaunch bool
-	var flagArgs []string
 
-	// Parse the optional positional "in <ide>" syntax before flag parsing.
-	if len(args) >= 3 && strings.ToLower(args[1]) == "in" {
-		if strings.HasPrefix(args[2], "-") {
-			fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
-			return 1
+	var flagArgs []string
+	raw := args[1:]
+	for i := 0; i < len(raw); i++ {
+		if strings.ToLower(raw[i]) == "in" {
+			if i+1 >= len(raw) || strings.HasPrefix(raw[i+1], "-") {
+				fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
+				return 1
+			}
+			ideProvided = true
+			ideName = raw[i+1]
+			i++
+			continue
 		}
-		ideProvided = true
-		ideName = args[2]
-		flagArgs = args[3:]
-	} else if len(args) == 2 && strings.ToLower(args[1]) == "in" {
-		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
-		return 1
-	} else {
-		flagArgs = args[1:]
+		flagArgs = append(flagArgs, raw[i])
 	}
 
 	fs := flag.NewFlagSet("agent open", flag.ContinueOnError)
@@ -531,21 +523,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	rest := fs.Args()
-	if !ideProvided && len(rest) >= 2 && strings.ToLower(rest[0]) == "in" {
-		if strings.HasPrefix(rest[1], "-") {
-			fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
-			return 1
-		}
-		ideProvided = true
-		ideName = rest[1]
-		rest = rest[2:]
-	} else if !ideProvided && len(rest) == 1 && strings.ToLower(rest[0]) == "in" {
-		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
-		return 1
-	}
-
-	if len(rest) > 0 {
+	if len(fs.Args()) > 0 {
 		fmt.Fprintf(stderr, "Usage: %s agent open <name> [in <ide>] [--no-launch]\n", bin)
 		return 1
 	}
@@ -612,7 +590,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	}
 
 	if cfg.IsNoContainer() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q runs without a container (no container SSH IDE forwarding)\n", cfg.Name)
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
 		return 1
 	}
 
@@ -641,6 +619,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	vsCodeURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)
 	jbSSHURI := fmt.Sprintf("ssh://agent@localhost:%d/home/agent/workspace", port)
 	jbGatewayURI := fmt.Sprintf("jetbrains://gateway/ssh/environment?h=127.0.0.1&u=agent&p=%d&launchIde=true&projectHint=/home/agent/workspace", port)
+	jbConnectURI := fmt.Sprintf("jetbrains-gateway://connect#host=127.0.0.1&port=%d&user=agent&type=ssh&projectPath=/home/agent/workspace", port)
 
 	if noLaunch {
 		fmt.Fprintf(stdout, "SSH host alias prepared: %s (Port: %d)\n", hostAlias, port)
@@ -651,6 +630,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		case ide.FamilyJetBrains:
 			fmt.Fprintf(stdout, "Connect via %s with Host %q (Port: %d).\n", target.DisplayName, hostAlias, port)
 			fmt.Fprintf(stdout, "JetBrains URI: %s\n", jbGatewayURI)
+			fmt.Fprintf(stdout, "Gateway URI: %s\n", jbConnectURI)
 			fmt.Fprintf(stdout, "SSH URI: %s\n", jbSSHURI)
 			fmt.Fprintf(stdout, "Launch command: %s\n", target.BinaryName)
 		}
@@ -720,8 +700,8 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 		return 1
 	}
 
-	if cfg.IsBareHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a bare host agent (runs directly on host, no SSH connection required)\n", cfg.Name)
+	if cfg.IsNoContainer() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (runs directly on host, no SSH connection required)\n", cfg.Name)
 		return 1
 	}
 
@@ -826,7 +806,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	if args[0] == "--all" {
 		configs, _ := config.ListAgentConfigs(paths)
 		for _, c := range configs {
-			if c.IsBareHost() {
+			if c.IsNoContainer() {
 				continue
 			}
 			lifecycle.WarnOnErr(stderr, runtime.StopAgentContainer(ctx, c.ContainerName), "stop container "+c.ContainerName)
@@ -843,8 +823,8 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	if cfg.IsBareHost() {
-		fmt.Fprintf(stdout, "Agent %q is a bare host agent (no container to stop).\n", cfg.Name)
+	if cfg.IsNoContainer() {
+		fmt.Fprintf(stdout, "Agent %q is a no-container agent (no container to stop).\n", cfg.Name)
 		return 0
 	}
 
@@ -869,8 +849,8 @@ func handleAgentClean(ctx context.Context, paths config.Paths, args []string, st
 		return 1
 	}
 
-	if cfg.IsBareHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a bare host agent (no container or home volume to clean; use 'sndbx agent retire %s' to deprovision)\n", cfg.Name, cfg.Name)
+	if cfg.IsNoContainer() {
+		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (no container or home volume to clean; use 'sndbx agent retire %s' to deprovision)\n", cfg.Name, cfg.Name)
 		return 1
 	}
 
@@ -1017,13 +997,13 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 
 	statuses := make([]runtime.AgentStatus, 0, len(configs))
 	for _, c := range configs {
-		if c.IsBareHost() {
+		if c.IsNoContainer() {
 			statuses = append(statuses, runtime.AgentStatus{
 				Name:           c.Name,
 				Role:           c.Role,
-				Image:          "bare-host",
+				Image:          "no-container",
 				ContainerName:  "-",
-				ContainerState: "BARE-HOST",
+				ContainerState: "HOST",
 				SSHPort:        0,
 				IDEConnect:     "-",
 			})

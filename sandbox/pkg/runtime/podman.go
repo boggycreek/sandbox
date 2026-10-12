@@ -265,6 +265,37 @@ func StopEgressFilterContainer(ctx context.Context, agentOrContainerName string)
 	return StopAgentContainer(ctx, egressName)
 }
 
+func sonarContainerEnv(cfg *config.AgentConfig) (args []string, extraEnv []string) {
+	if os.Getenv("SONAR_DISABLED") == "1" {
+		return nil, nil
+	}
+	if cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "" && os.Getenv("SONARQUBE_URL") == "" {
+		return nil, nil
+	}
+
+	sonarURL := os.Getenv("SONARQUBE_URL")
+	if sonarURL == "" {
+		sonarURL = os.Getenv("SONAR_HOST_URL")
+	}
+	if sonarURL == "" {
+		sonarURL = "http://sonarqube:9000"
+	}
+
+	args = append(args,
+		"-e", fmt.Sprintf("SONAR_HOST_URL=%s", sonarURL),
+		"-e", fmt.Sprintf("SONARQUBE_URL=%s", sonarURL),
+	)
+
+	if cfg.SonarToken != "" {
+		// Pass -e SONAR_TOKEN without value so the secret is supplied via cmd.Env
+		// rather than leaking in argv visible via ps / /proc/<pid>/cmdline.
+		args = append(args, "-e", "SONAR_TOKEN")
+		extraEnv = append(extraEnv, fmt.Sprintf("SONAR_TOKEN=%s", cfg.SonarToken))
+	}
+
+	return args, extraEnv
+}
+
 // StartAgentContainer runs or starts an agent container with Podman
 func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, bpHost string, bpPort int) error {
 	ClearAgentKnownHosts(cfg.Name, paths)
@@ -367,21 +398,25 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		args = append(args, "-e", "OPENAI_API_KEY=local-openai-key")
 	}
 
-	args = append(args,
-		"-e", "SONAR_HOST_URL=http://sonarqube:9000",
-		"-e", "SONARQUBE_URL=http://sonarqube:9000",
-	)
-	if cfg.SonarToken != "" {
-		args = append(args, "-e", fmt.Sprintf("SONAR_TOKEN=%s", cfg.SonarToken))
+	sonarArgs, sonarEnv := sonarContainerEnv(cfg)
+	if len(sonarArgs) > 0 {
+		args = append(args, sonarArgs...)
 	}
+
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
 	cmd := execCommandContext(ctx, "podman", args...)
+	if len(sonarEnv) > 0 {
+		cmd.Env = append(cmd.Environ(), sonarEnv...)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		if isRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
 			retryCmd := execCommandContext(ctx, "podman", args...)
+			if len(sonarEnv) > 0 {
+				retryCmd.Env = append(retryCmd.Environ(), sonarEnv...)
+			}
 			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
 				return nil
 			} else {
@@ -495,18 +530,18 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		args = append(args, "-e", "OPENAI_API_KEY=local-openai-key")
 	}
 
-	args = append(args,
-		"-e", "SONAR_HOST_URL=http://sonarqube:9000",
-		"-e", "SONARQUBE_URL=http://sonarqube:9000",
-	)
-	if cfg.SonarToken != "" {
-		args = append(args, "-e", fmt.Sprintf("SONAR_TOKEN=%s", cfg.SonarToken))
+	sonarArgs, sonarEnv := sonarContainerEnv(cfg)
+	if len(sonarArgs) > 0 {
+		args = append(args, sonarArgs...)
 	}
 
 	args = append(args, mounts...)
 	args = append(args, cfg.Image)
 
 	cmd := execCommandContext(ctx, "podman", args...)
+	if len(sonarEnv) > 0 {
+		cmd.Env = append(cmd.Environ(), sonarEnv...)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed running host agent container %s: %v (%s)", cfg.ContainerName, err, string(out))
 	}

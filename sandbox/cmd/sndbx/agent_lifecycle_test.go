@@ -273,7 +273,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	if code != 0 {
 		t.Errorf("agent start host-lifecycle-bot failed: code=%d err=%s", code, errOut)
 	}
-	if !strings.Contains(out, "first-class bare host agent") {
+	if !strings.Contains(out, "no-container agent") {
 		t.Errorf("expected host execution message, got: %s", out)
 	}
 
@@ -592,7 +592,7 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 		t.Errorf("expected ContainerName 'sndbx-agent-host-coder', got %q", cfg.ContainerName)
 	}
 
-	// 4. Create bare host agent with --no-container
+	// 4. Create no-container agent with --no-container
 	code, out, errOut = runSndbx([]string{"agent", "create", "bare-bot", "--no-container", "--role", "host-script"})
 	if code != 0 {
 		t.Fatalf("agent create --no-container failed: code=%d err=%s out=%s", code, errOut, out)

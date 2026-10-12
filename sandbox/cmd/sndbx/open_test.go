@@ -83,7 +83,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 		t.Errorf("expected code 1 for invalid flag, got %d", code)
 	}
 
-	// 3b. Removed flags (--ide, --local, --remote) cause flag parse errors
+	// 3b. Removed flags (--ide, --local, --remote) are rejected as unknown flags with no deprecation path
 	for _, flagArg := range []string{"--ide", "--local", "--remote"} {
 		stderr.Reset()
 		code = Run([]string{"agent", "open", "myagent", flagArg}, &stdout, &stderr)
@@ -91,7 +91,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 			t.Errorf("expected code 1 for unknown flag %s, got %d", flagArg, code)
 		}
 		if !strings.Contains(stderr.String(), "flag provided but not defined") {
-			t.Errorf("expected flag parse error for %s, got: %s", flagArg, stderr.String())
+			t.Errorf("expected flag error for %s, got: %s", flagArg, stderr.String())
 		}
 	}
 
@@ -142,6 +142,9 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	}
 
 	// 5d. Interactive stdin invalid inputs (out of bounds, non-numeric, EOF)
+	restoreInteractive := SetIsTerminalForTesting(func(r io.Reader) bool { return true })
+	defer restoreInteractive()
+
 	stderr.Reset()
 	code = handleAgentOpen(context.Background(), paths, []string{"myagent"}, strings.NewReader("99\n"), &stdout, &stderr)
 	if code != 1 {
@@ -165,6 +168,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for empty reader, got %d", code)
 	}
+	restoreInteractive()
 
 	// 6. Nonexistent agent (IDE resolves OK, agent config missing)
 	stderr.Reset()
@@ -176,7 +180,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 		t.Errorf("expected sndbx error, got: %s", stderr.String())
 	}
 
-	// 7. Bare host / no-container agent (cannot use container IDE forwarding)
+	// 7. No-container agent (cannot use container IDE forwarding)
 	hostCfg, _ := config.NewAgentConfig("host-open-bot", "base", "developer")
 	hostCfg.Runtime = "no-container"
 	hostCfg.HostOnly = true
@@ -185,9 +189,9 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	stderr.Reset()
 	code = Run([]string{"agent", "open", "host-open-bot", "in", "code"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("expected code 1 for bare host agent open, got %d", code)
+		t.Errorf("expected code 1 for no-container agent open, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "runs without a container (no container SSH IDE forwarding)") {
+	if !strings.Contains(stderr.String(), "is a no-container agent (runs directly on host, no container SSH IDE forwarding)") {
 		t.Errorf("expected host agent IDE error, got: %s", stderr.String())
 	}
 
@@ -271,6 +275,9 @@ func TestAgentOpenExecution(t *testing.T) {
 	execCommandContext = mockFn
 	restoreRuntime := runtime.SetExecCommandContextForTesting(mockFn)
 	defer restoreRuntime()
+
+	restoreInteractive := SetIsTerminalForTesting(func(r io.Reader) bool { return true })
+	defer restoreInteractive()
 
 	var stdout, stderr bytes.Buffer
 

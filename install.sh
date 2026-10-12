@@ -308,14 +308,12 @@ for bin_name in sndbx bp bpd sonar-mcp; do
 done
 
 if [ "${INSTALLED_PREBUILT}" = "true" ] && [ -f "${SNDBX_BIN}" ]; then
-  ln -sf "${SNDBX_BIN}" "${SB_BIN}"
-  echo "  Installed prebuilt native CLI binaries (sndbx (alias: sb), bp, bpd, sonar-mcp) from GitHub Releases."
+  echo "  Installed prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases."
 elif command -v go >/dev/null 2>&1 && { [ -f "${SANDBOX_ROOT}/go.work" ] || [ -f "${SANDBOX_ROOT}/go.mod" ]; }; then
   echo "  Compiling native Go CLI binaries from source..."
   (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./sandbox/cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./backplane/cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./mcp/cmd/sonar-mcp)
   chmod +x "${SNDBX_BIN}" "${BP_BIN}" "${BPD_BIN}" "${SONAR_MCP_BIN}" 2>/dev/null || true
-  ln -sf "${SNDBX_BIN}" "${SB_BIN}"
-  echo "  Installed ${SNDBX_BIN} (alias: sb), ${BP_BIN}, ${BPD_BIN}, and ${SONAR_MCP_BIN}"
+  echo "  Installed ${SNDBX_BIN}, ${BP_BIN}, ${BPD_BIN}, and ${SONAR_MCP_BIN}"
 elif [ ! -f "${SNDBX_BIN}" ]; then
   cat > "${SNDBX_BIN}" <<EOF
 #!/usr/bin/env bash
@@ -330,13 +328,26 @@ echo "Go compiler or prebuilt release required. Visit: https://github.com/boggyc
 exit 1
 EOF
   chmod +x "${SNDBX_BIN}"
-  ln -sf "${SNDBX_BIN}" "${SB_BIN}"
-  echo "  Installed bootstrap script ${SNDBX_BIN} (alias: sb)"
+  echo "  Installed bootstrap script ${SNDBX_BIN}"
 fi
 
-# Ensure symlink ${BIN_DIR}/sb -> ${BIN_DIR}/sndbx exists if target exists
-if [ -f "${SNDBX_BIN}" ] || [ -L "${SNDBX_BIN}" ]; then
-  ln -sf "${SNDBX_BIN}" "${SB_BIN}"
+# Ensure relative symlink sb -> sndbx exists safely if sndbx exists, but skip if another sb command exists on operator's system
+if [ -f "${SNDBX_BIN}" ]; then
+  existing_sb="$(command -v sb 2>/dev/null || true)"
+  if [ -n "${existing_sb}" ] && [ "${existing_sb}" != "${SB_BIN}" ]; then
+    echo "  Skipping 'sb' alias: another 'sb' command was found on the system (${existing_sb})"
+  elif [ ! -e "${SB_BIN}" ] && [ ! -L "${SB_BIN}" ]; then
+    (cd "${BIN_DIR}" && ln -s sndbx sb)
+  elif [ -L "${SB_BIN}" ]; then
+    link_target=$(readlink "${SB_BIN}" 2>/dev/null || true)
+    if [ "${link_target}" = "sndbx" ] || [ "$(basename "${link_target}")" = "sndbx" ]; then
+      (cd "${BIN_DIR}" && ln -sf sndbx sb)
+    else
+      echo "  Skipping 'sb' alias: ${SB_BIN} links to ${link_target}"
+    fi
+  else
+    echo "  Skipping 'sb' alias: ${SB_BIN} is an existing regular file"
+  fi
 fi
 
 echo

@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
@@ -73,7 +74,11 @@ func DeprovisionGiteaUser(ctx context.Context, agentName string) error {
 		Timeout:   3 * time.Second,
 	})
 
-	return client.DeleteUser(ctx, agentName, true)
+	err := client.DeleteUser(ctx, agentName, true)
+	if err != nil && (strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "user does not exist")) {
+		return nil
+	}
+	return err
 }
 
 // DeprovisionSonarUser revokes the agent's analysis token and deactivates the agent account in SonarQube.
@@ -108,7 +113,11 @@ func DeprovisionSonarUser(ctx context.Context, agentName string) error {
 	if tokenErr := client.RevokeUserToken(ctx, agentName, fmt.Sprintf("%s-agent-token", agentName)); tokenErr != nil && IsOfflineError(tokenErr) {
 		return tokenErr
 	}
-	return client.DeactivateUser(ctx, agentName)
+	err := client.DeactivateUser(ctx, agentName)
+	if err != nil && (strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "user does not exist")) {
+		return nil
+	}
+	return err
 }
 
 // DeprovisionAgent deprovisions container, storage, configuration, and infrastructure for an agent.
@@ -119,7 +128,7 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 
 	// 1. Destroy container and persistent volume
 	if cfg.IsBareHost() {
-		report.AddStep("Container & Volume", StatusSkipped, "Bare host agent has no container or volume to destroy (skipped)", nil)
+		report.AddStep("Container & Volume", StatusSkipped, "No-container agent has no container or volume to destroy (skipped)", nil)
 	} else if err := runtime.DestroyAgentContainer(ctx, cfg.ContainerName, cfg.VolumeName); err != nil {
 		report.AddStep("Container & Volume", StatusError, fmt.Sprintf("Failed to remove container/volume: %v", err), err)
 	} else {
@@ -135,7 +144,7 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 
 	// 3. Clear per-agent known hosts
 	if cfg.IsBareHost() {
-		report.AddStep("Known Hosts", StatusSkipped, "Bare host agent has no SSH host entry (skipped)", nil)
+		report.AddStep("Known Hosts", StatusSkipped, "No-container agent has no SSH host entry (skipped)", nil)
 	} else {
 		runtime.ClearAgentKnownHosts(cfg.Name, paths)
 		report.AddStep("Known Hosts", StatusOK, "Cleared agent SSH known hosts entry", nil)
@@ -151,7 +160,9 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 5. Deprovision Gitea user & keys
-	if os.Getenv("GITEA_DISABLED") == "1" {
+	if cfg.IsBareHost() {
+		report.AddStep("Gitea Account", StatusSkipped, "No-container agent has no Gitea account (skipped)", nil)
+	} else if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea Account", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
 	} else if err := DeprovisionGiteaUser(ctx, cfg.Name); err == nil {
 		report.AddStep("Gitea Account", StatusOK, "Purged Gitea user account and authorized keys", nil)
@@ -162,7 +173,9 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 	}
 
 	// 6. Deprovision SonarQube user & analysis tokens
-	if os.Getenv("SONAR_DISABLED") == "1" || (cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "") {
+	if cfg.IsBareHost() {
+		report.AddStep("SonarQube Account", StatusSkipped, "No-container agent has no SonarQube account (skipped)", nil)
+	} else if os.Getenv("SONAR_DISABLED") == "1" || (cfg.SonarToken == "" && os.Getenv("SONAR_HOST_URL") == "") {
 		report.AddStep("SonarQube Account", StatusSkipped, "SonarQube is disabled or not provisioned for agent (skipped)", nil)
 	} else if err := DeprovisionSonarUser(ctx, cfg.Name); err == nil {
 		report.AddStep("SonarQube Account", StatusOK, "Purged SonarQube user account and analysis tokens", nil)
@@ -174,7 +187,7 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 
 	// 7. Update SSH config file
 	if cfg.IsBareHost() {
-		report.AddStep("SSH Configuration", StatusSkipped, "Bare host agent has no SSH config stanza (skipped)", nil)
+		report.AddStep("SSH Configuration", StatusSkipped, "No-container agent has no SSH config stanza (skipped)", nil)
 	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err != nil {
 		report.AddStep("SSH Configuration", StatusWarning, fmt.Sprintf("Failed to synchronize SSH config: %v", err), err)
 	} else {

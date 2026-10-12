@@ -160,7 +160,17 @@ install: build-cli ## Install CLI binaries and aliases into $(INSTALL_BIN_DIR)
 	@echo "==> Installing CLI binaries into $(INSTALL_BIN_DIR)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
 	@cp -f $(BIN_DIR)/sndbx $(INSTALL_BIN_DIR)/sndbx
-	@ln -sf sndbx $(INSTALL_BIN_DIR)/sb
+	@existing_sb=$$(command -v sb 2>/dev/null || true); \
+	if [ -n "$$existing_sb" ] && [ "$$existing_sb" != "$(INSTALL_BIN_DIR)/sb" ]; then \
+		echo "Notice: Skipping 'sb' alias in $(INSTALL_BIN_DIR): another 'sb' was found on PATH ($$existing_sb)"; \
+	elif [ ! -e $(INSTALL_BIN_DIR)/sb ] && [ ! -L $(INSTALL_BIN_DIR)/sb ]; then \
+		(cd $(INSTALL_BIN_DIR) && ln -s sndbx sb); \
+	elif [ -L $(INSTALL_BIN_DIR)/sb ]; then \
+		link_target=$$(readlink $(INSTALL_BIN_DIR)/sb 2>/dev/null || true); \
+		if [ "$$link_target" = "sndbx" ] || [ "$$(basename "$$link_target")" = "sndbx" ]; then \
+			(cd $(INSTALL_BIN_DIR) && ln -sf sndbx sb); \
+		fi; \
+	fi
 	@for bin in sndbx-agent bp bpd bp-mcp gitea-mcp beads-mcp sonar-mcp; do \
 		if [ -f $(BIN_DIR)/$$bin ]; then cp -f $(BIN_DIR)/$$bin $(INSTALL_BIN_DIR)/$$bin; fi; \
 	done
@@ -222,11 +232,9 @@ build-image-sonarqube: ## Build SonarQube Server Community Edition OCI image wit
 	@./scripts/build-sonarqube-image.sh
 
 clean: ## Clean build and test coverage artifacts
-	@rm -f $(BIN_DIR)/sb
 	@rm -rf $(BIN_DIR) $(DIST_DIR) $(COVERAGE_DIR)
 
 clean-test-env: ## Clean stale test containers, networks, and orphaned test processes
 	@./scripts/clean-test-env.sh
 
 clean-all: clean clean-test-env ## Clean all artifacts and stale test runtime state
-	@rm -f $(BIN_DIR)/sb

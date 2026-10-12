@@ -482,4 +482,30 @@ func TestSymlinkCreationLogic(t *testing.T) {
 	if relTarget != "sndbx" {
 		t.Errorf("expected relative symlink target 'sndbx', got %q", relTarget)
 	}
+
+	// 4. Test ensureSbSymlink function directly when no external sb exists
+	binDir := t.TempDir()
+	t.Setenv("PATH", binDir)
+	sndbxTarget := filepath.Join(binDir, "sndbx")
+	_ = os.WriteFile(sndbxTarget, []byte("#!/bin/sh\n"), 0755)
+
+	ensureSbSymlink(binDir)
+	sbPath := filepath.Join(binDir, "sb")
+	fi, err = os.Lstat(sbPath)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected ensureSbSymlink to create symlink: %v", err)
+	}
+
+	// 5. If another sb exists on PATH, ensureSbSymlink skips
+	otherBinDir := t.TempDir()
+	otherSb := filepath.Join(otherBinDir, "sb")
+	_ = os.WriteFile(otherSb, []byte("#!/bin/sh\n"), 0755)
+	t.Setenv("PATH", otherBinDir+":"+os.Getenv("PATH"))
+
+	skipBinDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(skipBinDir, "sndbx"), []byte("#!/bin/sh\n"), 0755)
+	ensureSbSymlink(skipBinDir)
+	if _, err := os.Lstat(filepath.Join(skipBinDir, "sb")); !os.IsNotExist(err) {
+		t.Errorf("expected sb symlink to be skipped when another sb exists on PATH")
+	}
 }

@@ -55,14 +55,14 @@ type AgentConfig struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// IsBareHost returns true if the agent runs directly on the bare host without any container
-func (c *AgentConfig) IsBareHost() bool {
+// IsNoContainer returns true if the agent runs directly on the host without any container.
+func (c *AgentConfig) IsNoContainer() bool {
 	return c.HostOnly || c.Runtime == "no-container" || c.Runtime == "bare-host" || (c.Runtime == "host" && c.WorkspacePath == "" && c.ContainerName == "")
 }
 
-// IsNoContainer returns true if the agent executes directly on the physical host without Podman
-func (c *AgentConfig) IsNoContainer() bool {
-	return c.IsBareHost()
+// IsBareHost is an alias for IsNoContainer for backward compatibility.
+func (c *AgentConfig) IsBareHost() bool {
+	return c.IsNoContainer()
 }
 
 // IsHostContainer returns true if the agent runs as a host-connected container with workspace projection

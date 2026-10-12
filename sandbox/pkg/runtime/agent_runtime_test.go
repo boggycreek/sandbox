@@ -268,8 +268,11 @@ func TestStartAgentContainerWithModelAndMounts(t *testing.T) {
 	if !strings.Contains(argsJoined, "llm-gateway:11434/v1") {
 		t.Errorf("expected llm-gateway URL translation in args: %s", argsJoined)
 	}
-	if !strings.Contains(argsJoined, "SONAR_TOKEN=sqa_full_token") {
-		t.Errorf("expected SONAR_TOKEN in args: %s", argsJoined)
+	if !strings.Contains(argsJoined, "-e SONAR_TOKEN") {
+		t.Errorf("expected -e SONAR_TOKEN in args: %s", argsJoined)
+	}
+	if strings.Contains(argsJoined, "sqa_full_token") {
+		t.Errorf("expected secret SONAR_TOKEN not to be leaked in argv: %s", argsJoined)
 	}
 	if !strings.Contains(argsJoined, "qwen2.5-coder:32b") {
 		t.Errorf("expected model name in args: %s", argsJoined)

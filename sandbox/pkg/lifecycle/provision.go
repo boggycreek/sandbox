@@ -67,6 +67,10 @@ func RegisterValkeyACL(ctx context.Context, cfg *config.AgentConfig, paths confi
 //
 //nolint:gocritic // paths passed by value for consistency with config package
 func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
+	if cfg.IsBareHost() {
+		return nil
+	}
+
 	adminPass := os.Getenv("GITEA_ADMIN_PASSWORD")
 	if adminPass == "" {
 		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
@@ -109,6 +113,9 @@ func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 //
 //nolint:gocritic // paths passed by value for consistency with config package
 func RegisterSonarUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
+	if cfg.IsBareHost() {
+		return nil
+	}
 	adminPass := os.Getenv("SONAR_ADMIN_PASSWORD")
 	if adminPass == "" {
 		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
@@ -204,22 +211,44 @@ func EnsureIDEKeypair(paths config.Paths) error {
 		_ = os.Chmod(paths.IDEKeyFile, 0600)
 		_ = os.Chmod(sshPub, 0644)
 	} else {
-		// Derive actual public key from private key
-		cmd := exec.Command("ssh-keygen", "-y", "-f", paths.IDEKeyFile)
-		out, err := cmd.Output()
-		if err != nil {
-			return fmt.Errorf("failed deriving IDE public key: %w", err)
-		}
-		derivedPub := strings.TrimSpace(string(out))
+		// Private key exists; check public key
 		existingPubBytes, readErr := os.ReadFile(sshPub)
 		existingPub := strings.TrimSpace(string(existingPubBytes))
 
-		if readErr != nil || len(existingPub) == 0 || existingPub != derivedPub {
-			pubData := append([]byte(derivedPub), '\n')
-			if err := os.WriteFile(sshPub, pubData, 0644); err != nil {
-				return fmt.Errorf("failed writing IDE public key: %w", err)
+		// Try deriving public key non-interactively with empty passphrase flag (-P "")
+		cmd := exec.Command("ssh-keygen", "-y", "-P", "", "-f", paths.IDEKeyFile)
+		out, err := cmd.Output()
+		if err != nil {
+			// If ssh-keygen derivation fails (e.g. key has passphrase or tool unavailable):
+			// If .pub already exists and is non-empty, do not fail provisioning!
+			if readErr == nil && len(existingPub) > 0 {
+				return nil
 			}
-			_ = os.Chmod(sshPub, 0644)
+			return fmt.Errorf("failed deriving IDE public key: %w", err)
+		}
+
+		derivedPub := strings.TrimSpace(string(out))
+		if readErr != nil || len(existingPub) == 0 || existingPub != derivedPub {
+			if len(existingPub) > 0 && existingPub != derivedPub {
+				fmt.Fprintf(os.Stderr, "sndbx warning: %s does not match private key %s; updating public key file\n", sshPub, paths.IDEKeyFile)
+			}
+			pubData := append([]byte(derivedPub), '\n')
+			dir := filepath.Dir(sshPub)
+			tmpFile, tmpErr := os.CreateTemp(dir, ".pub.tmp.*")
+			if tmpErr != nil {
+				return fmt.Errorf("failed creating temp public key file: %w", tmpErr)
+			}
+			tmpName := tmpFile.Name()
+			defer func() { _ = os.Remove(tmpName) }()
+			if _, wErr := tmpFile.Write(pubData); wErr != nil {
+				_ = tmpFile.Close()
+				return fmt.Errorf("failed writing IDE public key: %w", wErr)
+			}
+			_ = tmpFile.Close()
+			_ = os.Chmod(tmpName, 0644)
+			if rErr := os.Rename(tmpName, sshPub); rErr != nil {
+				return fmt.Errorf("failed replacing IDE public key: %w", rErr)
+			}
 		}
 	}
 	return nil
@@ -313,7 +342,9 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 3. Gitea Account & Keys
-	if os.Getenv("GITEA_DISABLED") == "1" {
+	if cfg.IsBareHost() {
+		report.AddStep("Gitea User & Keys", StatusSkipped, "No-container agent has no container boundary (skipped)", nil)
+	} else if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea User & Keys", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
 	} else if err := RegisterGiteaUser(ctx, cfg, paths); err == nil {
 		report.AddStep("Gitea User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
@@ -324,7 +355,9 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 4. SonarQube User & Analysis Token
-	if os.Getenv("SONAR_DISABLED") == "1" {
+	if cfg.IsBareHost() {
+		report.AddStep("SonarQube Account & Token", StatusSkipped, "No-container agent has no container boundary (skipped)", nil)
+	} else if os.Getenv("SONAR_DISABLED") == "1" {
 		report.AddStep("SonarQube Account & Token", StatusSkipped, "SonarQube infrastructure is disabled via SONAR_DISABLED (skipped)", nil)
 	} else if err := RegisterSonarUser(ctx, cfg, paths); err == nil {
 		report.AddStep("SonarQube Account & Token", StatusOK, "Registered user account and generated analysis token", nil)
@@ -336,7 +369,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 
 	// 5. Host SSH Configuration Sync
 	if cfg.IsBareHost() {
-		report.AddStep("SSH Configuration", StatusSkipped, "Bare host agent does not expose container SSH daemon (skipped)", nil)
+		report.AddStep("SSH Configuration", StatusSkipped, "No-container agent does not expose container SSH daemon (skipped)", nil)
 	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err == nil {
 		report.AddStep("SSH Configuration", StatusOK, "Synchronized host SSH config", nil)
 	} else {
