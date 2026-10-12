@@ -44,14 +44,31 @@ func SetExecCommandContextForTesting(fn func(ctx context.Context, name string, a
 	}
 }
 
+// SetInfraValkeyContainerForTest overrides infraValkeyContainer for unit testing.
+func SetInfraValkeyContainerForTest(name string) func() {
+	orig := infraValkeyContainer
+	infraValkeyContainer = name
+	return func() {
+		infraValkeyContainer = orig
+	}
+}
+
+// ContainerMount describes a mount on a container.
+type ContainerMount struct {
+	Type        string `json:"Type"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
+}
+
 // ContainerInfo describes a container's runtime state
 type ContainerInfo struct {
-	ID      string        `json:"Id"`
-	Names   []string      `json:"Names"`
-	State   string        `json:"State"`
-	Status  string        `json:"Status"`
-	Created int64         `json:"Created"`
-	Ports   []PortMapping `json:"Ports"`
+	ID      string           `json:"Id"`
+	Names   []string         `json:"Names"`
+	State   string           `json:"State"`
+	Status  string           `json:"Status"`
+	Created int64            `json:"Created"`
+	Ports   []PortMapping    `json:"Ports"`
+	Mounts  []ContainerMount `json:"Mounts"`
 }
 
 // PortMapping port mapping information
@@ -562,6 +579,7 @@ func InspectAgentContainer(ctx context.Context, containerName string) (*Containe
 			Status  string `json:"Status"`
 			Running bool   `json:"Running"`
 		} `json:"State"`
+		Mounts []ContainerMount `json:"Mounts"`
 	}
 	if err := json.Unmarshal(out.Bytes(), &list); err != nil || len(list) == 0 {
 		return nil, fmt.Errorf("failed inspecting container")
@@ -582,9 +600,10 @@ func InspectAgentContainer(ctx context.Context, containerName string) (*Containe
 	}
 
 	return &ContainerInfo{
-		ID:    list[0].ID,
-		Names: names,
-		State: state,
+		ID:     list[0].ID,
+		Names:  names,
+		State:  state,
+		Mounts: list[0].Mounts,
 	}, nil
 }
 
@@ -629,14 +648,25 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 
 	// 1. Start Valkey container if not already running
 	valkeyContainer := infraValkeyContainer
+	valkeyVol := "agent-sandbox-valkey-data"
+	if valkeyContainer != "agent-sandbox-valkey" {
+		valkeyVol = valkeyContainer + "-data"
+	}
+	_ = EnsureVolume(ctx, valkeyVol)
+
+	valkeyPort := os.Getenv("BP_PORT")
+	if valkeyPort == "" {
+		valkeyPort = "6379"
+	}
+
 	valkeyArgs := []string{
 		"run", "-d",
 		"--name", valkeyContainer,
 		"--hostname", "valkey",
 		"--network", netName,
-		"-p", "127.0.0.1:6379:6379",
+		"-p", fmt.Sprintf("127.0.0.1:%s:6379", valkeyPort),
 		"-v", fmt.Sprintf("%s:/etc/valkey:z", valkeyConfigDir),
-		"-v", "agent-sandbox-valkey-data:/data:z",
+		"-v", fmt.Sprintf("%s:/data:z", valkeyVol),
 		"docker.io/valkey/valkey:8.0-alpine",
 		"valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379",
 	}
@@ -656,15 +686,32 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 			}
 		}
 	} else {
-		startCmd := execCommandContext(ctx, "podman", "start", valkeyContainer)
-		if startOut, err := startCmd.CombinedOutput(); err != nil {
-			_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
-			if isRootlessNetnsError(err, startOut) {
-				_ = EnsureRootlessNetNS(ctx)
+		recreate := false
+		if info, err := InspectAgentContainer(ctx, valkeyContainer); err == nil && info != nil {
+			for _, m := range info.Mounts {
+				if m.Destination == "/etc/valkey" && filepath.Clean(m.Source) != filepath.Clean(valkeyConfigDir) {
+					recreate = true
+					break
+				}
 			}
+		}
+		if recreate {
+			_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
 			cmd := execCommandContext(ctx, "podman", valkeyArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
+			}
+		} else {
+			startCmd := execCommandContext(ctx, "podman", "start", valkeyContainer)
+			if startOut, err := startCmd.CombinedOutput(); err != nil {
+				_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+				if isRootlessNetnsError(err, startOut) {
+					_ = EnsureRootlessNetNS(ctx)
+				}
+				cmd := execCommandContext(ctx, "podman", valkeyArgs...)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("failed restarting valkey container: %v (%s)", err, string(out))
+				}
 			}
 		}
 	}
@@ -969,3 +1016,74 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 	}
 	return os.WriteFile(paths.SSHConfigFile, buf.Bytes(), 0600)
 }
+
+// RecreateValkeyContainer stops, removes, and recreates the shared Valkey container with updated ACL and volume mounts.
+func RecreateValkeyContainer(ctx context.Context, paths config.Paths, adminPass, humanPass, humanName string) error {
+	netName := "agent-sandbox-infra"
+	if err := EnsureNetwork(ctx, netName); err != nil {
+		return fmt.Errorf("failed ensuring network %s: %w", netName, err)
+	}
+
+	valkeyContainer := infraValkeyContainer
+	valkeyVol := "agent-sandbox-valkey-data"
+	if valkeyContainer != "agent-sandbox-valkey" {
+		valkeyVol = valkeyContainer + "-data"
+	}
+	_ = EnsureVolume(ctx, valkeyVol)
+
+	valkeyConfigDir := filepath.Join(paths.DataHome, "valkey")
+	_ = os.MkdirAll(valkeyConfigDir, 0755)
+	aclFile := filepath.Join(valkeyConfigDir, "valkey-users.acl")
+
+	if adminPass == "" {
+		adminPass = "admin_backplane_pass"
+	}
+	if humanPass == "" {
+		humanPass = "human_backplane_pass"
+	}
+	if humanName == "" {
+		humanName = "operator"
+	}
+
+	aclContent := fmt.Sprintf(`user default off
+user admin on >%s ~* &* +@all
+user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R~*:* &* +@all (+xadd ~*:inbox)
+`, adminPass, humanName, humanPass, humanName)
+	_ = os.WriteFile(aclFile, []byte(aclContent), 0644)
+	_ = os.Chmod(aclFile, 0644)
+	_ = os.Chmod(valkeyConfigDir, 0755)
+
+	valkeyPort := os.Getenv("BP_PORT")
+	if valkeyPort == "" {
+		valkeyPort = "6379"
+	}
+
+	valkeyArgs := []string{
+		"run", "-d",
+		"--name", valkeyContainer,
+		"--hostname", "valkey",
+		"--network", netName,
+		"-p", fmt.Sprintf("127.0.0.1:%s:6379", valkeyPort),
+		"-v", fmt.Sprintf("%s:/etc/valkey:z", valkeyConfigDir),
+		"-v", fmt.Sprintf("%s:/data:z", valkeyVol),
+		"docker.io/valkey/valkey:8.0-alpine",
+		"valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379",
+	}
+
+	_ = execCommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
+
+	cmd := execCommandContext(ctx, "podman", valkeyArgs...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		if isRootlessNetnsError(err, out) {
+			_ = EnsureRootlessNetNS(ctx)
+			retryCmd := execCommandContext(ctx, "podman", valkeyArgs...)
+			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
+				return fmt.Errorf("failed starting valkey container: %v (%s)", retryErr, string(retryOut))
+			}
+		} else {
+			return fmt.Errorf("failed starting valkey container: %v (%s)", err, string(out))
+		}
+	}
+	return nil
+}
+
