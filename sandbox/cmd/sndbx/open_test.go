@@ -201,16 +201,13 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	hostCtrCfg.WorkspacePath = "/tmp/test-host-workspace"
 	_ = config.SaveAgentConfig(hostCtrCfg, paths)
 
-	origExec := execCommandContext
-	defer func() { execCommandContext = origExec }()
 	mockFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "podman" && len(args) > 1 && args[0] == "port" {
 			return exec.Command("echo", "127.0.0.1:32777")
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = mockFn
-	restoreRuntime := runtime.SetExecCommandContextForTesting(mockFn)
+	restoreRuntime := SetExecCommandContextForTesting(mockFn)
 	defer restoreRuntime()
 
 	stdout.Reset()
@@ -252,10 +249,6 @@ func TestAgentOpenExecution(t *testing.T) {
 		return "", fmt.Errorf("not found: %s", name)
 	})
 	defer restoreLookPath()
-
-	origExec := execCommandContext
-	defer func() { execCommandContext = origExec }()
-
 	var executedCmds []string
 	mockFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
@@ -272,8 +265,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		return exec.Command("true")
 	}
 
-	execCommandContext = mockFn
-	restoreRuntime := runtime.SetExecCommandContextForTesting(mockFn)
+	restoreRuntime := SetExecCommandContextForTesting(mockFn)
 	defer restoreRuntime()
 
 	restoreInteractive := SetIsTerminalForTesting(func(r io.Reader) bool { return true })
@@ -444,8 +436,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = failFn
-	restoreRuntime2 := runtime.SetExecCommandContextForTesting(failFn)
+	restoreRuntime2 := SetExecCommandContextForTesting(failFn)
 	defer restoreRuntime2()
 
 	stderr.Reset()
@@ -458,7 +449,6 @@ func TestAgentOpenExecution(t *testing.T) {
 	}
 
 	// Test 7a: JetBrains URI launcher fails, but fallback to target IDE binary succeeds
-	execCommandContext = mockFn
 	restoreRuntime()
 	var fallbackCmds []string
 	jbURIFailFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
@@ -472,8 +462,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = jbURIFailFn
-	restoreRuntime3 := runtime.SetExecCommandContextForTesting(jbURIFailFn)
+	restoreRuntime3 := SetExecCommandContextForTesting(jbURIFailFn)
 	defer restoreRuntime3()
 
 	stderr.Reset()
@@ -503,8 +492,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = jbBothFailFn
-	restoreRuntimeBoth := runtime.SetExecCommandContextForTesting(jbBothFailFn)
+	restoreRuntimeBoth := SetExecCommandContextForTesting(jbBothFailFn)
 	defer restoreRuntimeBoth()
 
 	stderr.Reset()
@@ -519,7 +507,6 @@ func TestAgentOpenExecution(t *testing.T) {
 
 	// Test 8: Container start failure when stopped
 	restoreRuntimeBoth()
-	execCommandContext = mockFn
 	startFailFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "podman" && len(args) > 1 && args[0] == "port" {
 			return exec.Command("false") // Port fails
@@ -529,8 +516,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = startFailFn
-	restoreRuntime4 := runtime.SetExecCommandContextForTesting(startFailFn)
+	restoreRuntime4 := SetExecCommandContextForTesting(startFailFn)
 	defer restoreRuntime4()
 
 	stderr.Reset()
@@ -546,8 +532,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		}
 		return exec.Command("true") // Container start succeeds
 	}
-	execCommandContext = portFailFn
-	restoreRuntime5 := runtime.SetExecCommandContextForTesting(portFailFn)
+	restoreRuntime5 := SetExecCommandContextForTesting(portFailFn)
 	defer restoreRuntime5()
 
 	stderr.Reset()
@@ -560,7 +545,8 @@ func TestAgentOpenExecution(t *testing.T) {
 	}
 
 	// Test 10: SyncSSHConfigFile error path
-	execCommandContext = mockFn
+	restoreRuntime10 := SetExecCommandContextForTesting(mockFn)
+	defer restoreRuntime10()
 	badPaths := config.Paths{
 		DataHome:      "/dev/null/forbidden",
 		SSHConfigFile: "/dev/null/forbidden/ssh_config",

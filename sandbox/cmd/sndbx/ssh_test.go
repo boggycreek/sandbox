@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 func TestAgentSSHDirect(t *testing.T) {
@@ -34,10 +33,7 @@ func TestAgentSSHDirect(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	origExec := execCommandContext
-	defer func() { execCommandContext = origExec }()
-	execCommandContext = mockSSH
-	restore := runtime.SetExecCommandContextForTesting(mockSSH)
+	restore := SetExecCommandContextForTesting(mockSSH)
 	defer restore()
 
 	var stdout, stderr bytes.Buffer
@@ -56,12 +52,32 @@ func TestAgentSSHDirect(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = failSSH
-	restoreFail := runtime.SetExecCommandContextForTesting(failSSH)
+	restoreFail := SetExecCommandContextForTesting(failSSH)
 	defer restoreFail()
 
 	code = Run([]string{"agent", "ssh", "ssh-agent"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("agent ssh should return 1 when ssh command fails, got %d", code)
+	}
+
+	// Empty args
+	code = Run([]string{"agent", "ssh"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected 1 on empty ssh args, got %d", code)
+	}
+
+	// Nonexistent agent
+	code = Run([]string{"agent", "ssh", "nonexistent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected 1 on nonexistent ssh agent, got %d", code)
+	}
+
+	// No-container agent
+	cfgNoCont, _ := config.NewAgentConfig("nocont-agent", "base", "developer")
+	cfgNoCont.Runtime = "no-container"
+	_ = config.SaveAgentConfig(cfgNoCont, paths)
+	code = Run([]string{"agent", "ssh", "nocont-agent"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected 1 on nocont-agent ssh, got %d", code)
 	}
 }

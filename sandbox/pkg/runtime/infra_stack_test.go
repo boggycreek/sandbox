@@ -43,7 +43,7 @@ func TestStopInfraStack(t *testing.T) {
 		infraSonarContainer = origSonar
 	}()
 
-	startOut, err := execCommandContext(ctx, "podman", "run", "-d", "--name", testValkeyName,
+	startOut, err := CommandContext(ctx, "podman", "run", "-d", "--name", testValkeyName,
 		"docker.io/valkey/valkey:8-alpine",
 	).CombinedOutput()
 	if err != nil {

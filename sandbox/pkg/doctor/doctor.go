@@ -349,7 +349,7 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 			}
 		}
 		if cfg.VolumeName != "" {
-			volCmd := exec.CommandContext(ctx, "podman", "volume", "exists", cfg.VolumeName)
+			volCmd := runtime.CommandContext(ctx, "podman", "volume", "exists", cfg.VolumeName)
 			if err := volCmd.Run(); err != nil {
 				if err := runtime.EnsureVolume(ctx, cfg.VolumeName); err == nil {
 					report.Checks = append(report.Checks, CheckItem{
@@ -385,7 +385,7 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 
 	_ = runtime.EnsureRootlessNetNS(ctx)
 
-	volCmd := exec.CommandContext(ctx, "podman", "volume", "exists", cfg.VolumeName)
+	volCmd := runtime.CommandContext(ctx, "podman", "volume", "exists", cfg.VolumeName)
 	if err := volCmd.Run(); err != nil {
 		if err := runtime.EnsureVolume(ctx, cfg.VolumeName); err == nil {
 			healed = true
