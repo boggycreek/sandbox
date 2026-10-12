@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -155,6 +156,7 @@ func TestFindJetBrainsPluginDirs(t *testing.T) {
 
 func TestEnsureAndRemoveSSHConfigInclude(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	hostSSHConfig := filepath.Join(tmpDir, "config")
 	targetSSHConfig := filepath.Join(tmpDir, "agent-sandbox", "ssh_config")
 
@@ -184,12 +186,24 @@ func TestEnsureAndRemoveSSHConfigInclude(t *testing.T) {
 		t.Fatalf("expected linked=false on subsequent invocation")
 	}
 
-	// 3. Match by basename
+	// 3. Unrelated include should not match and should be preserved
 	matchHostConfig := filepath.Join(tmpDir, "config_match")
-	_ = os.WriteFile(matchHostConfig, []byte("Host *\n  Include ~/.local/share/agent-sandbox/ssh_config\n"), 0600)
-	linkedBasename, err := EnsureSSHConfigInclude(targetSSHConfig, matchHostConfig)
-	if err != nil || linkedBasename {
-		t.Fatalf("expected linked=false when matching basename exists: %v", err)
+	_ = os.WriteFile(matchHostConfig, []byte("Host *\n  Include ~/.ssh/work/ssh_config\n"), 0600)
+	linkedUnrelated, err := EnsureSSHConfigInclude(targetSSHConfig, matchHostConfig)
+	if err != nil || !linkedUnrelated {
+		t.Fatalf("expected linked=true when only unrelated include exists: %v", err)
+	}
+	matchBytes, _ := os.ReadFile(matchHostConfig)
+	if !strings.Contains(string(matchBytes), "Include ~/.ssh/work/ssh_config") || !strings.Contains(string(matchBytes), "Include "+targetSSHConfig) {
+		t.Fatalf("expected both unrelated and target includes: %s", string(matchBytes))
+	}
+
+	// 3b. Match with ~ expansion (tmpDir is HOME)
+	tildeHostConfig := filepath.Join(tmpDir, "config_tilde")
+	_ = os.WriteFile(tildeHostConfig, []byte("Host *\n  include ~/agent-sandbox/ssh_config\n"), 0600)
+	linkedTilde, err := EnsureSSHConfigInclude(targetSSHConfig, tildeHostConfig)
+	if err != nil || linkedTilde {
+		t.Fatalf("expected linked=false when ~/agent-sandbox/ssh_config exists: %v", err)
 	}
 
 	// 4. Remove include directive
@@ -230,6 +244,7 @@ func TestEnsureAndRemoveSSHConfigInclude(t *testing.T) {
 
 func TestEnsureAndRemoveSSHConfigManagedHosts(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	hostSSHConfig := filepath.Join(tmpDir, "config")
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
@@ -280,6 +295,7 @@ func TestEnsureAndRemoveSSHConfigManagedHosts(t *testing.T) {
 
 func TestSyncAndRemoveToolboxSSHSettings(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	toolboxPluginsDir := filepath.Join(tmpDir, "Toolbox", "plugins")
 	_ = os.MkdirAll(toolboxPluginsDir, 0755)
 	settingsFile := filepath.Join(toolboxPluginsDir, "ssh", "settings.json")
@@ -328,6 +344,7 @@ func TestSyncAndRemoveToolboxSSHSettings(t *testing.T) {
 
 func TestInstallAndRemoveGatewayPlugin(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
@@ -376,6 +393,7 @@ func TestInstallAndRemoveGatewayPlugin(t *testing.T) {
 
 func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
@@ -421,6 +439,7 @@ func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 
 func TestInstallAndRemoveVSCodePlugin(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
@@ -691,5 +710,111 @@ func TestToolboxSSHSettingsLifecycle(t *testing.T) {
 	err = RemoveToolboxSSHSettings(settingsFile)
 	if err != nil {
 		t.Errorf("RemoveToolboxSSHSettings on invalid json returned error: %v", err)
+	}
+}
+
+func TestSSHConfigIncludeNonDestructiveAndAtomic(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	hostSSHConfig := filepath.Join(tmpDir, "config")
+	targetSSHConfig := filepath.Join(tmpDir, "agent-sandbox", "ssh_config")
+
+	// 1. Host config contains custom user formatting, comments, and host block
+	userContent := `# OpenSSH Configuration
+# Custom user comment
+
+Host legacy-host
+    HostName 10.0.0.1
+    User admin
+
+# Another custom comment
+`
+	if err := os.WriteFile(hostSSHConfig, []byte(userContent), 0640); err != nil {
+		t.Fatalf("failed writing initial config: %v", err)
+	}
+
+	linked, err := EnsureSSHConfigInclude(targetSSHConfig, hostSSHConfig)
+	if err != nil {
+		t.Fatalf("EnsureSSHConfigInclude failed: %v", err)
+	}
+	if !linked {
+		t.Fatalf("expected linked=true when directive newly added")
+	}
+
+	// Verify backup file was created with original content
+	bakPath := hostSSHConfig + ".bak"
+	bakContent, err := os.ReadFile(bakPath)
+	if err != nil {
+		t.Fatalf("expected backup file %s to exist: %v", bakPath, err)
+	}
+	if string(bakContent) != userContent {
+		t.Fatalf("expected backup file to match original user content")
+	}
+
+	// Verify file mode was preserved
+	fi, err := os.Stat(hostSSHConfig)
+	if err != nil {
+		t.Fatalf("failed to stat host config: %v", err)
+	}
+	if fi.Mode().Perm() != 0640 {
+		t.Errorf("expected permissions 0640 preserved, got %o", fi.Mode().Perm())
+	}
+
+	content, err := os.ReadFile(hostSSHConfig)
+	if err != nil {
+		t.Fatalf("failed reading host config: %v", err)
+	}
+	contentStr := string(content)
+
+	// Verify header and include exist at top, and user content is preserved verbatim
+	expectedPrefix := fmt.Sprintf("%s\nInclude %s\n\n", sshConfigCommentHeader, targetSSHConfig)
+	if !strings.HasPrefix(contentStr, expectedPrefix) {
+		t.Fatalf("expected config to begin with include block, got:\n%s", contentStr)
+	}
+	remainder := strings.TrimPrefix(contentStr, expectedPrefix)
+	if remainder != userContent {
+		t.Fatalf("expected user content to remain untouched, got:\n%s\nexpected:\n%s", remainder, userContent)
+	}
+
+	// 2. Idempotent call when already linked
+	linkedAgain, err := EnsureSSHConfigInclude(targetSSHConfig, hostSSHConfig)
+	if err != nil || linkedAgain {
+		t.Fatalf("expected linked=false on second invocation, got %v (err: %v)", linkedAgain, err)
+	}
+	contentAgain, _ := os.ReadFile(hostSSHConfig)
+	if string(contentAgain) != contentStr {
+		t.Errorf("expected identical content after idempotent EnsureSSHConfigInclude")
+	}
+
+	// 3. Remove include directive cleans up header and include, leaving user content untouched
+	unlinked, err := RemoveSSHConfigInclude(targetSSHConfig, hostSSHConfig)
+	if err != nil || !unlinked {
+		t.Fatalf("RemoveSSHConfigInclude failed: unlinked=%v, err=%v", unlinked, err)
+	}
+
+	contentAfterRemove, _ := os.ReadFile(hostSSHConfig)
+	afterStr := string(contentAfterRemove)
+
+	if strings.Contains(afterStr, sshConfigCommentHeader) {
+		t.Errorf("expected comment header to be removed, found in:\n%s", afterStr)
+	}
+	if strings.Contains(afterStr, targetSSHConfig) {
+		t.Errorf("expected include directive to be removed in:\n%s", afterStr)
+	}
+	if afterStr != userContent {
+		t.Errorf("expected user content to be preserved exactly after removal, got:\n%s\nexpected:\n%s", afterStr, userContent)
+	}
+
+	// 4. Removing when only the include block was present leaves zero residue (empty file)
+	soloConfig := filepath.Join(tmpDir, "solo_config")
+	if _, err := EnsureSSHConfigInclude(targetSSHConfig, soloConfig); err != nil {
+		t.Fatalf("failed creating solo config: %v", err)
+	}
+	if _, err := RemoveSSHConfigInclude(targetSSHConfig, soloConfig); err != nil {
+		t.Fatalf("failed removing solo config: %v", err)
+	}
+	soloAfter, _ := os.ReadFile(soloConfig)
+	if len(strings.TrimSpace(string(soloAfter))) != 0 {
+		t.Errorf("expected solo config to be empty after remove, got:\n%s", string(soloAfter))
 	}
 }

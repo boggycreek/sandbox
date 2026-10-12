@@ -634,4 +634,3 @@ func TestListDirTool(t *testing.T) {
 		t.Error("expected traversal error on list_dir")
 	}
 }
-

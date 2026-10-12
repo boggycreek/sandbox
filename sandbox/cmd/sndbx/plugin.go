@@ -44,14 +44,14 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprintln(stderr, "Usage: sndbx plugin add <gateway|toolbox|vscode>")
+			fmt.Fprintf(stderr, "Usage: %s plugin add <gateway|toolbox|vscode>\n", binaryName())
 			return 1
 		}
 		return handlePluginAdd(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
 
 	case "remove":
 		if len(args) < 2 {
-			fmt.Fprintln(stderr, "Usage: sndbx plugin remove <gateway|toolbox|vscode>")
+			fmt.Fprintf(stderr, "Usage: %s plugin remove <gateway|toolbox|vscode>\n", binaryName())
 			return 1
 		}
 		return handlePluginRemove(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
@@ -202,10 +202,10 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 }
 
 func printPluginUsage(out io.Writer) {
-	fmt.Fprintln(out, `Agent Sandbox Plugin Manager
+	fmt.Fprintf(out, `Agent Sandbox Plugin Manager
 
 Usage:
-  sndbx plugin <command> [target]
+  %s plugin <command> [target]
 
 Commands:
   add <plugin>       Install and configure the specified IDE plugin
@@ -216,5 +216,6 @@ Commands:
 Supported Targets:
   gateway            JetBrains Gateway and IntelliJ IDEs (GoLand, CLion, WebStorm, PyCharm)
   toolbox            JetBrains Toolbox desktop app provider & native SSH sync
-  vscode             VS Code Remote-SSH and Claude Code integration`)
+  vscode             VS Code Remote-SSH and Claude Code integration
+`, binaryName())
 }

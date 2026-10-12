@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/boggycreek/sandbox/pkg/config"
 	sndbxRuntime "github.com/boggycreek/sandbox/pkg/runtime"
@@ -317,8 +318,102 @@ func GetDefaultToolboxSSHSettingsPath() string {
 	}
 }
 
+// sshConfigCommentHeader is the standard header preceding the Agent Sandbox OpenSSH Include directive.
+const sshConfigCommentHeader = "# Agent Sandbox Host Include"
+
+var sshConfigMutex sync.Mutex
+
+func normalizeSSHPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	} else if strings.HasPrefix(p, "$HOME/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, strings.TrimPrefix(p, "$HOME/"))
+		}
+	}
+	return filepath.Clean(p)
+}
+
+func isTargetInclude(line, targetSSHConfigFile string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) < 2 {
+		return false
+	}
+	if !strings.EqualFold(fields[0], "include") {
+		return false
+	}
+
+	cleanTarget := normalizeSSHPath(targetSSHConfigFile)
+	for _, arg := range fields[1:] {
+		arg = strings.Trim(arg, `"'`)
+		if normalizeSSHPath(arg) == cleanTarget {
+			return true
+		}
+	}
+	return false
+}
+
+func writeSSHConfigFileAtomic(targetPath string, content []byte, perm os.FileMode) error {
+	dir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating directory for ssh config: %w", err)
+	}
+
+	// Backup original config once before modifying if it exists and backup doesn't exist
+	bakPath := targetPath + ".bak"
+	if _, err := os.Stat(targetPath); err == nil {
+		if _, errBak := os.Stat(bakPath); os.IsNotExist(errBak) {
+			if existingBytes, readErr := os.ReadFile(targetPath); readErr == nil {
+				_ = os.WriteFile(bakPath, existingBytes, 0600)
+			}
+		}
+	}
+
+	tmpFile, err := os.CreateTemp(dir, ".config.tmp.*")
+	if err != nil {
+		return fmt.Errorf("creating temp file for ssh config: %w", err)
+	}
+	tmpName := tmpFile.Name()
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpName)
+	}()
+
+	if _, err := tmpFile.Write(content); err != nil {
+		return fmt.Errorf("writing temp ssh config: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return fmt.Errorf("syncing temp ssh config: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("closing temp ssh config: %w", err)
+	}
+	if perm == 0 {
+		perm = 0600
+	}
+	_ = os.Chmod(tmpName, perm)
+	if err := os.Rename(tmpName, targetPath); err != nil {
+		return fmt.Errorf("atomically replacing ssh config: %w", err)
+	}
+	return nil
+}
+
 // EnsureSSHConfigInclude guarantees that ~/.ssh/config includes the given target config file.
+// It is non-destructive: it only prepends the Include line if missing, never touches existing
+// user formatting or comments, writes via atomic rename, and keeps a one-time .bak backup.
 func EnsureSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool, error) {
+	sshConfigMutex.Lock()
+	defer sshConfigMutex.Unlock()
+
 	if hostSSHConfigFile == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -327,39 +422,62 @@ func EnsureSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool
 		hostSSHConfigFile = filepath.Join(home, ".ssh", "config")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(hostSSHConfigFile), 0700); err != nil {
-		return false, fmt.Errorf("creating .ssh directory: %w", err)
-	}
-
 	includeDirective := fmt.Sprintf("Include %s", targetSSHConfigFile)
 
 	existingContent, err := os.ReadFile(hostSSHConfigFile)
-	if err != nil && !os.IsNotExist(err) {
+	if os.IsNotExist(err) || len(strings.TrimSpace(string(existingContent))) == 0 {
+		newContent := fmt.Sprintf("%s\n%s\n", sshConfigCommentHeader, includeDirective)
+		if err := writeSSHConfigFileAtomic(hostSSHConfigFile, []byte(newContent), 0600); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	if err != nil {
 		return false, fmt.Errorf("reading host ssh config: %w", err)
 	}
 
 	lines := strings.Split(string(existingContent), "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.EqualFold(trimmed, includeDirective) ||
-			(strings.HasPrefix(trimmed, "Include") && strings.Contains(trimmed, filepath.Base(targetSSHConfigFile))) {
-			return false, nil // Already linked
+
+	// Check if our target include already exists
+	targetIdx := -1
+	for i, line := range lines {
+		if isTargetInclude(line, targetSSHConfigFile) {
+			targetIdx = i
+			break
 		}
 	}
 
-	var newContent bytes.Buffer
-	newContent.WriteString(includeDirective + "\n\n")
-	newContent.Write(existingContent)
-
-	if err := os.WriteFile(hostSSHConfigFile, newContent.Bytes(), 0600); err != nil {
-		return false, fmt.Errorf("writing host ssh config: %w", err)
+	// If already present, strictly no-op without touching file!
+	if targetIdx != -1 {
+		return false, nil
 	}
 
+	// Target include is missing: prepend our block cleanly to the top of the file without altering existing lines
+	var finalLines []string
+	finalLines = append(finalLines, sshConfigCommentHeader, includeDirective)
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) != "" {
+		finalLines = append(finalLines, "")
+	}
+	finalLines = append(finalLines, lines...)
+	text := strings.Join(finalLines, "\n")
+
+	fi, _ := os.Stat(hostSSHConfigFile)
+	perm := os.FileMode(0600)
+	if fi != nil {
+		perm = fi.Mode()
+	}
+	if err := writeSSHConfigFileAtomic(hostSSHConfigFile, []byte(text), perm); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
 // RemoveSSHConfigInclude removes the Include directive for target config file from host SSH config.
+// It removes only our header, the target Include line, and at most one following blank line.
 func RemoveSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool, error) {
+	sshConfigMutex.Lock()
+	defer sshConfigMutex.Unlock()
+
 	if hostSSHConfigFile == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -379,13 +497,19 @@ func RemoveSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
 	removed := false
-	targetBase := filepath.Base(targetSSHConfigFile)
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Include") && strings.Contains(trimmed, targetBase) {
+		if isTargetInclude(line, targetSSHConfigFile) {
 			removed = true
+			// Remove our preceding comment header if immediately before this include
+			if len(newLines) > 0 && strings.TrimSpace(newLines[len(newLines)-1]) == sshConfigCommentHeader {
+				newLines = newLines[:len(newLines)-1]
+			}
+			// Skip at most one blank line following our include if present
+			if i+1 < len(lines) && strings.TrimSpace(lines[i+1]) == "" {
+				i++
+			}
 			continue
 		}
 		newLines = append(newLines, line)
@@ -395,16 +519,15 @@ func RemoveSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool
 		return false, nil
 	}
 
-	cleaned := strings.Join(newLines, "\n")
-	cleaned = strings.TrimLeft(cleaned, "\n")
-	if len(cleaned) > 0 && !strings.HasSuffix(cleaned, "\n") {
-		cleaned += "\n"
+	text := strings.Join(newLines, "\n")
+	fi, _ := os.Stat(hostSSHConfigFile)
+	perm := os.FileMode(0600)
+	if fi != nil {
+		perm = fi.Mode()
 	}
-
-	if err := os.WriteFile(hostSSHConfigFile, []byte(cleaned), 0600); err != nil {
-		return false, fmt.Errorf("writing host ssh config: %w", err)
+	if err := writeSSHConfigFileAtomic(hostSSHConfigFile, []byte(text), perm); err != nil {
+		return false, err
 	}
-
 	return true, nil
 }
 

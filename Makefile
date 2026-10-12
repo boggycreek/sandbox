@@ -10,12 +10,13 @@ GOFLAGS ?=
 COVERAGE_THRESHOLD := 90.0
 
 BIN_DIR := bin
+INSTALL_BIN_DIR ?= $(HOME)/.local/bin
 DIST_DIR := dist
-COVERAGE_DIR := coverage
+COVERAGE_DIR := $(CURDIR)/coverage
 COVERAGE_PROFILE := $(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML := $(COVERAGE_DIR)/coverage.html
 
-.PHONY: all help setup dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp build-images build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress
+.PHONY: all help setup dev-setup check test test-coverage test-install lint lint-go lint-shell sca vulncheck gosec deadcode deadcode-diff deadcode-all sbom format clean clean-test-env clean-all build build-cli build-libbp install build-images build-image-core build-image-daemon-base build-image-tool-base build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress build-image-sonarqube
 
 all: check build
 
@@ -69,7 +70,7 @@ test: ## Run unit tests with race detection
 
 test-coverage: ## Run tests and enforce >90% code coverage threshold
 	@echo "==> Running unit tests with coverage analysis..."
-	@mkdir -p $(COVERAGE_DIR)
+	@mkdir -p $(COVERAGE_DIR) && rm -f $(COVERAGE_PROFILE)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
 		$(GO) test -race -covermode=atomic -coverprofile=$(COVERAGE_PROFILE) ./agent/pkg/... ./agent/cmd/... ./backplane/pkg/... ./backplane/cmd/... ./mcp/pkg/... ./mcp/cmd/... ./sandbox/pkg/... ./sandbox/cmd/...; \
 		$(GO) tool cover -html=$(COVERAGE_PROFILE) -o $(COVERAGE_HTML); \
@@ -142,6 +143,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 	@mkdir -p $(BIN_DIR)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./sandbox/cmd/sndbx; \
+		ln -sf sndbx $(BIN_DIR)/sb; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx-agent ./agent/cmd/sndbx-agent; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
@@ -149,10 +151,30 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/gitea-mcp ./mcp/cmd/gitea-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/beads-mcp ./mcp/cmd/beads-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./mcp/cmd/sonar-mcp; \
-		echo "Binaries built in $(BIN_DIR)/"; \
+		echo "Binaries built in $(BIN_DIR)/ (alias: $(BIN_DIR)/sb)"; \
 	else \
 		echo "Notice: go.work not yet initialized. Skipping build."; \
 	fi
+
+install: build-cli ## Install CLI binaries and aliases into $(INSTALL_BIN_DIR)
+	@echo "==> Installing CLI binaries into $(INSTALL_BIN_DIR)..."
+	@mkdir -p $(INSTALL_BIN_DIR)
+	@cp -f $(BIN_DIR)/sndbx $(INSTALL_BIN_DIR)/sndbx
+	@existing_sb=$$(command -v sb 2>/dev/null || true); \
+	if [ -n "$$existing_sb" ] && [ "$$existing_sb" != "$(INSTALL_BIN_DIR)/sb" ]; then \
+		echo "Notice: Skipping 'sb' alias in $(INSTALL_BIN_DIR): another 'sb' was found on PATH ($$existing_sb)"; \
+	elif [ ! -e $(INSTALL_BIN_DIR)/sb ] && [ ! -L $(INSTALL_BIN_DIR)/sb ]; then \
+		(cd $(INSTALL_BIN_DIR) && ln -s sndbx sb); \
+	elif [ -L $(INSTALL_BIN_DIR)/sb ]; then \
+		link_target=$$(readlink $(INSTALL_BIN_DIR)/sb 2>/dev/null || true); \
+		if [ "$$link_target" = "sndbx" ] || [ "$$(basename "$$link_target")" = "sndbx" ]; then \
+			(cd $(INSTALL_BIN_DIR) && ln -sf sndbx sb); \
+		fi; \
+	fi
+	@for bin in sndbx-agent bp bpd bp-mcp gitea-mcp beads-mcp sonar-mcp; do \
+		if [ -f $(BIN_DIR)/$$bin ]; then cp -f $(BIN_DIR)/$$bin $(INSTALL_BIN_DIR)/$$bin; fi; \
+	done
+	@echo "Installed binaries (sndbx (alias: sb), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"
 
 build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 	@echo "==> Building C-shared libbp library..."

@@ -72,6 +72,7 @@ podman exec -u tester "${CONTAINER_NAME}" bash -c "
 
   # Verify XDG paths and files
   test -f /home/tester/.local/bin/sndbx
+  test -L /home/tester/.local/bin/sb
   test -f /home/tester/.local/bin/bp
   test -f /home/tester/.local/share/agent-sandbox/.env
   test -f /home/tester/.ssh/agent-sandbox
@@ -85,8 +86,10 @@ podman exec -u tester "${CONTAINER_NAME}" bash -c "
   cd /home/tester
   export PATH=\"/home/tester/.local/bin:\$PATH\"
   sndbx --help >/dev/null
+  sb --help >/dev/null
   bp --help >/dev/null
   sndbx update --help >/dev/null
+  sb update --help >/dev/null
 "
 
 echo "=========================================================="

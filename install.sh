@@ -286,6 +286,7 @@ fi
 
 # Configure sndbx, bp, bpd, and sonar-mcp CLI executables
 SNDBX_BIN="${BIN_DIR}/sndbx"
+SB_BIN="${BIN_DIR}/sb"
 BP_BIN="${BIN_DIR}/bp"
 BPD_BIN="${BIN_DIR}/bpd"
 SONAR_MCP_BIN="${BIN_DIR}/sonar-mcp"
@@ -308,7 +309,7 @@ done
 
 if [ "${INSTALLED_PREBUILT}" = "true" ] && [ -f "${SNDBX_BIN}" ]; then
   echo "  Installed prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases."
-elif command -v go >/dev/null 2>&1 && ([ -f "${SANDBOX_ROOT}/go.work" ] || [ -f "${SANDBOX_ROOT}/go.mod" ]); then
+elif command -v go >/dev/null 2>&1 && { [ -f "${SANDBOX_ROOT}/go.work" ] || [ -f "${SANDBOX_ROOT}/go.mod" ]; }; then
   echo "  Compiling native Go CLI binaries from source..."
   (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./sandbox/cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./backplane/cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./mcp/cmd/sonar-mcp)
   chmod +x "${SNDBX_BIN}" "${BP_BIN}" "${BPD_BIN}" "${SONAR_MCP_BIN}" 2>/dev/null || true
@@ -327,6 +328,26 @@ echo "Go compiler or prebuilt release required. Visit: https://github.com/boggyc
 exit 1
 EOF
   chmod +x "${SNDBX_BIN}"
+  echo "  Installed bootstrap script ${SNDBX_BIN}"
+fi
+
+# Ensure relative symlink sb -> sndbx exists safely if sndbx exists, but skip if another sb command exists on operator's system
+if [ -f "${SNDBX_BIN}" ]; then
+  existing_sb="$(command -v sb 2>/dev/null || true)"
+  if [ -n "${existing_sb}" ] && [ "${existing_sb}" != "${SB_BIN}" ]; then
+    echo "  Skipping 'sb' alias: another 'sb' command was found on the system (${existing_sb})"
+  elif [ ! -e "${SB_BIN}" ] && [ ! -L "${SB_BIN}" ]; then
+    (cd "${BIN_DIR}" && ln -s sndbx sb)
+  elif [ -L "${SB_BIN}" ]; then
+    link_target=$(readlink "${SB_BIN}" 2>/dev/null || true)
+    if [ "${link_target}" = "sndbx" ] || [ "$(basename "${link_target}")" = "sndbx" ]; then
+      (cd "${BIN_DIR}" && ln -sf sndbx sb)
+    else
+      echo "  Skipping 'sb' alias: ${SB_BIN} links to ${link_target}"
+    fi
+  else
+    echo "  Skipping 'sb' alias: ${SB_BIN} is an existing regular file"
+  fi
 fi
 
 echo
@@ -337,7 +358,7 @@ echo
 echo "Target Platform     : ${OS_PRETTY} [${OS}/${ARCH}]"
 echo "Repository Location : ${SANDBOX_ROOT}"
 echo "Environment Config  : ${ENV_FILE}"
-echo "CLI Executable      : ${SNDBX_BIN}"
+echo "CLI Executable      : ${SNDBX_BIN} (alias: ${SB_BIN})"
 echo "IDE SSH Public Key  : ${SSH_KEY}.pub"
 echo
 

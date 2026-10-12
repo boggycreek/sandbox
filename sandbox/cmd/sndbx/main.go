@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -37,7 +38,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 	paths := config.GetPaths()
 	if err := paths.EnsureDirectories(); err != nil {
-		fmt.Fprintf(stderr, "sndbx warning: failed to ensure directories: %v\n", err)
+		fmt.Fprintf(stderr, "%s warning: failed to ensure directories: %v\n", binaryName(), err)
 	}
 	paths.LoadEnv()
 
@@ -77,16 +78,29 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return handleGUI(sigCtx, paths, domainArgs, stdout, stderr)
 
 	default:
-		fmt.Fprintf(stderr, "sndbx: unknown command %q (see 'sndbx help')\n", domain)
+		bin := binaryName()
+		fmt.Fprintf(stderr, "%s: unknown command %q (see '%s help')\n", bin, domain, bin)
 		return 1
 	}
 }
 
+// binaryName returns the invocation name of the CLI binary ("sb" or "sndbx").
+func binaryName() string {
+	if len(os.Args) > 0 {
+		base := filepath.Base(os.Args[0])
+		if base == "sb" {
+			return "sb"
+		}
+	}
+	return "sndbx"
+}
+
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, `Agent Sandbox CLI (sndbx)
+	bin := binaryName()
+	fmt.Fprintf(out, `Agent Sandbox CLI (%s)
 
 Usage:
-  sndbx <domain|command> [args...]
+  %s <domain|command> [args...]
 
 Domains:
   agent       Manage agent instance provisioning and container lifecycles
@@ -98,31 +112,32 @@ Commands:
   update      Synchronize git repo, rebuild host CLIs, and compile all OCI images
 
 Agent Commands:
-  sndbx agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
-  sndbx agent start <name>
-  sndbx agent tmux <name>
-  sndbx agent open <name> [in <ide>] [--ide <ide>] [--no-launch]
-  sndbx agent ssh <name>
-  sndbx agent ssh-config [name] [--all]
-  sndbx agent doctor <name>
-  sndbx agent stop [name] [--all]
-  sndbx agent list [--json]
-  sndbx agent clean <name>
-  sndbx agent retire <name> [--force]
+  %s agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--model-url <url>] [--model-name <name>] [--model-key <key>]
+  %s agent start <name>
+  %s agent tmux <name>
+  %s agent open <name> [in <ide>] [--no-launch]
+  %s agent ssh <name>
+  %s agent ssh-config [name] [--all]
+  %s agent doctor <name>
+  %s agent stop [name] [--all]
+  %s agent list [--json]
+  %s agent clean <name>
+  %s agent retire <name> [--force]
 
 Infra Commands:
-  sndbx infra up
-  sndbx infra down
-  sndbx infra list
-  sndbx infra doctor
+  %s infra up
+  %s infra down
+  %s infra list
+  %s infra doctor
 
 Plugin Commands:
-  sndbx plugin add <gateway|toolbox|vscode>
-  sndbx plugin remove <gateway|toolbox|vscode>
-  sndbx plugin list
+  %s plugin add <gateway|toolbox|vscode>
+  %s plugin remove <gateway|toolbox|vscode>
+  %s plugin list
 
 Update Command:
-  sndbx update
+  %s update
 
-Run 'sndbx <domain> help' for more details on each command.`)
+Run '%s <domain> help' for more details on each command.
+`, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin)
 }

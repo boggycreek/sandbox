@@ -50,14 +50,14 @@ type AgentConfig struct {
 	ModelName     string    `json:"model_name,omitempty"`
 	ModelAPIKey   string    `json:"model_api_key,omitempty"`
 	SonarToken    string    `json:"sonar_token,omitempty"`
-	Runtime       string    `json:"runtime,omitempty"` // "container" (default), "host-container", or "bare-host"
+	Runtime       string    `json:"runtime,omitempty"` // "container" (default), "host-container", or "no-container"
 	HostOnly      bool      `json:"host_only,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// IsBareHost returns true if the agent runs directly on the bare host without any container
-func (c *AgentConfig) IsBareHost() bool {
-	return c.HostOnly || c.Runtime == "bare-host" || (c.Runtime == "host" && c.WorkspacePath == "" && c.ContainerName == "")
+// IsNoContainer returns true if the agent runs directly on the host without any container.
+func (c *AgentConfig) IsNoContainer() bool {
+	return c.HostOnly || c.Runtime == "no-container" || (c.Runtime == "host" && c.WorkspacePath == "" && c.ContainerName == "")
 }
 
 // IsHostContainer returns true if the agent runs as a host-connected container with workspace projection
@@ -65,9 +65,9 @@ func (c *AgentConfig) IsHostContainer() bool {
 	return c.Runtime == "host-container" || (c.Runtime == "host" && (c.WorkspacePath != "" || c.ContainerName != ""))
 }
 
-// IsHost returns true if the agent operates in host context (bare host or host-connected container)
+// IsHost returns true if the agent operates in host context (no-container host or host-connected container)
 func (c *AgentConfig) IsHost() bool {
-	return c.IsBareHost() || c.IsHostContainer()
+	return c.IsNoContainer() || c.IsHostContainer()
 }
 
 // ResolveImage returns the canonical OCI image name for a given input or preset

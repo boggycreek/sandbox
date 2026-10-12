@@ -28,6 +28,7 @@ func TestAgentDoctorScenarios(t *testing.T) {
 	t.Cleanup(func() {
 		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
 	})
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	paths := config.GetPaths()
@@ -80,6 +81,7 @@ func TestAgentDoctorScenarios(t *testing.T) {
 
 func TestAgentSSHConfigGeneration(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	paths := config.GetPaths()
@@ -126,6 +128,7 @@ func TestAgentCleanAndDeprovisioningWithMocks(t *testing.T) {
 	t.Cleanup(func() {
 		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
 	})
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
 	t.Setenv("BP_HOST", "127.0.0.1")
@@ -222,6 +225,7 @@ func TestInfraUpScenario(t *testing.T) {
 
 func TestAgentStartAndStopLifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	paths := config.GetPaths()
@@ -269,7 +273,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	if code != 0 {
 		t.Errorf("agent start host-lifecycle-bot failed: code=%d err=%s", code, errOut)
 	}
-	if !strings.Contains(out, "first-class bare host agent") {
+	if !strings.Contains(out, "no-container agent") {
 		t.Errorf("expected host execution message, got: %s", out)
 	}
 
@@ -321,6 +325,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 
 func TestAgentListTableMultipleAgents(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	paths := config.GetPaths()
@@ -422,6 +427,7 @@ func TestAgentCloneAndRemote(t *testing.T) {
 	t.Cleanup(func() {
 		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
 	})
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	paths := config.GetPaths()
@@ -517,6 +523,7 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	t.Cleanup(func() {
 		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
 	})
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	wsDir := filepath.Join(tmpDir, "my-workspace")
@@ -574,9 +581,9 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed loading created host-coder config: %v", err)
 	}
-	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsBareHost() {
-		t.Errorf("expected IsHostContainer()=true, IsHost()=true, got IsHostContainer=%v, IsHost=%v, IsBareHost=%v",
-			cfg.IsHostContainer(), cfg.IsHost(), cfg.IsBareHost())
+	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsNoContainer() {
+		t.Errorf("expected IsHostContainer()=true, IsHost()=true, got IsHostContainer=%v, IsHost=%v, IsNoContainer=%v",
+			cfg.IsHostContainer(), cfg.IsHost(), cfg.IsNoContainer())
 	}
 	if cfg.WorkspacePath != wsDir {
 		t.Errorf("expected WorkspacePath=%q, got %q", wsDir, cfg.WorkspacePath)
@@ -585,22 +592,28 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 		t.Errorf("expected ContainerName 'sndbx-agent-host-coder', got %q", cfg.ContainerName)
 	}
 
-	// 4. Create bare host agent with --no-container
+	// 4. Create no-container agent with --no-container
 	code, out, errOut = runSndbx([]string{"agent", "create", "bare-bot", "--no-container", "--role", "host-script"})
 	if code != 0 {
 		t.Fatalf("agent create --no-container failed: code=%d err=%s out=%s", code, errOut, out)
 	}
-	if !strings.Contains(out, "bare-host (direct host execution, no container)") {
-		t.Errorf("expected bare-host runtime in output, got: %s", out)
+	if !strings.Contains(out, "no-container (direct host execution, no container)") {
+		t.Errorf("expected no-container runtime in output, got: %s", out)
 	}
 
 	cfgBare, err := config.LoadAgentConfig("bare-bot", paths)
 	if err != nil {
 		t.Fatalf("failed loading bare-bot config: %v", err)
 	}
-	if !cfgBare.IsBareHost() || !cfgBare.IsHost() || cfgBare.IsHostContainer() {
-		t.Errorf("expected IsBareHost()=true for bare-bot, got: IsBareHost=%v, IsHostContainer=%v",
-			cfgBare.IsBareHost(), cfgBare.IsHostContainer())
+	if !cfgBare.IsNoContainer() || !cfgBare.IsHost() || cfgBare.IsHostContainer() {
+		t.Errorf("expected IsNoContainer()=true for bare-bot, got: IsNoContainer=%v, IsHostContainer=%v",
+			cfgBare.IsNoContainer(), cfgBare.IsHostContainer())
+	}
+	if cfgBare.Runtime != "no-container" {
+		t.Errorf("expected Runtime 'no-container', got %q", cfgBare.Runtime)
+	}
+	if cfgBare.Image != "no-container" {
+		t.Errorf("expected Image 'no-container', got %q", cfgBare.Image)
 	}
 
 	// 5. Start host-connected container with Podman mock

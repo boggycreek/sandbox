@@ -19,9 +19,13 @@ import (
 
 func TestHandlePluginCommands(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	paths := config.Paths{
 		DataHome:      filepath.Join(tmpDir, "data"),
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
+		SSHDir:        filepath.Join(tmpDir, ".ssh"),
+		IDEKeyFile:    filepath.Join(tmpDir, ".ssh", "agent-sandbox"),
 		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
 	}
 	_ = paths.EnsureDirectories()

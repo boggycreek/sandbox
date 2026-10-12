@@ -320,4 +320,3 @@ func TestRecreateValkeyContainerScenarios(t *testing.T) {
 	}
 	restore3()
 }
-

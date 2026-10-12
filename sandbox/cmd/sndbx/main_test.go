@@ -53,7 +53,8 @@ func TestSndbxCLIUsageAndHelp(t *testing.T) {
 
 func TestSndbxAgentDomain(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("BP_PORT", "65530")
 	t.Setenv("GITEA_URL", "http://127.0.0.1:65531")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65532")
@@ -169,10 +170,11 @@ func TestSndbxWithLiveValkey(t *testing.T) {
 	defer valkey.Teardown()
 
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
-	os.Setenv("BP_HOST", "127.0.0.1")
-	os.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
-	os.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("BP_HOST", "127.0.0.1")
+	t.Setenv("BP_PORT", fmt.Sprintf("%d", valkey.Port))
+	t.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
 
 	// Create agent with live Valkey connected
 	code, out, _ := runSndbx([]string{"agent", "create", "valkey-bot", "as", "base", "--role", "worker"})
@@ -281,7 +283,229 @@ func TestMainFunction(t *testing.T) {
 		main()
 		return
 	}
+	if os.Getenv("TEST_RUN_MAIN_SB") == "1" {
+		os.Args = []string{"sb", "help"}
+		main()
+		return
+	}
 	cmd := exec.Command(os.Args[0], "-test.run=TestMainFunction")
 	cmd.Env = append(os.Environ(), "TEST_RUN_MAIN=1")
 	_ = cmd.Run()
+
+	cmdSb := exec.Command(os.Args[0], "-test.run=TestMainFunction")
+	cmdSb.Env = append(os.Environ(), "TEST_RUN_MAIN_SB=1")
+	_ = cmdSb.Run()
+}
+
+func TestBinaryNameResolution(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	tests := []struct {
+		args     []string
+		expected string
+	}{
+		{args: []string{}, expected: "sndbx"},
+		{args: []string{"sndbx"}, expected: "sndbx"},
+		{args: []string{"/usr/local/bin/sndbx"}, expected: "sndbx"},
+		{args: []string{"sb"}, expected: "sb"},
+		{args: []string{"/usr/local/bin/sb"}, expected: "sb"},
+		{args: []string{"./bin/sb"}, expected: "sb"},
+		{args: []string{"other"}, expected: "sndbx"},
+	}
+
+	for _, tc := range tests {
+		os.Args = tc.args
+		got := binaryName()
+		if got != tc.expected {
+			t.Errorf("binaryName() for os.Args=%v: expected %q, got %q", tc.args, tc.expected, got)
+		}
+	}
+}
+
+func TestUsageOutputAdaptsWhenInvokedAsSb(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+	os.Args = []string{"sb"}
+
+	// 1. Empty args
+	code, out, _ := runSndbx([]string{})
+	if code != 1 {
+		t.Errorf("expected exit code 1 on empty args, got %d", code)
+	}
+	if !strings.Contains(out, "Agent Sandbox CLI (sb)") {
+		t.Errorf("expected usage title 'Agent Sandbox CLI (sb)', got: %s", out)
+	}
+	if strings.Contains(out, "Agent Sandbox CLI (sndbx)") {
+		t.Errorf("did not expect 'sndbx' in header when invoked as 'sb'")
+	}
+	if !strings.Contains(out, "  sb <domain|command> [args...]") {
+		t.Errorf("expected 'sb <domain|command>' usage line, got: %s", out)
+	}
+	if !strings.Contains(out, "  sb agent create") || !strings.Contains(out, "  sb infra up") || !strings.Contains(out, "  sb plugin add") || !strings.Contains(out, "  sb update") {
+		t.Errorf("expected command examples to use 'sb', got: %s", out)
+	}
+	if !strings.Contains(out, "Run 'sb <domain> help'") {
+		t.Errorf("expected hint to use 'sb', got: %s", out)
+	}
+
+	// 2. Help flags
+	for _, h := range []string{"help", "-h", "--help"} {
+		code, out, _ = runSndbx([]string{h})
+		if code != 0 || !strings.Contains(out, "Agent Sandbox CLI (sb)") {
+			t.Errorf("expected help output with 'sb' for %s", h)
+		}
+	}
+
+	// 3. Agent domain help
+	code, _, errOut := runSndbx([]string{"agent"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sb agent") {
+		t.Errorf("expected 'Usage: sb agent' on empty agent args, got: %s", errOut)
+	}
+
+	code, out, _ = runSndbx([]string{"agent", "help"})
+	if code != 0 || !strings.Contains(out, "Usage: sb agent <command>") {
+		t.Errorf("expected 'Usage: sb agent <command>' on agent help, got: %s", out)
+	}
+
+	// 4. Agent subcommands missing required args
+	agentSubTests := []struct {
+		args     []string
+		expected string
+	}{
+		{[]string{"agent", "create"}, "Usage: sb agent create"},
+		{[]string{"agent", "start"}, "Usage: sb agent start"},
+		{[]string{"agent", "tmux"}, "Usage: sb agent tmux"},
+		{[]string{"agent", "connect"}, "Usage: sb agent connect"},
+		{[]string{"agent", "open"}, "Usage: sb agent open"},
+		{[]string{"agent", "ssh"}, "Usage: sb agent ssh"},
+		{[]string{"agent", "doctor"}, "Usage: sb agent doctor"},
+		{[]string{"agent", "stop"}, "Usage: sb agent stop"},
+		{[]string{"agent", "clean"}, "Usage: sb agent clean"},
+		{[]string{"agent", "retire"}, "Usage: sb agent retire"},
+		{[]string{"agent", "provision"}, "Usage: sb agent provision"},
+		{[]string{"agent", "clone"}, "Usage: sb agent clone"},
+		{[]string{"agent", "remote"}, "Usage: sb agent remote"},
+	}
+	for _, tc := range agentSubTests {
+		code, _, errOut = runSndbx(tc.args)
+		if code != 1 || !strings.Contains(errOut, tc.expected) {
+			t.Errorf("args %v: expected error to contain %q, got code %d, err: %s", tc.args, tc.expected, code, errOut)
+		}
+	}
+
+	// 5. Infra domain help
+	code, _, errOut = runSndbx([]string{"infra"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sb infra") {
+		t.Errorf("expected 'Usage: sb infra' on empty infra args, got: %s", errOut)
+	}
+
+	code, out, _ = runSndbx([]string{"infra", "help"})
+	if code != 0 || !strings.Contains(out, "Usage: sb infra <command>") {
+		t.Errorf("expected 'Usage: sb infra <command>' on infra help, got: %s", out)
+	}
+
+	// 6. Plugin domain help
+	code, out, _ = runSndbx([]string{"plugin", "help"})
+	if code != 0 || !strings.Contains(out, "sb plugin <command>") {
+		t.Errorf("expected 'sb plugin <command>' on plugin help, got: %s", out)
+	}
+
+	code, _, errOut = runSndbx([]string{"plugin", "add"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sb plugin add") {
+		t.Errorf("expected 'Usage: sb plugin add' on plugin add empty, got: %s", errOut)
+	}
+
+	code, _, errOut = runSndbx([]string{"plugin", "remove"})
+	if code != 1 || !strings.Contains(errOut, "Usage: sb plugin remove") {
+		t.Errorf("expected 'Usage: sb plugin remove' on plugin remove empty, got: %s", errOut)
+	}
+
+	// 7. Update domain help
+	code, out, _ = runSndbx([]string{"update", "help"})
+	if code != 0 || !strings.Contains(out, "Usage: sb update") {
+		t.Errorf("expected 'Usage: sb update' on update help, got: %s", out)
+	}
+
+	// 8. Unknown command error
+	code, _, errOut = runSndbx([]string{"unknowncmd"})
+	if code != 1 || !strings.Contains(errOut, "sb: unknown command \"unknowncmd\" (see 'sb help')") {
+		t.Errorf("expected 'sb: unknown command' error, got: %s", errOut)
+	}
+}
+
+func TestSymlinkCreationLogic(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tmpDir)
+	})
+
+	sndbxBin := filepath.Join(tmpDir, "sndbx")
+	sbBin := filepath.Join(tmpDir, "sb")
+
+	// 1. Create a dummy executable sndbx
+	if err := os.WriteFile(sndbxBin, []byte("#!/bin/sh\necho sndbx\n"), 0755); err != nil {
+		t.Fatalf("failed to create dummy sndbx binary: %v", err)
+	}
+
+	// 2. Create symlink sb -> sndbx
+	if err := os.Symlink(sndbxBin, sbBin); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	// Verify symlink is valid
+	fi, err := os.Lstat(sbBin)
+	if err != nil {
+		t.Fatalf("failed to lstat symlink: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected sb to be a symlink")
+	}
+
+	target, err := os.Readlink(sbBin)
+	if err != nil {
+		t.Fatalf("failed to readlink: %v", err)
+	}
+	if target != sndbxBin && filepath.Base(target) != "sndbx" {
+		t.Errorf("expected symlink target %q, got %q", sndbxBin, target)
+	}
+
+	// 3. Test overwrite logic (idempotency)
+	_ = os.Remove(sbBin)
+	if err := os.Symlink("sndbx", sbBin); err != nil {
+		t.Fatalf("failed to recreate relative symlink: %v", err)
+	}
+	relTarget, err := os.Readlink(sbBin)
+	if err != nil {
+		t.Fatalf("failed to readlink relative symlink: %v", err)
+	}
+	if relTarget != "sndbx" {
+		t.Errorf("expected relative symlink target 'sndbx', got %q", relTarget)
+	}
+
+	// 4. Test ensureSbSymlink function directly when no external sb exists
+	binDir := t.TempDir()
+	t.Setenv("PATH", binDir)
+	sndbxTarget := filepath.Join(binDir, "sndbx")
+	_ = os.WriteFile(sndbxTarget, []byte("#!/bin/sh\n"), 0755)
+
+	ensureSbSymlink(binDir)
+	sbPath := filepath.Join(binDir, "sb")
+	fi, err = os.Lstat(sbPath)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected ensureSbSymlink to create symlink: %v", err)
+	}
+
+	// 5. If another sb exists on PATH, ensureSbSymlink skips
+	otherBinDir := t.TempDir()
+	otherSb := filepath.Join(otherBinDir, "sb")
+	_ = os.WriteFile(otherSb, []byte("#!/bin/sh\n"), 0755)
+	t.Setenv("PATH", otherBinDir+":"+os.Getenv("PATH"))
+
+	skipBinDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(skipBinDir, "sndbx"), []byte("#!/bin/sh\n"), 0755)
+	ensureSbSymlink(skipBinDir)
+	if _, err := os.Lstat(filepath.Join(skipBinDir, "sb")); !os.IsNotExist(err) {
+		t.Errorf("expected sb symlink to be skipped when another sb exists on PATH")
+	}
 }

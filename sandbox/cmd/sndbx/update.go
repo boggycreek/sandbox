@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	stdRuntime "runtime"
 	"strings"
@@ -29,12 +30,13 @@ func handleUpdate(ctx context.Context, paths config.Paths, args []string, stdout
 	if len(args) > 0 {
 		sub := strings.ToLower(args[0])
 		if sub == "help" || sub == "-h" || sub == "--help" {
-			fmt.Fprintln(stdout, `Usage: sndbx update
+			fmt.Fprintf(stdout, `Usage: %s update
 
 Comprehensive update of the Agent Sandbox local environment:
   1. Synchronizes local git repository checkout with remote (git pull)
   2. Updates native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases or source
-  3. Rebuilds all native OCI container images (base, native, opencode, claude, agy, pig)`)
+  3. Rebuilds all native OCI container images (base, native, opencode, claude, agy, pig)
+`, binaryName())
 			return 0
 		}
 	}
@@ -139,6 +141,7 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 	}
 
 	if downloadedAll {
+		ensureSbSymlink(binDir)
 		fmt.Fprintf(stdout, "==> Installed prebuilt native CLI binaries from GitHub Releases to %s\n", binDir)
 		return nil
 	}
@@ -176,8 +179,46 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 		}
 		_ = os.Chmod(targetFile, 0755)
 	}
+	ensureSbSymlink(binDir)
 	fmt.Fprintf(stdout, "==> Compiled native CLI binaries to %s\n", binDir)
 	return nil
+}
+
+func ensureSbSymlink(binDir string) {
+	sndbxTarget := filepath.Join(binDir, "sndbx")
+	if _, err := os.Stat(sndbxTarget); err != nil {
+		return
+	}
+	sbTarget := filepath.Join(binDir, "sb")
+
+	// Skip creating the 'sb' alias if another 'sb' command exists on the operator's system
+	if existingPath, err := exec.LookPath("sb"); err == nil {
+		cleanExisting := filepath.Clean(existingPath)
+		cleanSbTarget := filepath.Clean(sbTarget)
+		cleanSndbxTarget := filepath.Clean(sndbxTarget)
+		if cleanExisting != cleanSbTarget && cleanExisting != cleanSndbxTarget {
+			// Another unrelated 'sb' binary exists on PATH
+			return
+		}
+	}
+
+	fi, err := os.Lstat(sbTarget)
+	if err == nil {
+		// Existing file: only replace if it is a symlink pointing to sndbx
+		if fi.Mode()&os.ModeSymlink != 0 {
+			target, readErr := os.Readlink(sbTarget)
+			if readErr == nil && (target == "sndbx" || filepath.Base(target) == "sndbx") {
+				_ = os.Remove(sbTarget)
+				_ = os.Symlink("sndbx", sbTarget)
+			}
+		}
+		// If it's a regular file or links elsewhere, do not clobber it
+		return
+	} else if !os.IsNotExist(err) {
+		return
+	}
+	// Use relative symlink target so it remains valid if directory is relocated
+	_ = os.Symlink("sndbx", sbTarget)
 }
 
 func sanitizeGoEnv(env []string) []string {

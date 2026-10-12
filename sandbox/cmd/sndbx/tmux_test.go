@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -20,7 +19,8 @@ import (
 
 func TestAgentTmuxAndConnect(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
 
@@ -110,15 +110,15 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	}
 
 	// 4. Host container connect and tmux guards
-	cfgBareHost, _ := config.NewAgentConfig("bare-test-agent", "base", "developer")
-	cfgBareHost.Runtime = "bare-host"
-	cfgBareHost.HostOnly = true
-	_ = config.SaveAgentConfig(cfgBareHost, paths)
+	cfgNoContainer, _ := config.NewAgentConfig("nocont-test-agent", "base", "developer")
+	cfgNoContainer.Runtime = "no-container"
+	cfgNoContainer.HostOnly = true
+	_ = config.SaveAgentConfig(cfgNoContainer, paths)
 
 	stderr.Reset()
-	code = Run([]string{"agent", "tmux", "bare-test-agent"}, &stdout, &stderr)
-	if code != 1 || !strings.Contains(stderr.String(), "bare host agent") {
-		t.Errorf("expected bare host tmux guard error, got code %d: %s", code, stderr.String())
+	code = Run([]string{"agent", "tmux", "nocont-test-agent"}, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "no-container agent") {
+		t.Errorf("expected no-container tmux guard error, got code %d: %s", code, stderr.String())
 	}
 
 	cfgHostContainer, _ := config.NewAgentConfig("host-cont-agent", "tool", "developer")

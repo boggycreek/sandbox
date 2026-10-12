@@ -8,7 +8,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"os"
 	"os/exec"
 	"testing"
 
@@ -18,7 +17,8 @@ import (
 
 func TestAgentSSHDirect(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
 

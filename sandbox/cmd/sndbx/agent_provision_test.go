@@ -14,6 +14,7 @@ import (
 
 func TestAgentProvisionCommand(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("BP_HOST", "127.0.0.1")
 	t.Setenv("BP_PORT", "65530")
@@ -50,6 +51,7 @@ func TestAgentProvisionCommand(t *testing.T) {
 
 func TestAgentKeysCommand(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	paths := config.GetPaths()
@@ -82,6 +84,7 @@ func TestAgentKeysCommand(t *testing.T) {
 
 func TestAgentDeprovisionCommand(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("BP_HOST", "127.0.0.1")
 	t.Setenv("BP_PORT", "65530")

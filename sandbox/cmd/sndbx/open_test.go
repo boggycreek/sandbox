@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -21,7 +21,8 @@ import (
 
 func TestAgentOpenValidationAndErrors(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
 
@@ -51,6 +52,29 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for dangling in, got %d", code)
 	}
+	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+		t.Errorf("expected usage message, got: %s", stderr.String())
+	}
+
+	// 2b. Dangling 'in' followed by flag
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "myagent", "in", "--no-launch"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 for dangling in with flag, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+		t.Errorf("expected usage message, got: %s", stderr.String())
+	}
+
+	// 2c. Extra trailing arguments
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "myagent", "in", "code", "extra"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 for extra arguments, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+		t.Errorf("expected usage message, got: %s", stderr.String())
+	}
 
 	// 3. Invalid flag
 	stderr.Reset()
@@ -59,9 +83,21 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 		t.Errorf("expected code 1 for invalid flag, got %d", code)
 	}
 
+	// 3b. Removed flags (--ide, --local, --remote) are rejected as unknown flags with no deprecation path
+	for _, flagArg := range []string{"--ide", "--local", "--remote"} {
+		stderr.Reset()
+		code = Run([]string{"agent", "open", "myagent", flagArg}, &stdout, &stderr)
+		if code != 1 {
+			t.Errorf("expected code 1 for unknown flag %s, got %d", flagArg, code)
+		}
+		if !strings.Contains(stderr.String(), "flag provided but not defined") {
+			t.Errorf("expected flag error for %s, got: %s", flagArg, stderr.String())
+		}
+	}
+
 	// 4. Completely unknown IDE (not in catalogue)
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "myagent", "--ide", "emacs"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "myagent", "in", "emacs"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected code 1 for unknown ide emacs, got %d", code)
 	}
@@ -79,9 +115,64 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 		t.Errorf("expected not-installed error, got: %s", stderr.String())
 	}
 
+	// 5b. When 'in <ide>' is omitted and no supported IDEs detected on PATH
+	restoreEmptyLookPath := ide.SetLookPathForTesting(func(name string) (string, error) {
+		return "", fmt.Errorf("not found: %s", name)
+	})
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "myagent"}, &stdout, &stderr)
+	restoreEmptyLookPath()
+	if code != 1 {
+		t.Errorf("expected code 1 when no IDEs installed, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "no supported IDEs detected on PATH") {
+		t.Errorf("expected no supported IDEs error, got: %s", stderr.String())
+	}
+
+	// 5c. When 'in <ide>' is omitted and stdin is non-interactive
+	restoreNonInteractive := SetIsTerminalForTesting(func(r io.Reader) bool { return false })
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "myagent"}, &stdout, &stderr)
+	restoreNonInteractive()
+	if code != 1 {
+		t.Errorf("expected code 1 for non-interactive stdin, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "sndbx error: target IDE is required. Specify 'in <ide>' with one of: code") {
+		t.Errorf("expected target IDE required error, got: %s", stderr.String())
+	}
+
+	// 5d. Interactive stdin invalid inputs (out of bounds, non-numeric, EOF)
+	restoreInteractive := SetIsTerminalForTesting(func(r io.Reader) bool { return true })
+	defer restoreInteractive()
+
+	stderr.Reset()
+	code = handleAgentOpen(context.Background(), paths, []string{"myagent"}, strings.NewReader("99\n"), &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 for out-of-range selection, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "sndbx error: invalid selection") {
+		t.Errorf("expected invalid selection error, got: %s", stderr.String())
+	}
+
+	stderr.Reset()
+	code = handleAgentOpen(context.Background(), paths, []string{"myagent"}, strings.NewReader("abc\n"), &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 for non-numeric selection, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "sndbx error: invalid selection") {
+		t.Errorf("expected invalid selection error, got: %s", stderr.String())
+	}
+
+	stderr.Reset()
+	code = handleAgentOpen(context.Background(), paths, []string{"myagent"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 for empty reader, got %d", code)
+	}
+	restoreInteractive()
+
 	// 6. Nonexistent agent (IDE resolves OK, agent config missing)
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "nonexistent-agent"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "nonexistent-agent", "in", "code"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected code 1 for nonexistent agent, got %d", code)
 	}
@@ -89,59 +180,54 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 		t.Errorf("expected sndbx error, got: %s", stderr.String())
 	}
 
-	// 7. Bare host agent (cannot use container IDE forwarding)
+	// 7. No-container agent (cannot use container IDE forwarding)
 	hostCfg, _ := config.NewAgentConfig("host-open-bot", "base", "developer")
-	hostCfg.Runtime = "bare-host"
+	hostCfg.Runtime = "no-container"
 	hostCfg.HostOnly = true
 	_ = config.SaveAgentConfig(hostCfg, paths)
 
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "host-open-bot"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "host-open-bot", "in", "code"}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("expected code 1 for bare host agent open, got %d", code)
+		t.Errorf("expected code 1 for no-container agent open, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "runs directly on host, no container SSH IDE forwarding") {
+	if !strings.Contains(stderr.String(), "is a no-container agent (runs directly on host, no container SSH IDE forwarding)") {
 		t.Errorf("expected host agent IDE error, got: %s", stderr.String())
 	}
 
-	// 8. Host container agent with --local (opens local workspace path directly)
+	// 8. Host container agent (opens remote container SSH workspace uniformly)
 	hostCtrCfg, _ := config.NewAgentConfig("host-ctr-open", "tool", "developer")
 	hostCtrCfg.Runtime = "host-container"
 	hostCtrCfg.WorkspacePath = "/tmp/test-host-workspace"
 	_ = config.SaveAgentConfig(hostCtrCfg, paths)
 
-	stdout.Reset()
-	stderr.Reset()
-	code = Run([]string{"agent", "open", "host-ctr-open", "--local", "--no-launch"}, &stdout, &stderr)
-	if code != 0 {
-		t.Errorf("expected code 0 for host container open --local --no-launch, got %d: %s", code, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "Host workspace directory: /tmp/test-host-workspace") {
-		t.Errorf("expected host workspace output, got: %s", stdout.String())
-	}
-
-	// 9. Host container agent with --local launch path
 	origExec := execCommandContext
 	defer func() { execCommandContext = origExec }()
-	var executedOpen []string
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		executedOpen = append(executedOpen, fmt.Sprintf("%s %s", name, strings.Join(args, " ")))
+	mockFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "port" {
+			return exec.Command("echo", "127.0.0.1:32777")
+		}
 		return exec.Command("true")
 	}
+	execCommandContext = mockFn
+	restoreRuntime := runtime.SetExecCommandContextForTesting(mockFn)
+	defer restoreRuntime()
+
 	stdout.Reset()
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "host-ctr-open", "--local"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "host-ctr-open", "in", "code", "--no-launch"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("expected code 0 for host container open --local, got %d: %s", code, stderr.String())
+		t.Errorf("expected code 0 for host container open --no-launch, got %d: %s", code, stderr.String())
 	}
-	if len(executedOpen) == 0 || !strings.Contains(executedOpen[0], "/tmp/test-host-workspace") {
-		t.Errorf("expected local IDE launch with workspace path, got: %v", executedOpen)
+	if !strings.Contains(stdout.String(), "SSH host alias prepared: sndbx-host-ctr-open") {
+		t.Errorf("expected host alias output, got: %s", stdout.String())
 	}
 }
 
 func TestAgentOpenExecution(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 	paths := config.GetPaths()
 	_ = paths.EnsureDirectories()
 
@@ -190,16 +276,27 @@ func TestAgentOpenExecution(t *testing.T) {
 	restoreRuntime := runtime.SetExecCommandContextForTesting(mockFn)
 	defer restoreRuntime()
 
+	restoreInteractive := SetIsTerminalForTesting(func(r io.Reader) bool { return true })
+	defer restoreInteractive()
+
 	var stdout, stderr bytes.Buffer
 
-	// Test 1: --no-launch with code (default, VS Code family)
+	// Test 1: Omitting 'in <ide>' with interactive selection (selecting 1: code) and --no-launch
+	restoreStdin := SetStdinForTesting(strings.NewReader("1\n"))
 	stdout.Reset()
 	stderr.Reset()
 	code := Run([]string{"agent", "open", "ide-agent", "--no-launch"}, &stdout, &stderr)
+	restoreStdin()
 	if code != 0 {
 		t.Fatalf("agent open --no-launch failed: %d, stderr: %s", code, stderr.String())
 	}
 	outStr := stdout.String()
+	if !strings.Contains(outStr, `Select an IDE to open agent "ide-agent":`) {
+		t.Errorf("expected interactive prompt header, got: %s", outStr)
+	}
+	if !strings.Contains(outStr, "1) VS Code (/usr/bin/code)") {
+		t.Errorf("expected VS Code option in prompt, got: %s", outStr)
+	}
 	if !strings.Contains(outStr, "SSH host alias prepared: sndbx-ide-agent (Port: 32777)") {
 		t.Errorf("expected host alias prepared output, got: %s", outStr)
 	}
@@ -207,7 +304,35 @@ func TestAgentOpenExecution(t *testing.T) {
 		t.Errorf("expected VS Code Remote URI, got: %s", outStr)
 	}
 
-	// Test 2: --no-launch with webstorm (JetBrains family)
+	// Test 1b: Omitting 'in <ide>' with interactive selection selecting 2 (goland) and --no-launch
+	restoreStdin2 := SetStdinForTesting(strings.NewReader("2\n"))
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "ide-agent", "--no-launch"}, &stdout, &stderr)
+	restoreStdin2()
+	if code != 0 {
+		t.Fatalf("agent open interactive selection 2 failed: %d, stderr: %s", code, stderr.String())
+	}
+	outStr = stdout.String()
+	if !strings.Contains(outStr, "Connect via GoLand") {
+		t.Errorf("expected GoLand connection info, got: %s", outStr)
+	}
+
+	// Test 1c: Omitting 'in <ide>' with interactive selection selecting 3 (webstorm) and --no-launch
+	restoreStdin3 := SetStdinForTesting(strings.NewReader("3\n"))
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "ide-agent", "--no-launch"}, &stdout, &stderr)
+	restoreStdin3()
+	if code != 0 {
+		t.Fatalf("agent open interactive selection 3 failed: %d, stderr: %s", code, stderr.String())
+	}
+	outStr = stdout.String()
+	if !strings.Contains(outStr, "Connect via WebStorm") {
+		t.Errorf("expected WebStorm connection info, got: %s", outStr)
+	}
+
+	// Test 2: positional 'in webstorm --no-launch' (JetBrains family)
 	stdout.Reset()
 	stderr.Reset()
 	code = Run([]string{"agent", "open", "ide-agent", "in", "webstorm", "--no-launch"}, &stdout, &stderr)
@@ -222,7 +347,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		t.Errorf("expected JetBrains SSH URI in no-launch output, got: %s", outStr)
 	}
 
-	// Test 3: goland --no-launch (JetBrains, different binary)
+	// Test 3: positional 'in goland --no-launch' (JetBrains, different binary)
 	stdout.Reset()
 	stderr.Reset()
 	code = Run([]string{"agent", "open", "ide-agent", "in", "goland", "--no-launch"}, &stdout, &stderr)
@@ -234,7 +359,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		t.Errorf("expected GoLand in output, got: %s", outStr)
 	}
 
-	// Test 4: code launch (VS Code) with extension installation
+	// Test 4: positional 'in code' launch (VS Code) with extension installation
 	executedCmds = nil
 	stdout.Reset()
 	stderr.Reset()
@@ -264,7 +389,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		t.Errorf("expected anthropic.claude-code installation command, got: %v", executedCmds)
 	}
 
-	// Test 5: webstorm launch (JetBrains family)
+	// Test 5: positional 'in webstorm' launch (JetBrains family) via system URI launcher
 	executedCmds = nil
 	stdout.Reset()
 	stderr.Reset()
@@ -276,14 +401,37 @@ func TestAgentOpenExecution(t *testing.T) {
 	if !strings.Contains(outStr, "Opening ide-agent in WebStorm via Remote Development") {
 		t.Errorf("expected WebStorm opening message, got: %s", outStr)
 	}
-	foundWebStorm := false
+	if !strings.Contains(outStr, "jetbrains://gateway/ssh/environment?h=127.0.0.1&u=agent&p=32777&launchIde=true&projectHint=/home/agent/workspace") {
+		t.Errorf("expected JetBrains URI in stdout, got: %s", outStr)
+	}
+	foundURILaunch := false
 	for _, cmd := range executedCmds {
-		if strings.Contains(cmd, "webstorm") && !strings.Contains(cmd, "--remote-dev") {
-			foundWebStorm = true
+		if strings.Contains(cmd, "jetbrains://gateway/ssh/environment") {
+			foundURILaunch = true
 		}
 	}
-	if !foundWebStorm {
-		t.Errorf("expected clean webstorm launch command without --remote-dev, got: %v", executedCmds)
+	if !foundURILaunch {
+		t.Errorf("expected system URI launch command for JetBrains, got: %v", executedCmds)
+	}
+
+	// Test 5b: JetBrains launch on macOS ("open")
+	restoreDarwinLauncher := SetSystemURILauncherForTesting(func() string { return "open" })
+	executedCmds = nil
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"agent", "open", "ide-agent", "in", "goland"}, &stdout, &stderr)
+	restoreDarwinLauncher()
+	if code != 0 {
+		t.Fatalf("agent open in goland (darwin) failed: %d, stderr: %s", code, stderr.String())
+	}
+	foundDarwinLaunch := false
+	for _, cmd := range executedCmds {
+		if strings.HasPrefix(cmd, "open jetbrains://") {
+			foundDarwinLaunch = true
+		}
+	}
+	if !foundDarwinLaunch {
+		t.Errorf("expected darwin 'open' launch command for JetBrains, got: %v", executedCmds)
 	}
 
 	// Test 6: VS Code launch failure
@@ -301,7 +449,7 @@ func TestAgentOpenExecution(t *testing.T) {
 	defer restoreRuntime2()
 
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "ide-agent"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "ide-agent", "in", "code"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected code 1 when launching VS Code fails, got %d", code)
 	}
@@ -309,35 +457,69 @@ func TestAgentOpenExecution(t *testing.T) {
 		t.Errorf("expected launch error message in stderr, got: %s", stderr.String())
 	}
 
-	// Test 7: JetBrains launch failure
+	// Test 7a: JetBrains URI launcher fails, but fallback to target IDE binary succeeds
 	execCommandContext = mockFn
 	restoreRuntime()
-	jbFailFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	var fallbackCmds []string
+	jbURIFailFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		cmdStr := fmt.Sprintf("%s %s", name, strings.Join(args, " "))
+		fallbackCmds = append(fallbackCmds, cmdStr)
 		if name == "podman" && len(args) > 1 && args[0] == "port" {
 			return exec.Command("echo", "127.0.0.1:32777")
 		}
-		if strings.Contains(name, "webstorm") {
+		if name == "xdg-open" || name == "open" {
 			return exec.Command("false")
 		}
 		return exec.Command("true")
 	}
-	execCommandContext = jbFailFn
-	restoreRuntime3 := runtime.SetExecCommandContextForTesting(jbFailFn)
+	execCommandContext = jbURIFailFn
+	restoreRuntime3 := runtime.SetExecCommandContextForTesting(jbURIFailFn)
 	defer restoreRuntime3()
 
 	stderr.Reset()
 	stdout.Reset()
 	code = Run([]string{"agent", "open", "ide-agent", "in", "webstorm"}, &stdout, &stderr)
-	if code != 1 {
-		t.Errorf("expected code 1 when launching WebStorm fails, got %d", code)
+	if code != 0 {
+		t.Fatalf("expected code 0 when URI fails but fallback succeeds, got %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "sndbx error launching") {
+	foundFallbackBinary := false
+	for _, cmd := range fallbackCmds {
+		if strings.Contains(cmd, "webstorm") {
+			foundFallbackBinary = true
+		}
+	}
+	if !foundFallbackBinary {
+		t.Errorf("expected fallback execution of target binary, got: %v", fallbackCmds)
+	}
+
+	// Test 7b: JetBrains URI launcher fails AND fallback binary fails
+	restoreRuntime3()
+	jbBothFailFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) > 1 && args[0] == "port" {
+			return exec.Command("echo", "127.0.0.1:32777")
+		}
+		if name == "xdg-open" || name == "open" || strings.Contains(name, "webstorm") {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}
+	execCommandContext = jbBothFailFn
+	restoreRuntimeBoth := runtime.SetExecCommandContextForTesting(jbBothFailFn)
+	defer restoreRuntimeBoth()
+
+	stderr.Reset()
+	stdout.Reset()
+	code = Run([]string{"agent", "open", "ide-agent", "in", "webstorm"}, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("expected code 1 when launching WebStorm fallback fails, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "sndbx error launching WebStorm") {
 		t.Errorf("expected launch error for webstorm, got: %s", stderr.String())
 	}
 
 	// Test 8: Container start failure when stopped
+	restoreRuntimeBoth()
 	execCommandContext = mockFn
-	restoreRuntime3()
 	startFailFn := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "podman" && len(args) > 1 && args[0] == "port" {
 			return exec.Command("false") // Port fails
@@ -352,7 +534,7 @@ func TestAgentOpenExecution(t *testing.T) {
 	defer restoreRuntime4()
 
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "ide-agent"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "ide-agent", "in", "code"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected code 1 when start container fails, got %d", code)
 	}
@@ -369,7 +551,7 @@ func TestAgentOpenExecution(t *testing.T) {
 	defer restoreRuntime5()
 
 	stderr.Reset()
-	code = Run([]string{"agent", "open", "ide-agent"}, &stdout, &stderr)
+	code = Run([]string{"agent", "open", "ide-agent", "in", "code"}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("expected code 1 when port remains unavailable, got %d", code)
 	}
@@ -385,7 +567,7 @@ func TestAgentOpenExecution(t *testing.T) {
 		AgentsDir:     paths.AgentsDir,
 	}
 	stderr.Reset()
-	c := handleAgentOpen(context.Background(), badPaths, []string{"ide-agent"}, &stdout, &stderr)
+	c := handleAgentOpen(context.Background(), badPaths, []string{"ide-agent", "in", "code"}, nil, &stdout, &stderr)
 	if c != 1 {
 		t.Errorf("expected code 1 on sync ssh config failure, got %d", c)
 	}

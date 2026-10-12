@@ -69,7 +69,7 @@ Contributors and AI coding agents working on the `agent-sandbox` repository itse
 ### 1. Host Management CLI (`sndbx`)
 Installed to `~/.local/bin/sndbx`, provides host-side management:
 - **Agent Lifecycle**:
-  - `sndbx agent create <name> [as <type>] [--role <role>] [--host|--host-only] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
+  - `sndbx agent create <name> [as <type>] [--role <role>] [--host|--no-container] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
   - `sndbx agent start <name>`: Starts container via Podman (or reports first-class host agent status).
   - `sndbx agent tmux <name>`: Attaches interactively to container tmux supervisor.
   - `sndbx agent open <name> [in <ide>] [--no-launch]`: Launches desktop IDE remote development (VS Code, JetBrains).

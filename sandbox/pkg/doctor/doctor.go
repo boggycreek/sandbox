@@ -24,6 +24,7 @@ import (
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/config"
 	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/plugin"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
@@ -129,7 +130,7 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 	}
 
 	healed := false
-	if !cfg.IsHost() {
+	if !cfg.IsNoContainer() {
 		if cfg.ContainerName == "" {
 			cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
 			healed = true
@@ -298,15 +299,7 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 	}
 
 	userSSHConfig := filepath.Join(paths.SSHDir, "config")
-	includeDir := fmt.Sprintf("Include %s", paths.SSHConfigFile)
-	if data, err := os.ReadFile(userSSHConfig); err == nil {
-		if !strings.Contains(string(data), paths.SSHConfigFile) {
-			newContent := fmt.Sprintf("# OpenSSH Configuration\n# Agent Sandbox Host Include\n%s\n\n%s", includeDir, string(data))
-			_ = os.WriteFile(userSSHConfig, []byte(newContent), 0600)
-			healedInclude = true
-		}
-	} else if os.IsNotExist(err) {
-		_ = os.WriteFile(userSSHConfig, []byte(fmt.Sprintf("# OpenSSH Configuration\n# Agent Sandbox Host Include\n%s\n", includeDir)), 0600)
+	if linked, err := plugin.EnsureSSHConfigInclude(paths.SSHConfigFile, userSSHConfig); err == nil && linked {
 		healedInclude = true
 	}
 
@@ -329,11 +322,11 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 }
 
 func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, report *DoctorReport) {
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Podman Storage",
 			Status:  StatusOK,
-			Message: "Bare host agent (direct host execution, no container storage required)",
+			Message: "No-container agent (direct host execution, no container storage required)",
 		})
 		return
 	}
@@ -417,11 +410,11 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 }
 
 func checkAndHealImage(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
+	if cfg.IsNoContainer() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Agent Image",
 			Status:  StatusOK,
-			Message: "Host agent (no OCI container image required)",
+			Message: "No-container agent (no OCI container image required)",
 		})
 		return
 	}
@@ -509,14 +502,15 @@ func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths conf
 }
 
 func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
+	if cfg.IsNoContainer() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Gitea Git Forge",
 			Status:  StatusOK,
-			Message: "Host agent (direct host execution, no dedicated Gitea account required)",
+			Message: "No-container agent (no Gitea account required)",
 		})
 		return
 	}
+
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
@@ -566,14 +560,15 @@ func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsHost() {
+	if cfg.IsNoContainer() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "SonarQube Analysis",
 			Status:  StatusOK,
-			Message: "Host agent (direct host execution, no SonarQube account required)",
+			Message: "No-container agent (no SonarQube account required)",
 		})
 		return
 	}
+
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin"
@@ -633,11 +628,11 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 }
 
 func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Container & Runtime",
 			Status:  StatusOK,
-			Message: "Bare host agent (direct host execution, no container runtime required)",
+			Message: "No-container agent (direct host execution, no container runtime required)",
 		})
 		return
 	}

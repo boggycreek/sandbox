@@ -329,4 +329,3 @@ func TestBackplaneResponder(t *testing.T) {
 		t.Errorf("expected nil error on empty content, got: %v", err)
 	}
 }
-
