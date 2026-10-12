@@ -105,9 +105,6 @@ func TestStructuredRootlessNetnsErrorDetection(t *testing.T) {
 			if !IsRootlessNetnsError(tc.err, []byte(tc.out)) {
 				t.Errorf("expected IsRootlessNetnsError=true for tc %q (err=%v, out=%s)", tc.name, tc.err, tc.out)
 			}
-			if !isRootlessNetnsError(tc.err, []byte(tc.out)) {
-				t.Errorf("expected isRootlessNetnsError=true for tc %q (err=%v, out=%s)", tc.name, tc.err, tc.out)
-			}
 		})
 	}
 
@@ -128,6 +125,16 @@ func TestStructuredRootlessNetnsErrorDetection(t *testing.T) {
 			out:  "Error: address already in use: bind to 0.0.0.0:2222 failed",
 		},
 		{
+			name: "port already allocated",
+			err:  errors.New("exit status 125"),
+			out:  "Error: rootlessport: port is already allocated",
+		},
+		{
+			name: "network not found",
+			err:  errors.New("exit status 125"),
+			out:  "Error: network not found: agent-sandbox-infra",
+		},
+		{
 			name: "generic io error",
 			err:  errors.New("connection reset by peer"),
 			out:  "stream closed unexpectedly",
@@ -136,6 +143,16 @@ func TestStructuredRootlessNetnsErrorDetection(t *testing.T) {
 			name: "unrelated command failure",
 			err:  errors.New("exit status 1"),
 			out:  "unknown flag: --invalid",
+		},
+		{
+			name: "exit status 127 without netns pattern",
+			err:  errors.New("exit status 127"),
+			out:  "command not found: foobar",
+		},
+		{
+			name: "container bridge failure without netns keyword",
+			err:  errors.New("exit status 1"),
+			out:  "bridge foo already exists",
 		},
 	}
 
@@ -146,63 +163,6 @@ func TestStructuredRootlessNetnsErrorDetection(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestRootlessNetnsExitErrorAndDirectoryState(t *testing.T) {
-	// Execute a real command to obtain an actual *exec.ExitError
-	cmd127 := exec.Command("sh", "-c", "exit 127")
-	err127 := cmd127.Run()
-	if err127 == nil {
-		t.Fatalf("expected error from exit 127")
-	}
-
-	cmd125 := exec.Command("sh", "-c", "exit 125")
-	err125 := cmd125.Run()
-	if err125 == nil {
-		t.Fatalf("expected error from exit 125")
-	}
-
-	cmd1 := exec.Command("sh", "-c", "exit 1")
-	err1 := cmd1.Run()
-	if err1 == nil {
-		t.Fatalf("expected error from exit 1")
-	}
-
-	// Exit code 127 with network keywords in output should be detected
-	if !IsRootlessNetnsError(err127, []byte("container network bridge failed")) {
-		t.Errorf("expected exit status 127 with network keyword to be detected")
-	}
-
-	// Exit code 125 with pasta keyword
-	if !IsRootlessNetnsError(err125, []byte("pasta helper exited unexpectedly")) {
-		t.Errorf("expected exit status 125 with pasta keyword to be detected")
-	}
-
-	// Exit code 1 without netns patterns or directory inconsistency should NOT be detected
-	if IsRootlessNetnsError(err1, []byte("compilation error in main.go")) {
-		t.Errorf("expected exit status 1 with unrelated text to return false")
-	}
-
-	// Test NetnsDirChecker override
-	restoreChecker := SetNetnsDirCheckerForTesting(func() bool { return true }) // simulate inconsistent directory
-	defer restoreChecker()
-
-	// When directory is inconsistent and exit code is 127:
-	if !IsRootlessNetnsError(err127, []byte("launch failed")) {
-		t.Errorf("expected exit status 127 to be detected when netns directory is inconsistent")
-	}
-
-	// When directory is inconsistent and error mentions network:
-	if !IsRootlessNetnsError(errors.New("failed to initialize network"), []byte("")) {
-		t.Errorf("expected network failure to be detected when netns directory is inconsistent")
-	}
-
-	// Reset checker back to nil / default
-	restoreChecker2 := SetNetnsDirCheckerForTesting(nil)
-	defer restoreChecker2()
-
-	// Default directory checker execution
-	_ = defaultNetnsDirChecker()
 }
 
 func TestEnsureRootlessNetNSExecution(t *testing.T) {

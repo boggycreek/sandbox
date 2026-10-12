@@ -84,9 +84,6 @@ func (m *Message) SigningPayload() []byte {
 	))
 }
 
-// Citation represents a citation identifier for threaded messaging.
-type Citation string
-
 // FormatCitation returns a memorable citation handle (e.g. <id>#14)
 func FormatCitation(sender string, seq int64) string {
 	if seq <= 0 {

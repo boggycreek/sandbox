@@ -48,9 +48,9 @@ func TestClientContextCancellationPreCancelled(t *testing.T) {
 		t.Errorf("expected context.Canceled on Say, got: %v", err)
 	}
 
-	// 4. SayWithBlob with pre-cancelled context
-	if _, err := client.SayWithBlob(ctx, "hello", "blob1"); !errors.Is(err, context.Canceled) {
-		t.Errorf("expected context.Canceled on SayWithBlob, got: %v", err)
+	// 4. Say with blob and pre-cancelled context
+	if _, err := client.Say(ctx, "hello", "blob1"); !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled on Say with blob, got: %v", err)
 	}
 
 	// 5. Tell with pre-cancelled context
@@ -152,7 +152,19 @@ func TestClientContextDeadlineInFlight(t *testing.T) {
 		t.Errorf("operation blocked too long: %v", elapsed)
 	}
 
-	// 2. In-flight cancellation
+	// Subsequent command on broken client must fail with ErrClosed
+	_, err = client.Exec(context.Background(), "PING")
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed on subsequent Exec after deadline expiry, got: %v", err)
+	}
+
+	// 2. In-flight cancellation on fresh client
+	client2, err := Dial(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed dialing silent server for client2: %v", err)
+	}
+	defer client2.Close()
+
 	ctxCancel, cancelFunc := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(25 * time.Millisecond)
@@ -160,7 +172,7 @@ func TestClientContextDeadlineInFlight(t *testing.T) {
 	}()
 
 	start = time.Now()
-	_, err = client.Exec(ctxCancel, "PING")
+	_, err = client2.Exec(ctxCancel, "PING")
 	elapsed = time.Since(start)
 
 	if !errors.Is(err, context.Canceled) {
@@ -168,6 +180,12 @@ func TestClientContextDeadlineInFlight(t *testing.T) {
 	}
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("cancellation unblock took too long: %v", elapsed)
+	}
+
+	// Subsequent command on client2 must also fail with ErrClosed
+	_, err = client2.Exec(context.Background(), "PING")
+	if !errors.Is(err, ErrClosed) {
+		t.Errorf("expected ErrClosed on subsequent Exec after cancellation, got: %v", err)
 	}
 }
 
@@ -238,10 +256,10 @@ func TestSayWithBlobAndReplyWithCitation(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. SayWithBlob
-	msg, err := client.SayWithBlob(ctx, "Broadcast with blob", "agent-sayblob:blob:123")
+	// 1. Say with blob
+	msg, err := client.Say(ctx, "Broadcast with blob", "agent-sayblob:blob:123")
 	if err != nil {
-		t.Fatalf("SayWithBlob failed: %v", err)
+		t.Fatalf("Say failed: %v", err)
 	}
 	if msg.BlobPath != "agent-sayblob:blob:123" {
 		t.Errorf("unexpected blob path: %s", msg.BlobPath)
@@ -408,4 +426,36 @@ func TestPublishMessageNextSeqError(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error on Say after close, got nil")
 	}
+}
+
+func TestClientLockCancellation(t *testing.T) {
+	srv, port := startMockValkeyServer(t)
+	defer srv.close()
+
+	cfg := ClientConfig{
+		Host:    "127.0.0.1",
+		Port:    port,
+		AgentID: "agent-lock",
+	}
+	client, err := Dial(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("failed dialing mock valkey: %v", err)
+	}
+	defer client.Close()
+
+	// Acquire lock manually
+	if err := client.lock(context.Background()); err != nil {
+		t.Fatalf("failed acquiring lock: %v", err)
+	}
+
+	// Another caller with a short timeout context should abort lock acquisition
+	ctxTimeout, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	_, err = client.Exec(ctxTimeout, "PING")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected DeadlineExceeded waiting for lock, got: %v", err)
+	}
+
+	client.unlock()
 }

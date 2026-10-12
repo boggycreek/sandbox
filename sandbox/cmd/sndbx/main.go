@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -18,23 +17,9 @@ import (
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
-// execCommandContext delegates command creation to runtime.CommandContext.
-func execCommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
-	return runtime.CommandContext(ctx, name, args...)
-}
 
-// SetExecCommandContextForTesting configures command execution mocking for unit tests in a thread-safe manner.
-func SetExecCommandContextForTesting(fn func(ctx context.Context, name string, args ...string) *exec.Cmd) func() {
-	return runtime.SetExecCommandContextForTesting(fn)
-}
-
-// SetCommandExecutor sets the CommandExecutor for sndbx commands and returns a restore function.
-func SetCommandExecutor(executor runtime.CommandExecutor) func() {
-	return runtime.SetDefaultExecutor(executor)
-}
 
 func main() {
 	os.Exit(Run(os.Args[1:], os.Stdout, os.Stderr))

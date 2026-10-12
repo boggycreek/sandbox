@@ -1012,3 +1012,26 @@ func TestBPStateQueueConcurrent(t *testing.T) {
 		t.Fatalf("expected %d popped items, got %d", expectedCount, poppedCount)
 	}
 }
+
+func TestRecvBlockExtendsContextTimeout(t *testing.T) {
+	valkey := harness.StartValkeyHarness(t)
+	defer valkey.Teardown()
+
+	cfg := libbp.ClientConfig{
+		Host:     "127.0.0.1",
+		Port:     valkey.Port,
+		AgentID:  "agent-2",
+		Password: valkey.Agent2Pass,
+	}
+
+	// Short parent context (100ms) with --block 1
+	shortCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	// handleRecv extends context so that --block 1 executes without hitting the 100ms deadline prematurely
+	code := handleRecv(shortCtx, cfg, []string{"--block", "1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("handleRecv with block 1 failed: code=%d err=%s", code, stderr.String())
+	}
+}

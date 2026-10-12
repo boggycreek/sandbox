@@ -26,7 +26,7 @@ func TestCommandExecutorInSndbx(t *testing.T) {
 	restore := SetCommandExecutor(mock)
 	defer restore()
 
-	cmd := execCommandContext(context.Background(), "test-cli-cmd")
+	cmd := runtime.CommandContext(context.Background(), "test-cli-cmd")
 	if cmd == nil || len(executed) != 1 || executed[0] != "test-cli-cmd" {
 		t.Errorf("expected mock command to execute through SetCommandExecutor")
 	}

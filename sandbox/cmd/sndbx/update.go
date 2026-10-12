@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
+	sndbxRuntime "github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 type HTTPClient interface {
@@ -49,7 +50,7 @@ Comprehensive update of the Agent Sandbox local environment:
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
 		fmt.Fprintf(stdout, "==> Cloning repository into %s...\n", repoDir)
 		_ = os.MkdirAll(filepath.Dir(repoDir), 0755)
-		cloneCmd := execCommandContext(ctx, "git", "clone", "--branch", "main", "https://github.com/boggycreek/sandbox.git", repoDir)
+		cloneCmd := sndbxRuntime.CommandContext(ctx, "git", "clone", "--branch", "main", "https://github.com/boggycreek/sandbox.git", repoDir)
 		cloneCmd.Stdout = stdout
 		cloneCmd.Stderr = stderr
 		if err := cloneCmd.Run(); err != nil {
@@ -57,13 +58,13 @@ Comprehensive update of the Agent Sandbox local environment:
 		}
 	} else {
 		fmt.Fprintf(stdout, "==> Synchronizing repository (%s)...\n", repoDir)
-		fetchCmd := execCommandContext(ctx, "git", "fetch", "origin", "main")
+		fetchCmd := sndbxRuntime.CommandContext(ctx, "git", "fetch", "origin", "main")
 		fetchCmd.Dir = repoDir
 		fetchCmd.Stdout = stdout
 		fetchCmd.Stderr = stderr
 		_ = fetchCmd.Run()
 
-		gitCmd := execCommandContext(ctx, "git", "pull", "--ff-only", "origin", "main")
+		gitCmd := sndbxRuntime.CommandContext(ctx, "git", "pull", "--ff-only", "origin", "main")
 		gitCmd.Dir = repoDir
 		gitCmd.Stdout = stdout
 		gitCmd.Stderr = stderr
@@ -84,7 +85,7 @@ Comprehensive update of the Agent Sandbox local environment:
 	}
 
 	fmt.Fprintln(stdout, "==> Building all native OCI container images...")
-	imgCmd := execCommandContext(ctx, "make", "build-images")
+	imgCmd := sndbxRuntime.CommandContext(ctx, "make", "build-images")
 	imgCmd.Dir = repoDir
 	imgCmd.Stdout = stdout
 	imgCmd.Stderr = stderr
@@ -169,7 +170,7 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 			}
 		}
 		targetFile := filepath.Join(binDir, bin)
-		buildCmd := execCommandContext(ctx, "go", "build", "-trimpath", "-ldflags=-s -w", "-o", targetFile, cmdDir)
+		buildCmd := sndbxRuntime.CommandContext(ctx, "go", "build", "-trimpath", "-ldflags=-s -w", "-o", targetFile, cmdDir)
 		buildCmd.Dir = repoDir
 		buildCmd.Env = cleanEnv
 		buildCmd.Stdout = stdout

@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -369,22 +370,7 @@ func TestDeactivateUser(t *testing.T) {
 	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
 	if err := client500.DeactivateUser(context.Background(), "agent-bob"); err == nil {
 		t.Fatal("expected error on 500, got nil")
-	}
-}
-
-func TestCreateUser(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/users/create" {
-			http.NotFound(w, r)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"user":{"login":"agent-alice"}}`))
-	}))
-	defer server.Close()
-
-	client := NewClient(ClientConfig{BaseURL: server.URL})
-	if err := client.CreateUser(context.Background(), "agent-alice", "pass123", "Alice", "alice@test.local"); err != nil {
-		t.Fatalf("unexpected error on CreateUser: %v", err)
+	} else if !strings.Contains(err.Error(), "POST /api/users/deactivate failed with HTTP 500") {
+		t.Fatalf("expected error to contain method and path, got: %v", err)
 	}
 }

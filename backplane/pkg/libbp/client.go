@@ -22,6 +22,9 @@ import (
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp/resp"
 )
 
+// ErrClosed is returned when an operation is attempted on a closed or broken connection.
+var ErrClosed = errors.New("client connection closed")
+
 // ClientConfig configuration parameters for connecting to the backplane
 type ClientConfig struct {
 	Host           string
@@ -44,6 +47,7 @@ type Client struct {
 	writer    *resp.Writer
 	mu        sync.Mutex
 	closed    bool
+	lockCh    chan struct{}
 	pubKeys   map[string]ed25519.PublicKey
 	pubKeysMu sync.RWMutex
 }
@@ -83,8 +87,10 @@ func Dial(ctx context.Context, cfg ClientConfig) (*Client, error) {
 		conn:    conn,
 		reader:  resp.NewReader(conn),
 		writer:  resp.NewWriter(conn),
+		lockCh:  make(chan struct{}, 1),
 		pubKeys: make(map[string]ed25519.PublicKey),
 	}
+	c.lockCh <- struct{}{}
 
 	// Authenticate if password provided
 	if cfg.Password != "" {
@@ -111,6 +117,35 @@ func Dial(ctx context.Context, cfg ClientConfig) (*Client, error) {
 	return c, nil
 }
 
+func (c *Client) lock(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.lockCh:
+		return nil
+	}
+}
+
+func (c *Client) unlock() {
+	c.lockCh <- struct{}{}
+}
+
+func (c *Client) markBroken() {
+	c.mu.Lock()
+	c.closed = true
+	conn := c.conn
+	c.mu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+func (c *Client) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
 // Close closes the underlying network connection
 func (c *Client) Close() error {
 	c.mu.Lock()
@@ -133,34 +168,58 @@ func (c *Client) Exec(ctx context.Context, cmd string, args ...string) (resp.Val
 	if err := AssertAllowed(c.cfg.AgentID, cmd, args...); err != nil {
 		return resp.Value{}, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	if err := c.lock(ctx); err != nil {
+		return resp.Value{}, err
+	}
+	defer c.unlock()
 	return c.execInternal(ctx, cmd, args...)
 }
 
 func (c *Client) execInternal(ctx context.Context, cmd string, args ...string) (resp.Value, error) {
-	if c.closed {
-		return resp.Value{}, errors.New("client connection closed")
+	if c.isClosed() {
+		return resp.Value{}, ErrClosed
 	}
 	if err := ctx.Err(); err != nil {
 		return resp.Value{}, err
 	}
 
+	minBlockDuration := time.Duration(0)
+	if strings.EqualFold(cmd, "XREAD") || strings.EqualFold(cmd, "BRPOP") || strings.EqualFold(cmd, "BLPOP") {
+		for i, arg := range args {
+			if strings.EqualFold(arg, "BLOCK") && i+1 < len(args) {
+				if ms, err := strconv.Atoi(args[i+1]); err == nil && ms > 0 {
+					minBlockDuration = time.Duration(ms)*time.Millisecond + 5*time.Second
+				}
+				break
+			}
+		}
+	}
+
 	if c.conn != nil {
 		if deadline, ok := ctx.Deadline(); ok {
 			_ = c.conn.SetDeadline(deadline)
+		} else if minBlockDuration > 0 {
+			if c.cfg.ReadTimeout > minBlockDuration {
+				_ = c.conn.SetDeadline(time.Now().Add(c.cfg.ReadTimeout))
+			} else {
+				_ = c.conn.SetDeadline(time.Now().Add(minBlockDuration))
+			}
 		} else if c.cfg.ReadTimeout > 0 {
 			_ = c.conn.SetDeadline(time.Now().Add(c.cfg.ReadTimeout))
 		} else {
 			_ = c.conn.SetDeadline(time.Time{})
 		}
 		defer func() {
-			_ = c.conn.SetDeadline(time.Time{})
+			if c.conn != nil && !c.isClosed() {
+				_ = c.conn.SetDeadline(time.Time{})
+			}
 		}()
 
 		if ctx.Done() != nil {
 			stop := context.AfterFunc(ctx, func() {
-				_ = c.conn.SetDeadline(time.Unix(1, 0))
+				if c.conn != nil {
+					_ = c.conn.SetDeadline(time.Unix(1, 0))
+				}
 			})
 			defer stop()
 		}
@@ -168,6 +227,7 @@ func (c *Client) execInternal(ctx context.Context, cmd string, args ...string) (
 
 	fullCmd := append([]string{cmd}, args...)
 	if err := c.writer.WriteCommand(fullCmd...); err != nil {
+		c.markBroken()
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return resp.Value{}, ctxErr
 		}
@@ -178,15 +238,13 @@ func (c *Client) execInternal(ctx context.Context, cmd string, args ...string) (
 	}
 	val, err := c.reader.ReadValue()
 	if err != nil {
+		c.markBroken()
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return resp.Value{}, ctxErr
 		}
 		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
 			return resp.Value{}, context.DeadlineExceeded
 		}
-		return resp.Value{}, err
-	}
-	if err := ctx.Err(); err != nil {
 		return resp.Value{}, err
 	}
 	if val.Type == resp.TypeError {
@@ -209,17 +267,14 @@ func (c *Client) NextSeq(ctx context.Context) (int64, error) {
 }
 
 // publishMessage is a shared helper for broadcasting or directly delivering messages to Valkey streams.
-func (c *Client) publishMessage(ctx context.Context, stream, destination, content, blobPath string, replyTo *Citation) (*Message, error) {
+func (c *Client) publishMessage(ctx context.Context, stream, destination, content, blobPath string, replyTo string) (*Message, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	seq, err := c.NextSeq(ctx)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		seq = 1
+		return nil, fmt.Errorf("failed generating sequence number: %w", err)
 	}
 
 	now := time.Now().UnixMilli()
@@ -231,9 +286,7 @@ func (c *Client) publishMessage(ctx context.Context, stream, destination, conten
 		Timestamp:   now,
 		Seq:         seq,
 		Citation:    FormatCitation(c.cfg.AgentID, seq),
-	}
-	if replyTo != nil {
-		msg.ReplyTo = string(*replyTo)
+		ReplyTo:     replyTo,
 	}
 
 	if c.cfg.SigningKey != nil {
@@ -261,12 +314,7 @@ func (c *Client) publishMessage(ctx context.Context, stream, destination, conten
 
 // Say broadcasts a message to the fleet (<id>:out)
 func (c *Client) Say(ctx context.Context, content string, blobPath string) (*Message, error) {
-	return c.publishMessage(ctx, OutKey(c.cfg.AgentID), "", content, blobPath, nil)
-}
-
-// SayWithBlob broadcasts a message with a parked blob attachment to the fleet (<id>:out)
-func (c *Client) SayWithBlob(ctx context.Context, content string, blobPath string) (*Message, error) {
-	return c.Say(ctx, content, blobPath)
+	return c.publishMessage(ctx, OutKey(c.cfg.AgentID), "", content, blobPath, "")
 }
 
 // Tell sends a direct point-to-point message to an agent's inbox (<recipient>:inbox)
@@ -276,7 +324,7 @@ func (c *Client) Tell(ctx context.Context, recipient string, content string) (*M
 
 // TellWithBlob sends a direct point-to-point message with an optional parked blob attachment
 func (c *Client) TellWithBlob(ctx context.Context, recipient string, content string, blobPath string) (*Message, error) {
-	return c.publishMessage(ctx, InboxKey(recipient), recipient, content, blobPath, nil)
+	return c.publishMessage(ctx, InboxKey(recipient), recipient, content, blobPath, "")
 }
 
 // Post publishes a long-form message by parking the payload as a blob and setting the summary as content.
@@ -295,12 +343,7 @@ func (c *Client) Post(ctx context.Context, recipient string, summary string, pay
 
 // Reply sends a threaded direct message citing a parent message ID
 func (c *Client) Reply(ctx context.Context, replyToMsgID string, recipient string, content string) (*Message, error) {
-	var citation *Citation
-	if replyToMsgID != "" {
-		cit := Citation(replyToMsgID)
-		citation = &cit
-	}
-	return c.publishMessage(ctx, InboxKey(recipient), recipient, content, "", citation)
+	return c.publishMessage(ctx, InboxKey(recipient), recipient, content, "", replyToMsgID)
 }
 
 // GetCursor retrieves the last read stream ID for a given stream key
@@ -311,10 +354,7 @@ func (c *Client) GetCursor(ctx context.Context, streamKey string) (string, error
 	cursorKey := CursorKey(c.cfg.AgentID)
 	val, err := c.Exec(ctx, "HGET", cursorKey, streamKey)
 	if err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return "0-0", nil
+		return "", err
 	}
 	if val.IsNull {
 		return "0-0", nil
@@ -339,8 +379,8 @@ func (c *Client) Recv(ctx context.Context, blockSeconds int) ([]*Message, error)
 	streams := []string{myInbox}
 
 	peers, err := c.Peers(ctx)
-	if err != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
+	if err != nil {
+		return nil, err
 	}
 	for _, p := range peers {
 		if strings.ToLower(p.ID) != strings.ToLower(c.cfg.AgentID) {
@@ -356,8 +396,8 @@ func (c *Client) Recv(ctx context.Context, blockSeconds int) ([]*Message, error)
 			return nil, err
 		}
 		cur, err := c.GetCursor(ctx, s)
-		if err != nil && ctx.Err() != nil {
-			return nil, ctx.Err()
+		if err != nil {
+			return nil, err
 		}
 		if cur == "" {
 			cur = "0-0"
@@ -568,10 +608,7 @@ func (c *Client) GetStatus(ctx context.Context, agentID string) (string, error) 
 	statusKey := StatusKey(agentID)
 	val, err := c.Exec(ctx, "GET", statusKey)
 	if err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return "", nil
+		return "", err
 	}
 	if val.IsNull {
 		return "", nil
@@ -646,10 +683,7 @@ func (c *Client) GetLiaison(ctx context.Context) (string, error) {
 	}
 	val, err := c.Exec(ctx, "GET", KeyLiaisonCurrent)
 	if err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		return "", nil
+		return "", err
 	}
 	if val.IsNull {
 		return "", nil

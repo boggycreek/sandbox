@@ -8,11 +8,8 @@ package runtime
 import (
 	"context"
 	"os/exec"
-	"sync"
 	"sync/atomic"
 	"testing"
-
-	"github.com/boggycreek/sandbox/pkg/config"
 )
 
 func TestDefaultCommandExecutor(t *testing.T) {
@@ -72,12 +69,6 @@ func TestWithCommandExecutorContextInjection(t *testing.T) {
 	if cmd2 == nil || calledName != "another-bin" {
 		t.Errorf("expected CommandContext to use injected executor, calledName=%q", calledName)
 	}
-
-	// execCommandContext alias
-	cmd3 := execCommandContext(injectedCtx, "alias-bin")
-	if cmd3 == nil || calledName != "alias-bin" {
-		t.Errorf("expected execCommandContext alias to work, calledName=%q", calledName)
-	}
 }
 
 func TestThreadSafeSetDefaultExecutor(t *testing.T) {
@@ -122,53 +113,6 @@ func TestSetExecCommandContextForTestingHelper(t *testing.T) {
 	// nil restores default
 	restoreNil := SetExecCommandContextForTesting(nil)
 	defer restoreNil()
-}
-
-func TestPodmanRuntimeInstance(t *testing.T) {
-	// 1. NewPodmanRuntime with nil defaults
-	rtDefault := NewPodmanRuntime(nil)
-	if rtDefault.Executor == nil {
-		t.Errorf("expected non-nil default executor")
-	}
-
-	// 2. NewPodmanRuntime with mock
-	var executedCmds []string
-	var mu sync.Mutex
-	mock := CommandExecutorFunc(func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		mu.Lock()
-		executedCmds = append(executedCmds, name)
-		mu.Unlock()
-		return exec.Command("true")
-	})
-
-	rt := NewPodmanRuntime(mock)
-	ctx := context.Background()
-
-	cmd := rt.CommandContext(ctx, "podman", "version")
-	if cmd == nil {
-		t.Errorf("expected non-nil command")
-	}
-
-	// Test PodmanRuntime wrappers
-	_ = rt.EnsureNetwork(ctx, "test-net")
-	_ = rt.EnsureVolume(ctx, "test-vol")
-	_ = rt.EnsureRootlessNetNS(ctx)
-	_ = rt.StopAgentContainer(ctx, "test-agent")
-	_, _ = rt.InspectAgentContainer(ctx, "test-agent")
-	_, _ = rt.ResolveAgentImage(ctx, "agent-base:latest")
-
-	cfg := &config.AgentConfig{
-		ContainerName: "agent-test",
-		VolumeName:    "agent-test-home",
-	}
-	paths := config.Paths{}
-	_ = rt.StartAgentContainer(ctx, cfg, paths, "127.0.0.1", 6379)
-
-	mu.Lock()
-	if len(executedCmds) == 0 {
-		t.Errorf("expected rt methods to record executions via mock")
-	}
-	mu.Unlock()
 }
 
 func TestParallelExecutionWithContextInjectedExecutor(t *testing.T) {

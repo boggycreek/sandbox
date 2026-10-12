@@ -129,7 +129,18 @@ func RunWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defaultTimeout := 30 * time.Second
+	if cmd == "recv" {
+		peekFs := flag.NewFlagSet("recv-peek", flag.ContinueOnError)
+		peekFs.SetOutput(io.Discard)
+		blockSec := peekFs.Int("block", 0, "")
+		_ = peekFs.Parse(cmdArgs)
+		if *blockSec > 0 {
+			defaultTimeout = time.Duration(*blockSec)*time.Second + 15*time.Second
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
 	switch cmd {
@@ -578,6 +589,15 @@ func handleRecv(ctx context.Context, cfg libbp.ClientConfig, args []string, stdo
 	jsonOutput := fs.Bool("json", false, "Output in JSON format")
 	if err := fs.Parse(args); err != nil {
 		return 1
+	}
+
+	if *blockSec > 0 {
+		needed := time.Duration(*blockSec)*time.Second + 10*time.Second
+		if d, ok := ctx.Deadline(); !ok || time.Until(d) < needed {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.Background(), needed)
+			defer cancel()
+		}
 	}
 
 	client, err := getClient(ctx, cfg, stderr)

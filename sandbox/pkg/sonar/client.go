@@ -118,7 +118,9 @@ func NewClient(cfg ClientConfig) *Client {
 	}
 }
 
-func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values, body io.Reader, result any) error {
+const maxResponseBody = 10 << 20 // 10MB limit
+
+func (c *Client) doRequest(ctx context.Context, method, path string, query url.Values, body io.Reader, result any, acceptableStatuses ...int) error {
 	reqURL := c.baseURL + path
 	if len(query) > 0 {
 		reqURL = fmt.Sprintf("%s?%s", reqURL, query.Encode())
@@ -126,7 +128,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, body)
 	if err != nil {
-		return fmt.Errorf("failed creating request: %w", err)
+		return fmt.Errorf("failed creating %s %s request: %w", method, path, err)
 	}
 
 	if body != nil && req.Header.Get("Content-Type") == "" {
@@ -136,36 +138,34 @@ func (c *Client) doRequest(ctx context.Context, method, path string, query url.V
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed executing request: %w", err)
+		return fmt.Errorf("failed executing %s %s request: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 
-	if !isAcceptableStatus(path, resp.StatusCode) {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("request failed with HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+	if !isAcceptableStatus(resp.StatusCode, acceptableStatuses...) {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		return fmt.Errorf("%s %s failed with HTTP %d: %s", method, path, resp.StatusCode, string(bodyBytes))
 	}
 
 	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-			return fmt.Errorf("failed decoding response: %w", err)
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(result); err != nil {
+			return fmt.Errorf("failed decoding %s %s response: %w", method, path, err)
 		}
 	}
 
 	return nil
 }
 
-func isAcceptableStatus(path string, status int) bool {
+func isAcceptableStatus(status int, acceptableStatuses ...int) bool {
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
 		return true
 	}
-	switch path {
-	case "/api/projects/create", "/api/users/create":
-		return status == http.StatusBadRequest
-	case "/api/user_tokens/revoke", "/api/users/deactivate":
-		return status == http.StatusBadRequest || status == http.StatusNotFound
-	default:
-		return false
+	for _, code := range acceptableStatuses {
+		if status == code {
+			return true
+		}
 	}
+	return false
 }
 
 // GetSystemStatus queries the health and operational state of SonarQube.
@@ -212,7 +212,7 @@ func (c *Client) CreateProject(ctx context.Context, projectKey, name string) err
 	params := url.Values{}
 	params.Set("project", projectKey)
 	params.Set("name", name)
-	return c.doRequest(ctx, http.MethodPost, "/api/projects/create", nil, strings.NewReader(params.Encode()), nil)
+	return c.doRequest(ctx, http.MethodPost, "/api/projects/create", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest)
 }
 
 // GetComponentMeasures retrieves requested metric values for a project or component.
@@ -239,12 +239,7 @@ func (c *Client) EnsureUser(ctx context.Context, login, password, name, email st
 	if email != "" {
 		params.Set("email", email)
 	}
-	return c.doRequest(ctx, http.MethodPost, "/api/users/create", nil, strings.NewReader(params.Encode()), nil)
-}
-
-// CreateUser creates a user account in SonarQube if it does not already exist.
-func (c *Client) CreateUser(ctx context.Context, login, password, name, email string) error {
-	return c.EnsureUser(ctx, login, password, name, email)
+	return c.doRequest(ctx, http.MethodPost, "/api/users/create", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest)
 }
 
 // GenerateUserToken creates an analysis or user token for the specified user login.
@@ -266,14 +261,14 @@ func (c *Client) RevokeUserToken(ctx context.Context, login, tokenName string) e
 	params := url.Values{}
 	params.Set("login", login)
 	params.Set("name", tokenName)
-	return c.doRequest(ctx, http.MethodPost, "/api/user_tokens/revoke", nil, strings.NewReader(params.Encode()), nil)
+	return c.doRequest(ctx, http.MethodPost, "/api/user_tokens/revoke", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest, http.StatusNotFound)
 }
 
 // DeactivateUser deactivates a user account in SonarQube.
 func (c *Client) DeactivateUser(ctx context.Context, login string) error {
 	params := url.Values{}
 	params.Set("login", login)
-	return c.doRequest(ctx, http.MethodPost, "/api/users/deactivate", nil, strings.NewReader(params.Encode()), nil)
+	return c.doRequest(ctx, http.MethodPost, "/api/users/deactivate", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest, http.StatusNotFound)
 }
 
 func (c *Client) authenticate(req *http.Request) {

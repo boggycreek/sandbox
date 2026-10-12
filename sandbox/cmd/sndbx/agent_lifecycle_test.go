@@ -20,7 +20,6 @@ import (
 
 	"github.com/boggycreek/sandbox/backplane/test/harness"
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
 func TestAgentDoctorScenarios(t *testing.T) {
@@ -343,7 +342,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	}
 
 	// 2. Start existing agent with mocked podman
-	restore := runtime.SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	restore := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.Command("true")
 	})
 	defer restore()

@@ -143,7 +143,7 @@ func EnsureNetwork(ctx context.Context, netName string) error {
 	}
 	createCmd := CommandContext(ctx, "podman", "network", "create", netName)
 	if out, err := createCmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
 			retryCmd := CommandContext(ctx, "podman", "network", "create", netName)
 			return retryCmd.Run()
@@ -185,7 +185,7 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 	if err := checkCmd.Run(); err == nil {
 		startCmd := CommandContext(ctx, "podman", "start", egressName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
 				retryCmd := CommandContext(ctx, "podman", "start", egressName)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
@@ -211,7 +211,7 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 
 	cmd := CommandContext(ctx, "podman", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
 			retryCmd := CommandContext(ctx, "podman", args...)
 			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
@@ -278,7 +278,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		// Container exists, start if stopped
 		startCmd := CommandContext(ctx, "podman", "start", cfg.ContainerName)
 		if out, err := startCmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
 				retryCmd := CommandContext(ctx, "podman", "start", cfg.ContainerName)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr == nil {
@@ -377,7 +377,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 		cmd.Env = append(cmd.Environ(), sonarEnv...)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
 			retryCmd := CommandContext(ctx, "podman", args...)
 			if len(sonarEnv) > 0 {
@@ -684,7 +684,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	if err := checkValkey.Run(); err != nil {
 		cmd := CommandContext(ctx, "podman", valkeyArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
 				retryCmd := CommandContext(ctx, "podman", valkeyArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
@@ -714,7 +714,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 			startCmd := CommandContext(ctx, "podman", "start", valkeyContainer)
 			if startOut, err := startCmd.CombinedOutput(); err != nil {
 				_ = CommandContext(ctx, "podman", "rm", "-f", valkeyContainer).Run()
-				if isRootlessNetnsError(err, startOut) {
+				if IsRootlessNetnsError(err, startOut) {
 					_ = EnsureRootlessNetNS(ctx)
 				}
 				cmd := CommandContext(ctx, "podman", valkeyArgs...)
@@ -752,7 +752,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	if err := checkGitea.Run(); err != nil {
 		cmd := CommandContext(ctx, "podman", giteaArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
 				retryCmd := CommandContext(ctx, "podman", giteaArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
@@ -766,7 +766,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		startCmd := CommandContext(ctx, "podman", "start", giteaContainer)
 		if startOut, err := startCmd.CombinedOutput(); err != nil {
 			_ = CommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
-			if isRootlessNetnsError(err, startOut) {
+			if IsRootlessNetnsError(err, startOut) {
 				_ = EnsureRootlessNetNS(ctx)
 			}
 			cmd := CommandContext(ctx, "podman", giteaArgs...)
@@ -798,7 +798,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	if err := checkPostgres.Run(); err != nil {
 		cmd := CommandContext(ctx, "podman", postgresArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			if isRootlessNetnsError(err, out) {
+			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
 				retryCmd := CommandContext(ctx, "podman", postgresArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
@@ -812,7 +812,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		startCmd := CommandContext(ctx, "podman", "start", postgresContainer)
 		if startOut, err := startCmd.CombinedOutput(); err != nil {
 			_ = CommandContext(ctx, "podman", "rm", "-f", postgresContainer).Run()
-			if isRootlessNetnsError(err, startOut) {
+			if IsRootlessNetnsError(err, startOut) {
 				_ = EnsureRootlessNetNS(ctx)
 			}
 			cmd := CommandContext(ctx, "podman", postgresArgs...)
@@ -845,7 +845,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		if err := checkSonar.Run(); err != nil {
 			cmd := CommandContext(ctx, "podman", sonarArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
-				if isRootlessNetnsError(err, out) {
+				if IsRootlessNetnsError(err, out) {
 					_ = EnsureRootlessNetNS(ctx)
 					retryCmd := CommandContext(ctx, "podman", sonarArgs...)
 					if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
@@ -859,7 +859,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 			startCmd := CommandContext(ctx, "podman", "start", sonarContainer)
 			if startOut, err := startCmd.CombinedOutput(); err != nil {
 				_ = CommandContext(ctx, "podman", "rm", "-f", sonarContainer).Run()
-				if isRootlessNetnsError(err, startOut) {
+				if IsRootlessNetnsError(err, startOut) {
 					_ = EnsureRootlessNetNS(ctx)
 				}
 				cmd := CommandContext(ctx, "podman", sonarArgs...)
@@ -1083,7 +1083,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 
 	cmd := CommandContext(ctx, "podman", valkeyArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		if isRootlessNetnsError(err, out) {
+		if IsRootlessNetnsError(err, out) {
 			_ = EnsureRootlessNetNS(ctx)
 			retryCmd := CommandContext(ctx, "podman", valkeyArgs...)
 			if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
