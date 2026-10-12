@@ -67,7 +67,7 @@ func RegisterValkeyACL(ctx context.Context, cfg *config.AgentConfig, paths confi
 //
 //nolint:gocritic // paths passed by value for consistency with config package
 func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		return nil
 	}
 
@@ -113,7 +113,7 @@ func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 //
 //nolint:gocritic // paths passed by value for consistency with config package
 func RegisterSonarUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		return nil
 	}
 	adminPass := os.Getenv("SONAR_ADMIN_PASSWORD")
@@ -342,7 +342,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 3. Gitea Account & Keys
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		report.AddStep("Gitea User & Keys", StatusSkipped, "No-container agent has no container boundary (skipped)", nil)
 	} else if os.Getenv("GITEA_DISABLED") == "1" {
 		report.AddStep("Gitea User & Keys", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
@@ -355,7 +355,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 4. SonarQube User & Analysis Token
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		report.AddStep("SonarQube Account & Token", StatusSkipped, "No-container agent has no container boundary (skipped)", nil)
 	} else if os.Getenv("SONAR_DISABLED") == "1" {
 		report.AddStep("SonarQube Account & Token", StatusSkipped, "SonarQube infrastructure is disabled via SONAR_DISABLED (skipped)", nil)
@@ -368,7 +368,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	}
 
 	// 5. Host SSH Configuration Sync
-	if cfg.IsBareHost() {
+	if cfg.IsNoContainer() {
 		report.AddStep("SSH Configuration", StatusSkipped, "No-container agent does not expose container SSH daemon (skipped)", nil)
 	} else if err := runtime.SyncSSHConfigFile(ctx, paths); err == nil {
 		report.AddStep("SSH Configuration", StatusOK, "Synchronized host SSH config", nil)

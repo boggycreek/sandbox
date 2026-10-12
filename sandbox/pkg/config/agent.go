@@ -57,12 +57,7 @@ type AgentConfig struct {
 
 // IsNoContainer returns true if the agent runs directly on the host without any container.
 func (c *AgentConfig) IsNoContainer() bool {
-	return c.HostOnly || c.Runtime == "no-container" || c.Runtime == "bare-host" || (c.Runtime == "host" && c.WorkspacePath == "" && c.ContainerName == "")
-}
-
-// IsBareHost is an alias for IsNoContainer for backward compatibility.
-func (c *AgentConfig) IsBareHost() bool {
-	return c.IsNoContainer()
+	return c.HostOnly || c.Runtime == "no-container" || (c.Runtime == "host" && c.WorkspacePath == "" && c.ContainerName == "")
 }
 
 // IsHostContainer returns true if the agent runs as a host-connected container with workspace projection
@@ -72,7 +67,7 @@ func (c *AgentConfig) IsHostContainer() bool {
 
 // IsHost returns true if the agent operates in host context (no-container host or host-connected container)
 func (c *AgentConfig) IsHost() bool {
-	return c.IsBareHost() || c.IsHostContainer()
+	return c.IsNoContainer() || c.IsHostContainer()
 }
 
 // ResolveImage returns the canonical OCI image name for a given input or preset

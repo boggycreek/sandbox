@@ -108,26 +108,22 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	}
 
 	// Host-agent tests
-	cfg.Runtime = "bare-host"
-	if !cfg.IsBareHost() || !cfg.IsNoContainer() || !cfg.IsHost() || cfg.IsHostContainer() {
-		t.Errorf("expected IsBareHost()=true, IsNoContainer()=true, IsHost()=true, IsHostContainer()=false when Runtime=bare-host")
-	}
 	cfg.Runtime = "no-container"
-	if !cfg.IsBareHost() || !cfg.IsNoContainer() || !cfg.IsHost() || cfg.IsHostContainer() {
-		t.Errorf("expected IsBareHost()=true, IsNoContainer()=true, IsHost()=true, IsHostContainer()=false when Runtime=no-container")
+	if !cfg.IsNoContainer() || !cfg.IsHost() || cfg.IsHostContainer() {
+		t.Errorf("expected IsNoContainer()=true, IsHost()=true, IsHostContainer()=false when Runtime=no-container")
 	}
 	cfg.Runtime = "host-container"
 	cfg.WorkspacePath = "/tmp"
-	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsBareHost() || cfg.IsNoContainer() {
-		t.Errorf("expected IsHostContainer()=true, IsHost()=true, IsBareHost()=false, IsNoContainer()=false when Runtime=host-container")
+	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsNoContainer() {
+		t.Errorf("expected IsHostContainer()=true, IsHost()=true, IsNoContainer()=false when Runtime=host-container")
 	}
 	cfg.Runtime = "container"
 	cfg.HostOnly = true
-	if !cfg.IsBareHost() || !cfg.IsNoContainer() || !cfg.IsHost() {
-		t.Errorf("expected IsBareHost(), IsNoContainer() and IsHost() to return true when HostOnly=true")
+	if !cfg.IsNoContainer() || !cfg.IsHost() {
+		t.Errorf("expected IsNoContainer() and IsHost() to return true when HostOnly=true")
 	}
 	cfg.HostOnly = false
-	if cfg.IsHost() || cfg.IsHostContainer() || cfg.IsBareHost() || cfg.IsNoContainer() {
+	if cfg.IsHost() || cfg.IsHostContainer() || cfg.IsNoContainer() {
 		t.Errorf("expected all host helpers to return false for standard container")
 	}
 

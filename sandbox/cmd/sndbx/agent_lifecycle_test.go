@@ -581,9 +581,9 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed loading created host-coder config: %v", err)
 	}
-	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsBareHost() {
-		t.Errorf("expected IsHostContainer()=true, IsHost()=true, got IsHostContainer=%v, IsHost=%v, IsBareHost=%v",
-			cfg.IsHostContainer(), cfg.IsHost(), cfg.IsBareHost())
+	if !cfg.IsHostContainer() || !cfg.IsHost() || cfg.IsNoContainer() {
+		t.Errorf("expected IsHostContainer()=true, IsHost()=true, got IsHostContainer=%v, IsHost=%v, IsNoContainer=%v",
+			cfg.IsHostContainer(), cfg.IsHost(), cfg.IsNoContainer())
 	}
 	if cfg.WorkspacePath != wsDir {
 		t.Errorf("expected WorkspacePath=%q, got %q", wsDir, cfg.WorkspacePath)
@@ -605,9 +605,9 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed loading bare-bot config: %v", err)
 	}
-	if !cfgBare.IsBareHost() || !cfgBare.IsNoContainer() || !cfgBare.IsHost() || cfgBare.IsHostContainer() {
-		t.Errorf("expected IsBareHost()=true, IsNoContainer()=true for bare-bot, got: IsBareHost=%v, IsNoContainer=%v, IsHostContainer=%v",
-			cfgBare.IsBareHost(), cfgBare.IsNoContainer(), cfgBare.IsHostContainer())
+	if !cfgBare.IsNoContainer() || !cfgBare.IsHost() || cfgBare.IsHostContainer() {
+		t.Errorf("expected IsNoContainer()=true for bare-bot, got: IsNoContainer=%v, IsHostContainer=%v",
+			cfgBare.IsNoContainer(), cfgBare.IsHostContainer())
 	}
 	if cfgBare.Runtime != "no-container" {
 		t.Errorf("expected Runtime 'no-container', got %q", cfgBare.Runtime)
