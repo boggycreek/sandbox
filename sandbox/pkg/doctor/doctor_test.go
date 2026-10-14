@@ -512,18 +512,54 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 	os.Setenv("GITEA_URL", "http://127.0.0.1:65502")
 	checkAndHealGiteaContainer(ctx, paths, reportOffline)
 
-	// 7b. Test SonarQube mock server for infra check
+	// 7b. Test SonarQube mock server for infra check (already authenticated)
 	sonarServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"UP"}`))
+		switch r.URL.Path {
+		case "/api/system/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"UP"}`))
+		case "/api/users/current":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
 	}))
 	defer sonarServer.Close()
 	os.Setenv("SONAR_HOST_URL", sonarServer.URL)
-	checkAndHealSonarContainer(ctx, report2)
+	checkAndHealSonarContainer(ctx, paths, report2)
+
+	// 7b-2. Test SonarQube auto-heal from default password
+	var healedPass bool
+	sonarHealServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/system/status":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"UP"}`))
+		case "/api/users/current":
+			w.WriteHeader(http.StatusUnauthorized)
+		case "/api/users/change_password":
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "admin" && pass == "admin" {
+				healedPass = true
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			w.WriteHeader(http.StatusBadRequest)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer sonarHealServer.Close()
+	os.Setenv("SONAR_HOST_URL", sonarHealServer.URL)
+	healReport := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealSonarContainer(ctx, paths, healReport)
+	if !healedPass || healReport.HealedCount != 1 {
+		t.Errorf("expected SonarQube password auto-healing to succeed: healedPass=%v healedCount=%d", healedPass, healReport.HealedCount)
+	}
 
 	// 7c. Test unreachable SonarQube in infra check
 	os.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65503")
-	checkAndHealSonarContainer(ctx, reportOffline)
+	checkAndHealSonarContainer(ctx, paths, reportOffline)
 
 	// 7d. Test PostgreSQL TCP listener for infra check
 	pgLn, pgErr := net.Listen("tcp", "127.0.0.1:0")

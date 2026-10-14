@@ -271,6 +271,17 @@ func (c *Client) DeactivateUser(ctx context.Context, login string) error {
 	return c.doRequest(ctx, http.MethodPost, "/api/users/deactivate", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest, http.StatusNotFound)
 }
 
+// ChangePassword updates a user password, optionally verifying the previous password.
+func (c *Client) ChangePassword(ctx context.Context, login, previousPassword, newPassword string) error {
+	params := url.Values{}
+	params.Set("login", login)
+	if previousPassword != "" {
+		params.Set("previousPassword", previousPassword)
+	}
+	params.Set("password", newPassword)
+	return c.doRequest(ctx, http.MethodPost, "/api/users/change_password", nil, strings.NewReader(params.Encode()), nil, http.StatusNoContent)
+}
+
 func (c *Client) authenticate(req *http.Request) {
 	if c.token != "" {
 		req.SetBasicAuth(c.token, "")

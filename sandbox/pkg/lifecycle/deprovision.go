@@ -83,13 +83,7 @@ func DeprovisionGiteaUser(ctx context.Context, agentName string) error {
 
 // DeprovisionSonarUser revokes the agent's analysis token and deactivates the agent account in SonarQube.
 func DeprovisionSonarUser(ctx context.Context, agentName string) error {
-	adminPass := os.Getenv("SONAR_ADMIN_PASSWORD")
-	if adminPass == "" {
-		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
-	}
-	if adminPass == "" {
-		adminPass = "admin"
-	}
+	adminPass := config.GetSonarAdminPassword()
 	adminUser := os.Getenv("SONAR_ADMIN_USER")
 	if adminUser == "" {
 		adminUser = "admin"

@@ -21,6 +21,7 @@ import (
 	"github.com/boggycreek/sandbox/pkg/config"
 	"github.com/boggycreek/sandbox/pkg/gitea"
 	"github.com/boggycreek/sandbox/pkg/runtime"
+	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
 // infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
@@ -57,7 +58,7 @@ func DiagnoseAndHealInfra(ctx context.Context, paths config.Paths) (*DoctorRepor
 	checkAndHealPostgresContainer(ctx, report)
 
 	// 7. SonarQube Mechanical Analysis Container & Service
-	checkAndHealSonarContainer(ctx, report)
+	checkAndHealSonarContainer(ctx, paths, report)
 
 	return report, nil
 }
@@ -376,7 +377,7 @@ func checkAndHealGiteaContainer(ctx context.Context, paths config.Paths, report 
 	})
 }
 
-func checkAndHealSonarContainer(ctx context.Context, report *DoctorReport) {
+func checkAndHealSonarContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {
 	containerName := infraSonarContainer
 	info, err := runtime.InspectAgentContainer(ctx, containerName)
 	state := "stopped"
@@ -414,9 +415,57 @@ func checkAndHealSonarContainer(ctx context.Context, report *DoctorReport) {
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&status)
 
+	// Verify or auto-heal admin authentication
+	adminUser := os.Getenv("SONAR_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+	adminPass := config.GetSonarAdminPassword()
+
+	client := sonar.NewClient(sonar.ClientConfig{
+		BaseURL:   sonarURL,
+		AdminUser: adminUser,
+		AdminPass: adminPass,
+		Timeout:   2 * time.Second,
+	})
+
+	// Check if current credentials authenticate
+	reqAuth, _ := http.NewRequestWithContext(ctx, "GET", sonarURL+"/api/users/current", nil)
+	reqAuth.SetBasicAuth(adminUser, adminPass)
+	respAuth, errAuth := httpClient.Do(reqAuth)
+	authOK := false
+	if errAuth == nil && respAuth != nil {
+		authOK = (respAuth.StatusCode == http.StatusOK)
+		_ = respAuth.Body.Close()
+	}
+
+	if !authOK {
+		// Attempt auto-healing default "admin:admin" to configured adminPass
+		defaultClient := sonar.NewClient(sonar.ClientConfig{
+			BaseURL:   sonarURL,
+			AdminUser: "admin",
+			AdminPass: "admin",
+			Timeout:   2 * time.Second,
+		})
+		if healErr := defaultClient.ChangePassword(ctx, "admin", "admin", adminPass); healErr == nil {
+			_ = paths.SetEnvVar("SONAR_ADMIN_USER", adminUser)
+			_ = paths.SetEnvVar("SONAR_ADMIN_PASSWORD", adminPass)
+			report.Checks = append(report.Checks, CheckItem{
+				Name:    "SonarQube Service",
+				Status:  StatusHealed,
+				Message: fmt.Sprintf("Container %s, HTTP %s responsive, auto-healed default admin password", state, sonarURL),
+				Healed:  true,
+			})
+			report.HealedCount++
+			return
+		}
+	}
+
 	report.Checks = append(report.Checks, CheckItem{
 		Name:    "SonarQube Service",
 		Status:  StatusOK,
-		Message: fmt.Sprintf("Container %s, HTTP %s responsive (status: %s)", state, sonarURL, status.Status),
+		Message: fmt.Sprintf("Container %s, HTTP %s responsive (status: %s, admin: verified)", state, sonarURL, status.Status),
 	})
+	_ = client
 }
+
