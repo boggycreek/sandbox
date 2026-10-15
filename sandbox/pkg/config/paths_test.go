@@ -141,3 +141,63 @@ func TestPathsEnsureDirectoriesErrors(t *testing.T) {
 		t.Errorf("expected EnsureDirectories to fail when path is a regular file")
 	}
 }
+
+func TestFormatAndGetSonarAdminPassword(t *testing.T) {
+	if got := FormatSonarAdminPassword(""); got != "Admin_backplane_pass" {
+		t.Errorf("expected default password, got %s", got)
+	}
+	if got := FormatSonarAdminPassword("alllowercase123"); got != "Admin_alllowercase123" {
+		t.Errorf("expected prepended Admin_, got %s", got)
+	}
+	if got := FormatSonarAdminPassword("AlreadyHasUpper"); got != "AlreadyHasUpper" {
+		t.Errorf("expected unchanged, got %s", got)
+	}
+
+	t.Setenv("SONAR_ADMIN_PASSWORD", "customUpper123")
+	t.Setenv("ADMIN_BACKPLANE_PASSWORD", "fallbacklower")
+	if got := GetSonarAdminPassword(); got != "customUpper123" {
+		t.Errorf("expected customUpper123, got %s", got)
+	}
+
+	t.Setenv("SONAR_ADMIN_PASSWORD", "")
+	if got := GetSonarAdminPassword(); got != "Admin_fallbacklower" {
+		t.Errorf("expected Admin_fallbacklower, got %s", got)
+	}
+
+	t.Setenv("ADMIN_BACKPLANE_PASSWORD", "")
+	if got := GetSonarAdminPassword(); got != "Admin_backplane_pass" {
+		t.Errorf("expected Admin_backplane_pass, got %s", got)
+	}
+}
+
+func TestPathsSetEnvVar(t *testing.T) {
+	tmpDir := t.TempDir()
+	envPath := filepath.Join(tmpDir, "test.env")
+	p := Paths{EnvFile: envPath}
+
+	if err := p.SetEnvVar("KEY1", "val1"); err != nil {
+		t.Fatalf("SetEnvVar failed: %v", err)
+	}
+	if os.Getenv("KEY1") != "val1" {
+		t.Errorf("expected env var set, got %s", os.Getenv("KEY1"))
+	}
+
+	// Update existing
+	if err := p.SetEnvVar("KEY1", "newval"); err != nil {
+		t.Fatalf("SetEnvVar update failed: %v", err)
+	}
+	if os.Getenv("KEY1") != "newval" {
+		t.Errorf("expected updated env var, got %s", os.Getenv("KEY1"))
+	}
+
+	// Append second
+	if err := p.SetEnvVar("KEY2", "val2"); err != nil {
+		t.Fatalf("SetEnvVar second append failed: %v", err)
+	}
+	content, _ := os.ReadFile(envPath)
+	contentStr := string(content)
+	if !strings.Contains(contentStr, "KEY1=newval") || !strings.Contains(contentStr, "KEY2=val2") {
+		t.Errorf("unexpected env content:\n%s", contentStr)
+	}
+}
+

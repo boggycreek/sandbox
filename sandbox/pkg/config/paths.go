@@ -6,6 +6,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +97,78 @@ func (p Paths) LoadEnv() {
 		}
 	}
 }
+
+// FormatSonarAdminPassword returns a password complying with SonarQube's policy (at least 1 uppercase letter).
+func FormatSonarAdminPassword(pass string) string {
+	pass = strings.TrimSpace(pass)
+	if pass == "" {
+		return "Admin_backplane_pass"
+	}
+	hasUpper := false
+	for _, r := range pass {
+		if r >= 'A' && r <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	if !hasUpper {
+		return "Admin_" + pass
+	}
+	return pass
+}
+
+// GetSonarAdminPassword retrieves the configured SonarQube admin password from environment,
+// falling back to formatted ADMIN_BACKPLANE_PASSWORD.
+func GetSonarAdminPassword() string {
+	if p := os.Getenv("SONAR_ADMIN_PASSWORD"); p != "" {
+		return FormatSonarAdminPassword(p)
+	}
+	if p := os.Getenv("ADMIN_BACKPLANE_PASSWORD"); p != "" {
+		return FormatSonarAdminPassword(p)
+	}
+	return "Admin_backplane_pass"
+}
+
+// SetEnvVar updates or appends a key=value pair to the .env file.
+func (p Paths) SetEnvVar(key, value string) error {
+	data, err := os.ReadFile(p.EnvFile)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	found := false
+	var newLines []string
+	prefix := key + "="
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			newLines = append(newLines, fmt.Sprintf("%s=%s", key, value))
+			found = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+	if !found {
+		if len(newLines) > 0 && strings.TrimSpace(newLines[len(newLines)-1]) != "" {
+			newLines = append(newLines, "")
+		}
+		newLines = append(newLines, fmt.Sprintf("%s=%s", key, value))
+	}
+
+	content := strings.Join(newLines, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	_ = os.MkdirAll(filepath.Dir(p.EnvFile), 0700)
+	if err := os.WriteFile(p.EnvFile, []byte(content), 0600); err != nil {
+		return err
+	}
+	_ = os.Setenv(key, value)
+	return nil
+}
+
 
 // ResolveRepoDir returns the absolute path to the local repository checkout.
 // It checks AGENT_SANDBOX_REPO, SANDBOX_ROOT, the parent of the binary,

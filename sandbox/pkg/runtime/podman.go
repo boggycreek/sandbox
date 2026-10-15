@@ -19,6 +19,7 @@ import (
 
 	"github.com/boggycreek/sandbox/pkg/config"
 	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
 // EgressImage is the default OCI image for the network egress filter sidecar.
@@ -868,6 +869,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 				}
 			}
 		}
+		_ = BootstrapSonar(ctx, adminPass)
 	}
 
 	return nil
@@ -943,6 +945,79 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 
 	return nil
 }
+
+// BootstrapSonar transitions SonarQube default credentials and ensures the admin user is configured.
+func BootstrapSonar(ctx context.Context, adminPass string) error {
+	adminPass = config.FormatSonarAdminPassword(adminPass)
+
+	sonarURL := os.Getenv("SONAR_HOST_URL")
+	if sonarURL == "" {
+		sonarURL = os.Getenv("SONARQUBE_URL")
+	}
+	if sonarURL == "" {
+		sonarURL = "http://127.0.0.1:9000"
+	}
+
+	httpClient := &http.Client{Timeout: 1 * time.Second}
+	deadline := time.Now().Add(10 * time.Second)
+	ready := false
+	for time.Now().Before(deadline) {
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, sonarURL+"/api/system/status", nil)
+		resp, err := httpClient.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var status struct {
+				Status string `json:"status"`
+			}
+			if decodeErr := json.NewDecoder(resp.Body).Decode(&status); decodeErr == nil && status.Status == "UP" {
+				_ = resp.Body.Close()
+				ready = true
+				break
+			}
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	if !ready {
+		return fmt.Errorf("timed out waiting for sonarqube service")
+	}
+
+	// First, check if already authenticated with target adminPass
+	checkClient := sonar.NewClient(sonar.ClientConfig{
+		BaseURL:   sonarURL,
+		AdminUser: "admin",
+		AdminPass: adminPass,
+		Timeout:   2 * time.Second,
+	})
+	if _, err := checkClient.GetSystemStatus(ctx); err == nil {
+		// Test authentication with a protected endpoint
+		reqAuth, _ := http.NewRequestWithContext(ctx, http.MethodGet, sonarURL+"/api/users/current", nil)
+		reqAuth.SetBasicAuth("admin", adminPass)
+		if respAuth, errAuth := httpClient.Do(reqAuth); errAuth == nil {
+			_ = respAuth.Body.Close()
+			if respAuth.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+	}
+
+	// Try transitioning from default "admin:admin" to target adminPass
+	defaultClient := sonar.NewClient(sonar.ClientConfig{
+		BaseURL:   sonarURL,
+		AdminUser: "admin",
+		AdminPass: "admin",
+		Timeout:   3 * time.Second,
+	})
+	_ = defaultClient.ChangePassword(ctx, "admin", "admin", adminPass)
+
+	return nil
+}
+
 
 // StopInfraStack halts shared infrastructure containers
 func StopInfraStack(ctx context.Context) error {

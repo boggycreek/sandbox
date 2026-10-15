@@ -269,6 +269,8 @@ SANDBOX_ROOT=${SANDBOX_ROOT}
 HUMAN_NAME=${HUMAN_NAME}
 ADMIN_BACKPLANE_PASSWORD=${ADMIN_PW}
 HUMAN_BACKPLANE_PASSWORD=${HUMAN_PW}
+SONAR_ADMIN_USER=admin
+SONAR_ADMIN_PASSWORD=Admin_${ADMIN_PW}
 
 # Optional API Keys (uncomment and populate as needed)
 # ANTHROPIC_API_KEY=
@@ -281,6 +283,14 @@ else
   # Ensure SANDBOX_ROOT is recorded if not present
   if ! grep -q "^SANDBOX_ROOT=" "${ENV_FILE}" 2>/dev/null; then
     echo "SANDBOX_ROOT=${SANDBOX_ROOT}" >> "${ENV_FILE}"
+  fi
+  if ! grep -q "^SONAR_ADMIN_PASSWORD=" "${ENV_FILE}" 2>/dev/null; then
+    # Derive from existing ADMIN_BACKPLANE_PASSWORD if available
+    EXISTING_ADMIN_PW="$(grep "^ADMIN_BACKPLANE_PASSWORD=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || true)"
+    if [ -n "${EXISTING_ADMIN_PW}" ]; then
+      echo "SONAR_ADMIN_USER=admin" >> "${ENV_FILE}"
+      echo "SONAR_ADMIN_PASSWORD=Admin_${EXISTING_ADMIN_PW}" >> "${ENV_FILE}"
+    fi
   fi
 fi
 

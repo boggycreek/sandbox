@@ -569,10 +569,7 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 		return
 	}
 
-	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
-	if adminPass == "" {
-		adminPass = "admin"
-	}
+	adminPass := config.GetSonarAdminPassword()
 	adminUser := os.Getenv("SONAR_ADMIN_USER")
 	if adminUser == "" {
 		adminUser = "admin"

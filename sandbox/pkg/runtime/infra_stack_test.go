@@ -8,6 +8,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -320,3 +322,77 @@ func TestRecreateValkeyContainerScenarios(t *testing.T) {
 	}
 	restore3()
 }
+
+func TestBootstrapSonar(t *testing.T) {
+	// 1. Canceled context returns context error
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := BootstrapSonar(canceledCtx, "pass")
+	if err == nil {
+		t.Errorf("expected canceled context error from BootstrapSonar")
+	}
+
+	// 2. Successful already-configured scenario
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/system/status":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"UP"}`))
+		case "/api/users/current":
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "admin" && pass == "AlreadyConfiguredPass" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("SONAR_HOST_URL", server.URL)
+	if err := BootstrapSonar(context.Background(), "AlreadyConfiguredPass"); err != nil {
+		t.Errorf("expected BootstrapSonar to succeed on already-authenticated instance: %v", err)
+	}
+
+	// 3. Transition from default "admin:admin" to new password
+	var changedPassword bool
+	transitionServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/system/status":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"UP"}`))
+		case "/api/users/current":
+			user, pass, ok := r.BasicAuth()
+			if ok && user == "admin" && pass == "Admin_lowercasenewpass" && changedPassword {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+		case "/api/users/change_password":
+			user, pass, ok := r.BasicAuth()
+			_ = r.ParseForm()
+			if ok && user == "admin" && pass == "admin" {
+				if r.FormValue("password") == "Admin_lowercasenewpass" {
+					changedPassword = true
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusBadRequest)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer transitionServer.Close()
+
+	t.Setenv("SONAR_HOST_URL", transitionServer.URL)
+	if err := BootstrapSonar(context.Background(), "lowercasenewpass"); err != nil {
+		t.Errorf("expected BootstrapSonar to succeed transitioning password: %v", err)
+	}
+	if !changedPassword {
+		t.Errorf("expected change_password to be called")
+	}
+}
+

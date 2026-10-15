@@ -374,3 +374,34 @@ func TestDeactivateUser(t *testing.T) {
 		t.Fatalf("expected error to contain method and path, got: %v", err)
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/users/change_password" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+		_ = r.ParseForm()
+		if r.FormValue("login") != "admin" || r.FormValue("password") != "NewPass123!" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	if err := client.ChangePassword(context.Background(), "admin", "admin", "NewPass123!"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Failure case
+	if err := client.ChangePassword(context.Background(), "admin", "admin", "wrong"); err == nil {
+		t.Fatal("expected error on bad password, got nil")
+	}
+}
+
