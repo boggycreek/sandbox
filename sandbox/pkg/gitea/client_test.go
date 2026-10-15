@@ -128,6 +128,13 @@ func TestGiteaClientSuite(t *testing.T) {
 		case r.Method == http.MethodGet && path == "/api/v1/repos/fleet/conflict-repo":
 			w.WriteHeader(http.StatusNotFound)
 
+		case r.Method == http.MethodDelete && path == "/api/v1/repos/fleet/to-delete":
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodDelete && path == "/api/v1/repos/fleet/fail-repo":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"delete failed"}`))
+
 		case r.Method == http.MethodPost && path == "/api/v1/orgs/fleet/repos":
 			var payload map[string]interface{}
 			_ = json.NewDecoder(r.Body).Decode(&payload)
@@ -320,7 +327,28 @@ func TestGiteaClientSuite(t *testing.T) {
 		t.Errorf("expected error on empty repo args")
 	}
 
-	var err error
+	// 5b. RepoExists & DeleteRepo
+	exists, err := client.RepoExists(ctx, "fleet", "existing-repo")
+	if err != nil || !exists {
+		t.Errorf("expected existing-repo to exist: %v, %v", exists, err)
+	}
+	notExists, err := client.RepoExists(ctx, "fleet", "new-repo")
+	if err != nil || notExists {
+		t.Errorf("expected new-repo not to exist: %v, %v", notExists, err)
+	}
+	if _, err := client.RepoExists(ctx, "", ""); err == nil {
+		t.Errorf("expected error on empty repo args in RepoExists")
+	}
+
+	if err := client.DeleteRepo(ctx, "fleet", "to-delete"); err != nil {
+		t.Errorf("DeleteRepo to-delete failed: %v", err)
+	}
+	if err := client.DeleteRepo(ctx, "fleet", "fail-repo"); err == nil {
+		t.Errorf("expected DeleteRepo fail-repo to error")
+	}
+	if err := client.DeleteRepo(ctx, "", ""); err == nil {
+		t.Errorf("expected DeleteRepo with empty args to error")
+	}
 
 	// 6. ListIssues
 	issues, listErr := client.ListIssues(ctx, "fleet", "tasks", "open", 1, 10)

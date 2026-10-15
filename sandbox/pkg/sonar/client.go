@@ -282,6 +282,50 @@ func (c *Client) ChangePassword(ctx context.Context, login, previousPassword, ne
 	return c.doRequest(ctx, http.MethodPost, "/api/users/change_password", nil, strings.NewReader(params.Encode()), nil, http.StatusNoContent)
 }
 
+type projectSearchResponse struct {
+	Components []struct {
+		Key string `json:"key"`
+	} `json:"components"`
+}
+
+// ProjectExists checks if a project with the given key exists in SonarQube.
+func (c *Client) ProjectExists(ctx context.Context, projectKey string) (bool, error) {
+	query := url.Values{}
+	query.Set("projects", projectKey)
+	var resp projectSearchResponse
+	if err := c.doRequest(ctx, http.MethodGet, "/api/projects/search", query, nil, &resp); err != nil {
+		return false, err
+	}
+	for _, comp := range resp.Components {
+		if comp.Key == projectKey {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// DeleteProject deletes a project in SonarQube by key.
+func (c *Client) DeleteProject(ctx context.Context, projectKey string) error {
+	params := url.Values{}
+	params.Set("project", projectKey)
+	return c.doRequest(ctx, http.MethodPost, "/api/projects/delete", nil, strings.NewReader(params.Encode()), nil, http.StatusNotFound)
+}
+
+// GenerateProjectToken creates a scoped project analysis token for the specified projectKey.
+func (c *Client) GenerateProjectToken(ctx context.Context, projectKey, tokenName string) (string, error) {
+	_ = c.RevokeUserToken(ctx, "", tokenName)
+
+	params := url.Values{}
+	params.Set("name", tokenName)
+	params.Set("projectKey", projectKey)
+	params.Set("type", "PROJECT_ANALYSIS_TOKEN")
+	var resp generateTokenResponse
+	if err := c.doRequest(ctx, http.MethodPost, "/api/user_tokens/generate", nil, strings.NewReader(params.Encode()), &resp); err != nil {
+		return "", err
+	}
+	return resp.Token, nil
+}
+
 func (c *Client) authenticate(req *http.Request) {
 	if c.token != "" {
 		req.SetBasicAuth(c.token, "")
@@ -289,3 +333,4 @@ func (c *Client) authenticate(req *http.Request) {
 		req.SetBasicAuth(c.adminUser, c.adminPass)
 	}
 }
+

@@ -201,3 +201,22 @@ func TestPathsSetEnvVar(t *testing.T) {
 	}
 }
 
+func TestGetDefaultProjectOrg(t *testing.T) {
+	t.Setenv("DEFAULT_PROJECT_ORG", "")
+	if got := GetDefaultProjectOrg(); got != "factory" {
+		t.Errorf("expected factory by default, got %s", got)
+	}
+
+	t.Setenv("DEFAULT_PROJECT_ORG", "custom-org")
+	if got := GetDefaultProjectOrg(); got != "custom-org" {
+		t.Errorf("expected custom-org, got %s", got)
+	}
+}
+
+func TestPathsProjectsDir(t *testing.T) {
+	p := GetPaths()
+	if !strings.HasSuffix(p.ProjectsDir, filepath.Join("agent-sandbox", "projects")) {
+		t.Errorf("expected ProjectsDir to end with agent-sandbox/projects, got %s", p.ProjectsDir)
+	}
+}
+

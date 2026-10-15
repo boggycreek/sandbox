@@ -56,6 +56,11 @@ func RunWithContext(ctx context.Context, args []string, stdout, stderr io.Writer
 	case "agent":
 		return handleAgent(ctx, paths, domainArgs, stdout, stderr)
 
+	case "project":
+		projectCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		return handleProject(projectCtx, paths, domainArgs, stdout, stderr)
+
 	case "infra":
 		infraCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 		defer cancel()
@@ -107,6 +112,7 @@ Usage:
 
 Domains:
   agent       Manage agent instance provisioning and container lifecycles
+  project     Manage and link Gitea repositories and SonarQube projects
   infra       Manage shared Valkey, Gitea, and PostgreSQL infrastructure
   plugin      Install and manage IDE plugins (JetBrains Gateway/Toolbox, VS Code)
   gui         Launch native desktop Backplane GUI client
@@ -127,6 +133,13 @@ Agent Commands:
   %s agent clean <name>
   %s agent retire <name> [--force]
 
+Project Commands:
+  %s project create <name> [--org <org>] [--key <key>] [--description <desc>]
+  %s project list [--json]
+  %s project doctor [name] [--org <org>]
+  %s project link <gitea-repo> [sonar-project]
+  %s project delete <name> [--org <org>] [--force]
+
 Infra Commands:
   %s infra up
   %s infra down
@@ -142,5 +155,5 @@ Update Command:
   %s update
 
 Run '%s <domain> help' for more details on each command.
-`, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin)
+`, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin)
 }
