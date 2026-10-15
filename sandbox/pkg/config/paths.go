@@ -17,6 +17,7 @@ type Paths struct {
 	DataHome      string
 	StateHome     string
 	AgentsDir     string
+	ProjectsDir   string
 	SecretsDir    string
 	BinDir        string
 	EnvFile       string
@@ -51,6 +52,7 @@ func GetPaths() Paths {
 		DataHome:      dataHome,
 		StateHome:     xdgState,
 		AgentsDir:     filepath.Join(dataHome, "agents"),
+		ProjectsDir:   filepath.Join(dataHome, "projects"),
 		SecretsDir:    filepath.Join(dataHome, "secrets"),
 		BinDir:        filepath.Join(home, ".local", "bin"),
 		EnvFile:       filepath.Join(dataHome, ".env"),
@@ -63,7 +65,7 @@ func GetPaths() Paths {
 
 // EnsureDirectories creates required data and secrets directories
 func (p Paths) EnsureDirectories() error {
-	for _, dir := range []string{p.DataHome, p.AgentsDir, p.SecretsDir, p.BinDir, p.SSHDir, p.BPProfilesDir} {
+	for _, dir := range []string{p.DataHome, p.AgentsDir, p.ProjectsDir, p.SecretsDir, p.BinDir, p.SSHDir, p.BPProfilesDir} {
 		if dir == "" {
 			continue
 		}
@@ -127,6 +129,14 @@ func GetSonarAdminPassword() string {
 		return FormatSonarAdminPassword(p)
 	}
 	return "Admin_backplane_pass"
+}
+
+// GetDefaultProjectOrg returns the configured default project organization ("factory" by default).
+func GetDefaultProjectOrg() string {
+	if org := strings.TrimSpace(os.Getenv("DEFAULT_PROJECT_ORG")); org != "" {
+		return org
+	}
+	return "factory"
 }
 
 // SetEnvVar updates or appends a key=value pair to the .env file.

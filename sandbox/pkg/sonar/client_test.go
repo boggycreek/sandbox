@@ -405,3 +405,100 @@ func TestChangePassword(t *testing.T) {
 	}
 }
 
+func TestProjectExists(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/search" {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query().Get("projects")
+		w.Header().Set("Content-Type", "application/json")
+		if q == "existing-proj" {
+			_, _ = w.Write([]byte(`{"components":[{"key":"existing-proj"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"components":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	exists, err := client.ProjectExists(context.Background(), "existing-proj")
+	if err != nil || !exists {
+		t.Fatalf("expected existing-proj to exist, got %v, err=%v", exists, err)
+	}
+
+	notExists, err := client.ProjectExists(context.Background(), "unknown-proj")
+	if err != nil || notExists {
+		t.Fatalf("expected unknown-proj not to exist, got %v, err=%v", notExists, err)
+	}
+
+	server500 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	}))
+	defer server500.Close()
+	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
+	if _, err := client500.ProjectExists(context.Background(), "any"); err == nil {
+		t.Fatal("expected error on 500, got nil")
+	}
+}
+
+func TestDeleteProject(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/delete" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = r.ParseForm()
+		if r.FormValue("project") == "to-delete" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	if err := client.DeleteProject(context.Background(), "to-delete"); err != nil {
+		t.Fatalf("unexpected error deleting project: %v", err)
+	}
+	if err := client.DeleteProject(context.Background(), "unknown"); err == nil {
+		t.Fatal("expected error on bad delete request")
+	}
+}
+
+func TestGenerateProjectToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/user_tokens/revoke" {
+			_ = r.ParseForm()
+			if r.Form.Has("login") {
+				http.Error(w, "login parameter should not be passed", http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.URL.Path == "/api/user_tokens/generate" {
+			_ = r.ParseForm()
+			if r.FormValue("projectKey") == "proj-1" && r.FormValue("type") == "PROJECT_ANALYSIS_TOKEN" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"token":"sqp_token123"}`))
+				return
+			}
+			http.Error(w, "bad token request", http.StatusBadRequest)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{BaseURL: server.URL})
+	token, err := client.GenerateProjectToken(context.Background(), "proj-1", "token-name")
+	if err != nil || token != "sqp_token123" {
+		t.Fatalf("expected token sqp_token123, got %q, err=%v", token, err)
+	}
+
+	if _, err := client.GenerateProjectToken(context.Background(), "bad-proj", "token-name"); err == nil {
+		t.Fatal("expected error on bad request, got nil")
+	}
+}
+

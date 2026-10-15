@@ -310,6 +310,45 @@ func (c *Client) EnsureRepo(ctx context.Context, orgName, repoName, description 
 	return nil
 }
 
+// RepoExists checks if a repository exists under an organization or user namespace
+func (c *Client) RepoExists(ctx context.Context, orgName, repoName string) (bool, error) {
+	orgName = strings.TrimSpace(orgName)
+	repoName = strings.TrimSpace(repoName)
+	if orgName == "" || repoName == "" {
+		return false, fmt.Errorf("orgName and repoName cannot be empty")
+	}
+
+	statusCode, _, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/%s", orgName, repoName), nil)
+	if err != nil {
+		return false, err
+	}
+	if statusCode == http.StatusOK {
+		return true, nil
+	}
+	if statusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, fmt.Errorf("unexpected status %d checking repository %s/%s", statusCode, orgName, repoName)
+}
+
+// DeleteRepo deletes a repository under an organization or user namespace
+func (c *Client) DeleteRepo(ctx context.Context, orgName, repoName string) error {
+	orgName = strings.TrimSpace(orgName)
+	repoName = strings.TrimSpace(repoName)
+	if orgName == "" || repoName == "" {
+		return fmt.Errorf("orgName and repoName cannot be empty")
+	}
+
+	statusCode, respBody, err := c.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/repos/%s/%s", orgName, repoName), nil)
+	if err != nil {
+		return err
+	}
+	if statusCode == http.StatusNoContent || statusCode == http.StatusOK || statusCode == http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf("failed deleting repository %s/%s (status %d): %s", orgName, repoName, statusCode, string(respBody))
+}
+
 // User represents a Gitea user object
 type User struct {
 	ID       int64  `json:"id"`
