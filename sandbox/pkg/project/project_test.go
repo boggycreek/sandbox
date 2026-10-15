@@ -422,3 +422,59 @@ func TestManagerEdgeCases(t *testing.T) {
 		t.Errorf("expected error listing with unwritable path")
 	}
 }
+
+func TestValidateNameAndUnreachableServices(t *testing.T) {
+	// 1. ValidateName unit tests
+	if err := ValidateName(""); err == nil {
+		t.Errorf("expected error on empty name")
+	}
+	if err := ValidateName("valid-name_1.0"); err != nil {
+		t.Errorf("expected valid-name to pass: %v", err)
+	}
+	if err := ValidateName("invalid/name"); err == nil {
+		t.Errorf("expected error on slash")
+	}
+	if err := ValidateName(`invalid\name`); err == nil {
+		t.Errorf("expected error on backslash")
+	}
+	if err := ValidateName(".."); err == nil {
+		t.Errorf("expected error on traversal ..")
+	}
+
+	tmpDir := t.TempDir()
+	paths := config.Paths{
+		DataHome:    tmpDir,
+		ProjectsDir: filepath.Join(tmpDir, "projects"),
+	}
+
+	// 2. Unreachable Gitea and SonarQube services in Doctor
+	unreachableGitea := gitea.NewClient(gitea.ClientConfig{BaseURL: "http://127.0.0.1:65511"})
+	unreachableSonar := sonar.NewClient(sonar.ClientConfig{BaseURL: "http://127.0.0.1:65512"})
+	mgr := NewManagerWithClients(paths, unreachableGitea, unreachableSonar, "http://127.0.0.1:65511", "http://127.0.0.1:65512")
+
+	// Save a project
+	p := &Project{
+		Name:          "offline-app",
+		Org:           "factory",
+		SonarKey:      "factory-offline-app",
+		AnalysisToken: "tok",
+	}
+	_ = mgr.Save(p)
+
+	rep, err := mgr.Doctor(context.Background(), "factory", "offline-app")
+	if err != nil {
+		t.Fatalf("unexpected doctor error: %v", err)
+	}
+	// Gitea and SonarQube should both be warnings (unreachable), not errors
+	if rep.WarningCount < 2 || rep.ErrorCount > 0 {
+		t.Errorf("expected at least 2 warnings and 0 errors for unreachable services: %+v", rep)
+	}
+
+	// 3. Create and Get with org/name syntax
+	if _, err := mgr.Create(context.Background(), "org/name/extra", "", "", ""); err == nil {
+		t.Errorf("expected error on invalid name with extra slash")
+	}
+	if _, err := mgr.Get(context.Background(), "", "org/name/extra"); err == nil {
+		t.Errorf("expected error getting invalid name with extra slash")
+	}
+}

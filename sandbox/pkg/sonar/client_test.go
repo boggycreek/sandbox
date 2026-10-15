@@ -469,6 +469,11 @@ func TestDeleteProject(t *testing.T) {
 func TestGenerateProjectToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/user_tokens/revoke" {
+			_ = r.ParseForm()
+			if r.Form.Has("login") {
+				http.Error(w, "login parameter should not be passed", http.StatusBadRequest)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

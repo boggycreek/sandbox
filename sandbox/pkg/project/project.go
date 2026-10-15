@@ -122,6 +122,18 @@ func NewManagerWithClients(paths config.Paths, giteaClient *gitea.Client, sonarC
 	}
 }
 
+// ValidateName verifies that a project name or organization does not contain path traversal or invalid characters.
+func ValidateName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("name cannot be empty")
+	}
+	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid name %q: path separators and directory traversal are not allowed", name)
+	}
+	return nil
+}
+
 // metadataFilename returns the filename for project storage.
 func metadataFilename(org, name string) string {
 	cleanOrg := strings.ToLower(strings.TrimSpace(org))
@@ -136,9 +148,24 @@ func (m *Manager) Create(ctx context.Context, name, org, sonarKey, description s
 		return nil, fmt.Errorf("project name cannot be empty")
 	}
 
+	if strings.Contains(name, "/") {
+		parts := strings.SplitN(name, "/", 2)
+		if org == "" || org == config.GetDefaultProjectOrg() {
+			org = parts[0]
+		}
+		name = parts[1]
+	}
+
 	org = strings.TrimSpace(org)
 	if org == "" {
 		org = config.GetDefaultProjectOrg()
+	}
+
+	if err := ValidateName(name); err != nil {
+		return nil, fmt.Errorf("invalid project name: %w", err)
+	}
+	if err := ValidateName(org); err != nil {
+		return nil, fmt.Errorf("invalid organization name: %w", err)
 	}
 
 	sonarKey = strings.TrimSpace(sonarKey)
@@ -190,7 +217,7 @@ func (m *Manager) Create(ctx context.Context, name, org, sonarKey, description s
 	return proj, nil
 }
 
-// Save persists the project metadata to disk.
+// Save persists the project metadata to disk atomically.
 func (m *Manager) Save(p *Project) error {
 	if err := m.paths.EnsureDirectories(); err != nil {
 		return err
@@ -200,7 +227,28 @@ func (m *Manager) Save(p *Project) error {
 		return err
 	}
 	filePath := filepath.Join(m.paths.ProjectsDir, metadataFilename(p.Org, p.Name))
-	return os.WriteFile(filePath, data, 0600)
+	tmpFile, err := os.CreateTemp(m.paths.ProjectsDir, "proj-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	defer func() {
+		_ = os.Remove(tmpPath)
+	}()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, filePath)
 }
 
 // List returns all registered projects with refreshed live scan statuses.
@@ -248,11 +296,26 @@ func (m *Manager) List(ctx context.Context) ([]*Project, error) {
 
 // Get retrieves a project by org and name.
 func (m *Manager) Get(ctx context.Context, org, name string) (*Project, error) {
+	if strings.Contains(name, "/") {
+		parts := strings.SplitN(name, "/", 2)
+		if org == "" || org == config.GetDefaultProjectOrg() {
+			org = parts[0]
+		}
+		name = parts[1]
+	}
 	org = strings.TrimSpace(org)
 	if org == "" {
 		org = config.GetDefaultProjectOrg()
 	}
 	name = strings.TrimSpace(name)
+
+	if err := ValidateName(name); err != nil {
+		return nil, fmt.Errorf("invalid project name: %w", err)
+	}
+	if err := ValidateName(org); err != nil {
+		return nil, fmt.Errorf("invalid organization name: %w", err)
+	}
+
 	filePath := filepath.Join(m.paths.ProjectsDir, metadataFilename(org, name))
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -322,7 +385,14 @@ func (m *Manager) Doctor(ctx context.Context, org, name string) (*DoctorReport, 
 
 	// 1. Audit Gitea Repository
 	repoExists, repoErr := m.giteaClient.RepoExists(ctx, p.Org, p.Name)
-	if repoErr == nil && repoExists {
+	if repoErr != nil {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "Gitea Repository",
+			Status:  "warning",
+			Message: fmt.Sprintf("Gitea service unreachable (%v)", repoErr),
+		})
+		report.WarningCount++
+	} else if repoExists {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Gitea Repository",
 			Status:  "ok",
@@ -353,7 +423,14 @@ func (m *Manager) Doctor(ctx context.Context, org, name string) (*DoctorReport, 
 
 	// 2. Audit SonarQube Project
 	sonarExists, sonarErr := m.sonarClient.ProjectExists(ctx, p.SonarKey)
-	if sonarErr == nil && sonarExists {
+	if sonarErr != nil {
+		report.Checks = append(report.Checks, CheckItem{
+			Name:    "SonarQube Project",
+			Status:  "warning",
+			Message: fmt.Sprintf("SonarQube service unreachable (%v)", sonarErr),
+		})
+		report.WarningCount++
+	} else if sonarExists {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "SonarQube Project",
 			Status:  "ok",

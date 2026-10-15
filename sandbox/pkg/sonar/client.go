@@ -259,7 +259,9 @@ func (c *Client) GenerateUserToken(ctx context.Context, login, tokenName string)
 // RevokeUserToken revokes a user token by name.
 func (c *Client) RevokeUserToken(ctx context.Context, login, tokenName string) error {
 	params := url.Values{}
-	params.Set("login", login)
+	if login != "" {
+		params.Set("login", login)
+	}
 	params.Set("name", tokenName)
 	return c.doRequest(ctx, http.MethodPost, "/api/user_tokens/revoke", nil, strings.NewReader(params.Encode()), nil, http.StatusBadRequest, http.StatusNotFound)
 }
