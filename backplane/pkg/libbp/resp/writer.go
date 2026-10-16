@@ -94,20 +94,45 @@ func (w *Writer) WriteValue(v Value) error {
 	}
 }
 
+// numLen determines the string length of an integer >= 0
+func numLen(n int) int {
+	if n < 10 {
+		return 1
+	} else if n < 100 {
+		return 2
+	} else if n < 1000 {
+		return 3
+	} else if n < 10000 {
+		return 4
+	} else if n < 100000 {
+		return 5
+	} else if n < 1000000 {
+		return 6
+	} else if n < 10000000 {
+		return 7
+	} else if n < 100000000 {
+		return 8
+	} else if n < 1000000000 {
+		return 9
+	}
+	return 10
+}
+
 // EncodeCommand produces the byte slice of a RESP array command
 func EncodeCommand(args ...string) []byte {
 	var totalLen int
-	totalLen += len(strconv.Itoa(len(args))) + 3 // "*<len>\r\n"
+	argsLenLen := numLen(len(args))
+	totalLen += argsLenLen + 3 // "*<len>\r\n"
 	for _, a := range args {
-		totalLen += 1 + len(strconv.Itoa(len(a))) + 2 + len(a) + 2 // "$<len>\r\n<data>\r\n"
+		totalLen += 1 + numLen(len(a)) + 2 + len(a) + 2 // "$<len>\r\n<data>\r\n"
 	}
 	buf := make([]byte, 0, totalLen)
 	buf = append(buf, '*')
-	buf = append(buf, strconv.Itoa(len(args))...)
+	buf = strconv.AppendInt(buf, int64(len(args)), 10)
 	buf = append(buf, '\r', '\n')
 	for _, a := range args {
 		buf = append(buf, '$')
-		buf = append(buf, strconv.Itoa(len(a))...)
+		buf = strconv.AppendInt(buf, int64(len(a)), 10)
 		buf = append(buf, '\r', '\n')
 		buf = append(buf, a...)
 		buf = append(buf, '\r', '\n')
