@@ -251,6 +251,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 
 		var labels []string
 		if rawLabels, ok := args["labels"].([]any); ok {
+			labels = make([]string, 0, len(rawLabels))
 			for _, l := range rawLabels {
 				if ls, ok := l.(string); ok && ls != "" {
 					labels = append(labels, ls)
@@ -260,6 +261,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 
 		var assignees []string
 		if rawAssignees, ok := args["assignees"].([]any); ok {
+			assignees = make([]string, 0, len(rawAssignees))
 			for _, a := range rawAssignees {
 				if as, ok := a.(string); ok && as != "" {
 					assignees = append(assignees, as)
