@@ -597,7 +597,7 @@ func (c *Client) Peers(ctx context.Context) ([]*Peer, error) {
 		return nil, ctx.Err()
 	}
 
-	var peers []*Peer
+	peers := make([]*Peer, 0, len(agentIDs))
 	for _, agentID := range agentIDs {
 		if err := ctx.Err(); err != nil {
 			return nil, err
