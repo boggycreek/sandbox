@@ -754,9 +754,6 @@ func TestClientClosedOperations(t *testing.T) {
 	}
 }
 
-
-
-
 func TestPeersEmpty(t *testing.T) {
 	server, port := startMockValkeyServer(t)
 	defer server.close()
