@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -309,5 +310,37 @@ func TestReadErrorHelper(t *testing.T) {
 	okVal := Value{Type: TypeSimpleString, Str: "OK"}
 	if err := ReadError(okVal); err != nil {
 		t.Errorf("expected nil error, got %v", err)
+	}
+}
+
+func BenchmarkEncodeCommand(b *testing.B) {
+	args := []string{"SET", "mykey", "myvalue", "EX", "60"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		EncodeCommand(args...)
+	}
+}
+
+func BenchmarkEncodeCommandLarge(b *testing.B) {
+	var args []string
+	for i := 0; i < 50; i++ {
+		args = append(args, "arg"+strconv.Itoa(i))
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		EncodeCommand(args...)
+	}
+}
+
+func BenchmarkEncodeCommandLargePayload(b *testing.B) {
+	payload := make([]byte, 1024)
+	for i := range payload {
+		payload[i] = 'a'
+	}
+	payloadStr := string(payload)
+	args := []string{"SET", "mykey", payloadStr, "EX", "60"}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		EncodeCommand(args...)
 	}
 }
