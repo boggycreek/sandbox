@@ -103,11 +103,11 @@ func EncodeCommand(args ...string) []byte {
 	}
 	buf := make([]byte, 0, totalLen)
 	buf = append(buf, '*')
-	buf = append(buf, strconv.Itoa(len(args))...)
+	buf = strconv.AppendInt(buf, int64(len(args)), 10)
 	buf = append(buf, '\r', '\n')
 	for _, a := range args {
 		buf = append(buf, '$')
-		buf = append(buf, strconv.Itoa(len(a))...)
+		buf = strconv.AppendInt(buf, int64(len(a)), 10)
 		buf = append(buf, '\r', '\n')
 		buf = append(buf, a...)
 		buf = append(buf, '\r', '\n')
