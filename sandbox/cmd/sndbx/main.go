@@ -19,8 +19,6 @@ import (
 	"github.com/boggycreek/sandbox/pkg/config"
 )
 
-
-
 func main() {
 	os.Exit(Run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -144,6 +142,7 @@ Infra Commands:
   %s infra up
   %s infra down
   %s infra list
+  %s infra info [--show-secrets] [--json]
   %s infra doctor
 
 Plugin Commands:
@@ -155,5 +154,5 @@ Update Command:
   %s update
 
 Run '%s <domain> help' for more details on each command.
-`, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin)
+`, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin, bin)
 }

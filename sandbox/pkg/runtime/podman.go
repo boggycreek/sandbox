@@ -43,6 +43,15 @@ func SetInfraValkeyContainerForTest(name string) func() {
 	}
 }
 
+// SetInfraSonarContainerForTest overrides infraSonarContainer for unit testing.
+func SetInfraSonarContainerForTest(name string) func() {
+	orig := infraSonarContainer
+	infraSonarContainer = name
+	return func() {
+		infraSonarContainer = orig
+	}
+}
+
 // ContainerMount describes a mount on a container.
 type ContainerMount struct {
 	Type        string `json:"Type"`
@@ -1017,7 +1026,6 @@ func BootstrapSonar(ctx context.Context, adminPass string) error {
 
 	return nil
 }
-
 
 // StopInfraStack halts shared infrastructure containers
 func StopInfraStack(ctx context.Context) error {
