@@ -407,14 +407,16 @@ func (c *Client) Recv(ctx context.Context, blockSeconds int) ([]*Message, error)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// Discover all active streams (inbox + all *:out streams)
-	myInbox := InboxKey(c.cfg.AgentID)
-	streams := []string{myInbox}
-
 	peers, err := c.Peers(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	// Discover all active streams (inbox + all *:out streams)
+	myInbox := InboxKey(c.cfg.AgentID)
+	streams := make([]string, 0, len(peers)+1)
+	streams = append(streams, myInbox)
+
 	for _, p := range peers {
 		if strings.ToLower(p.ID) != strings.ToLower(c.cfg.AgentID) {
 			streams = append(streams, OutKey(p.ID))
