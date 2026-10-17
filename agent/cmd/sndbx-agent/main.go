@@ -145,7 +145,9 @@ func LoadConfig(args []string) (*Config, error) {
 
 	var mcpList []string
 	if strings.TrimSpace(*mcpBins) != "" {
-		for _, b := range strings.Split(*mcpBins, ",") {
+		parts := strings.Split(*mcpBins, ",")
+		mcpList = make([]string, 0, len(parts))
+		for _, b := range parts {
 			trimmed := strings.TrimSpace(b)
 			if trimmed != "" {
 				mcpList = append(mcpList, trimmed)
