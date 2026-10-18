@@ -8,7 +8,7 @@
 #
 # Runs as non-root user 'agent' (UID 1000).
 # Starts base infrastructure (unprivileged sshd on port 2222) and executes
-# sndbx-agent directly as PID 1.
+# fleet-agent directly as PID 1.
 
 set -euo pipefail
 
@@ -70,7 +70,7 @@ fi
 mkdir -p /home/agent/workspace
 cd /home/agent/workspace
 
-# Disable legacy bpd since sndbx-agent handles the backplane inbox directly
+# Disable legacy bpd since fleet-agent handles the backplane inbox directly
 export BPD_DISABLED=1
 # Auto-discover installed MCP binaries if MCP_BINARIES is not explicitly set
 if [ -z "${MCP_BINARIES:-}" ]; then
@@ -85,6 +85,6 @@ if [ -z "${MCP_BINARIES:-}" ]; then
     fi
 fi
 
-echo "Native Agent Sandbox container initialized [$(hostname)]. Starting sndbx-agent..."
+echo "Native Agent Sandbox container initialized [$(hostname)]. Starting fleet-agent..."
 
-exec /usr/local/bin/sndbx-agent "$@"
+exec /usr/local/bin/fleet-agent "$@"

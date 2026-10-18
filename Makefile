@@ -144,7 +144,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./sandbox/cmd/sndbx; \
 		ln -sf sndbx $(BIN_DIR)/sb; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx-agent ./agent/cmd/sndbx-agent; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/fleet-agent ./agent/cmd/fleet-agent; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./mcp/cmd/bp-mcp; \
@@ -172,7 +172,7 @@ install: build-cli ## Install CLI binaries and aliases into $(INSTALL_BIN_DIR)
 			(cd $(INSTALL_BIN_DIR) && ln -sf sndbx sb); \
 		fi; \
 	fi
-	@for bin in sndbx-agent bp bpd bp-mcp forgejo-mcp gitea-mcp beads-mcp sonar-mcp; do \
+	@for bin in fleet-agent bp bpd bp-mcp forgejo-mcp gitea-mcp beads-mcp sonar-mcp; do \
 		if [ -f $(BIN_DIR)/$$bin ]; then cp -f $(BIN_DIR)/$$bin $(INSTALL_BIN_DIR)/$$bin; fi; \
 	done
 	@echo "Installed binaries (sndbx (alias: sb), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"

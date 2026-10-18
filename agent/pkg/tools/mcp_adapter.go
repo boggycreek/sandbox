@@ -264,7 +264,7 @@ func (c *MCPClient) Initialize(ctx context.Context) error {
 		"protocolVersion": mcp.ProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]string{
-			"name":    "sndbx-agent",
+			"name":    "fleet-agent",
 			"version": "1.0.0",
 		},
 	}

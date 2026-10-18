@@ -269,7 +269,7 @@ func (e *REPLEngine) Start(ctx context.Context, bus *runtime.EventBus, state *ru
 
 	agentID := state.Read().AgentID
 	if agentID == "" {
-		agentID = "sndbx-agent"
+		agentID = "fleet-agent"
 	}
 	e.mu.Lock()
 	if e.agentID == "" {
