@@ -16,17 +16,18 @@ import (
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
-// Project represents metadata and linkage for a project managed across Gitea and SonarQube.
+// Project represents metadata and linkage for a project managed across Forgejo and SonarQube.
 type Project struct {
 	Name          string    `json:"name"`
 	Org           string    `json:"org"`
 	SonarKey      string    `json:"sonar_key"`
 	Description   string    `json:"description,omitempty"`
-	GiteaURL      string    `json:"gitea_url"`
+	ForgejoURL    string    `json:"forgejo_url,omitempty"`
+	GiteaURL      string    `json:"gitea_url,omitempty"` // Retained for backward compatibility
 	SonarURL      string    `json:"sonarqube_url"`
 	AnalysisToken string    `json:"analysis_token,omitempty"`
 	ScanStatus    string    `json:"scan_status"`
@@ -54,29 +55,43 @@ type DoctorReport struct {
 	UnrepairableCount int         `json:"unrepairable_count"`
 }
 
-// Manager orchestrates project operations across Gitea and SonarQube.
+// Manager orchestrates project operations across Forgejo and SonarQube.
 type Manager struct {
-	paths       config.Paths
-	giteaClient *gitea.Client
-	sonarClient *sonar.Client
-	giteaBase   string
-	sonarBase   string
+	paths         config.Paths
+	forgejoClient *forgejo.Client
+	sonarClient   *sonar.Client
+	forgejoBase   string
+	sonarBase     string
 }
 
 // NewManager constructs a project Manager using standard environment and paths.
 func NewManager(paths config.Paths) *Manager {
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = os.Getenv("GITEA_HOST_URL")
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("FORGEJO_HOST_URL")
 	}
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
 	}
-	giteaURL = strings.TrimRight(giteaURL, "/")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_HOST_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
+	}
+	forgejoURL = strings.TrimRight(forgejoURL, "/")
 
 	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
+	}
+
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
 	}
 
 	sonarURL := os.Getenv("SONAR_HOST_URL")
@@ -94,9 +109,9 @@ func NewManager(paths config.Paths) *Manager {
 	}
 	sonarPass := config.GetSonarAdminPassword()
 
-	giteaClient := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	forgejoClient := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: adminUser,
 		AdminPass: adminPass,
 		Timeout:   10 * time.Second,
 	})
@@ -108,17 +123,17 @@ func NewManager(paths config.Paths) *Manager {
 		Timeout:   10 * time.Second,
 	})
 
-	return NewManagerWithClients(paths, giteaClient, sonarClient, giteaURL, sonarURL)
+	return NewManagerWithClients(paths, forgejoClient, sonarClient, forgejoURL, sonarURL)
 }
 
 // NewManagerWithClients constructs a Manager with custom clients (used in tests and custom routing).
-func NewManagerWithClients(paths config.Paths, giteaClient *gitea.Client, sonarClient *sonar.Client, giteaBase, sonarBase string) *Manager {
+func NewManagerWithClients(paths config.Paths, forgejoClient *forgejo.Client, sonarClient *sonar.Client, forgejoBase, sonarBase string) *Manager {
 	return &Manager{
-		paths:       paths,
-		giteaClient: giteaClient,
-		sonarClient: sonarClient,
-		giteaBase:   strings.TrimRight(giteaBase, "/"),
-		sonarBase:   strings.TrimRight(sonarBase, "/"),
+		paths:         paths,
+		forgejoClient: forgejoClient,
+		sonarClient:   sonarClient,
+		forgejoBase:   strings.TrimRight(forgejoBase, "/"),
+		sonarBase:     strings.TrimRight(sonarBase, "/"),
 	}
 }
 
@@ -173,12 +188,12 @@ func (m *Manager) Create(ctx context.Context, name, org, sonarKey, description s
 		sonarKey = fmt.Sprintf("%s-%s", org, name)
 	}
 
-	// 1. Ensure Organization and Repository in Gitea
-	if err := m.giteaClient.EnsureOrg(ctx, org); err != nil {
-		return nil, fmt.Errorf("failed ensuring Gitea organization %q: %w", org, err)
+	// 1. Ensure Organization and Repository in Forgejo
+	if err := m.forgejoClient.EnsureOrg(ctx, org); err != nil {
+		return nil, fmt.Errorf("failed ensuring Forgejo organization %q: %w", org, err)
 	}
-	if err := m.giteaClient.EnsureRepo(ctx, org, name, description, true); err != nil {
-		return nil, fmt.Errorf("failed creating Gitea repository %s/%s: %w", org, name, err)
+	if err := m.forgejoClient.EnsureRepo(ctx, org, name, description, true); err != nil {
+		return nil, fmt.Errorf("failed creating Forgejo repository %s/%s: %w", org, name, err)
 	}
 
 	// 2. Ensure Project in SonarQube
@@ -191,7 +206,7 @@ func (m *Manager) Create(ctx context.Context, name, org, sonarKey, description s
 	token, _ := m.sonarClient.GenerateProjectToken(ctx, sonarKey, tokenName)
 
 	now := time.Now().UTC()
-	giteaURL := fmt.Sprintf("%s/%s/%s", m.giteaBase, org, name)
+	forgejoURL := fmt.Sprintf("%s/%s/%s", m.forgejoBase, org, name)
 	sonarURL := fmt.Sprintf("%s/dashboard?id=%s", m.sonarBase, sonarKey)
 
 	// 4. Initial Scan Status
@@ -202,7 +217,8 @@ func (m *Manager) Create(ctx context.Context, name, org, sonarKey, description s
 		Org:           org,
 		SonarKey:      sonarKey,
 		Description:   description,
-		GiteaURL:      giteaURL,
+		ForgejoURL:    forgejoURL,
+		GiteaURL:      forgejoURL,
 		SonarURL:      sonarURL,
 		AnalysisToken: token,
 		ScanStatus:    scanStatus,
@@ -280,6 +296,13 @@ func (m *Manager) List(ctx context.Context) ([]*Project, error) {
 			continue
 		}
 
+		if p.ForgejoURL == "" && p.GiteaURL != "" {
+			p.ForgejoURL = p.GiteaURL
+		}
+		if p.GiteaURL == "" && p.ForgejoURL != "" {
+			p.GiteaURL = p.ForgejoURL
+		}
+
 		p.ScanStatus = m.resolveScanStatus(ctx, p.SonarKey)
 		projects = append(projects, &p)
 	}
@@ -327,24 +350,31 @@ func (m *Manager) Get(ctx context.Context, org, name string) (*Project, error) {
 		return nil, fmt.Errorf("failed decoding project %s/%s metadata: %w", org, name, err)
 	}
 
+	if p.ForgejoURL == "" && p.GiteaURL != "" {
+		p.ForgejoURL = p.GiteaURL
+	}
+	if p.GiteaURL == "" && p.ForgejoURL != "" {
+		p.GiteaURL = p.ForgejoURL
+	}
+
 	p.ScanStatus = m.resolveScanStatus(ctx, p.SonarKey)
 	return &p, nil
 }
 
-// Link links an existing Gitea repository with a SonarQube project.
-func (m *Manager) Link(ctx context.Context, giteaRepo, sonarProject string) (*Project, error) {
-	giteaRepo = strings.TrimSpace(giteaRepo)
-	if giteaRepo == "" {
-		return nil, fmt.Errorf("gitea repository cannot be empty")
+// Link links an existing Forgejo/Gitea repository with a SonarQube project.
+func (m *Manager) Link(ctx context.Context, repoRef, sonarProject string) (*Project, error) {
+	repoRef = strings.TrimSpace(repoRef)
+	if repoRef == "" {
+		return nil, fmt.Errorf("repository cannot be empty")
 	}
 
 	var org, name string
-	if parts := strings.Split(giteaRepo, "/"); len(parts) >= 2 {
+	if parts := strings.Split(repoRef, "/"); len(parts) >= 2 {
 		org = parts[0]
 		name = parts[1]
 	} else {
 		org = config.GetDefaultProjectOrg()
-		name = giteaRepo
+		name = repoRef
 	}
 
 	sonarKey := strings.TrimSpace(sonarProject)
@@ -355,7 +385,7 @@ func (m *Manager) Link(ctx context.Context, giteaRepo, sonarProject string) (*Pr
 	return m.Create(ctx, name, org, sonarKey, "")
 }
 
-// Delete removes project metadata and optionally remote assets across Gitea and SonarQube.
+// Delete removes project metadata and optionally remote assets across Forgejo and SonarQube.
 func (m *Manager) Delete(ctx context.Context, org, name string, deleteRemote bool) error {
 	p, err := m.Get(ctx, org, name)
 	if err != nil {
@@ -364,7 +394,7 @@ func (m *Manager) Delete(ctx context.Context, org, name string, deleteRemote boo
 
 	if deleteRemote {
 		_ = m.sonarClient.DeleteProject(ctx, p.SonarKey)
-		_ = m.giteaClient.DeleteRepo(ctx, p.Org, p.Name)
+		_ = m.forgejoClient.DeleteRepo(ctx, p.Org, p.Name)
 	}
 
 	filePath := filepath.Join(m.paths.ProjectsDir, metadataFilename(p.Org, p.Name))
@@ -383,37 +413,41 @@ func (m *Manager) Doctor(ctx context.Context, org, name string) (*DoctorReport, 
 		Org:         p.Org,
 	}
 
-	// 1. Audit Gitea Repository
-	repoExists, repoErr := m.giteaClient.RepoExists(ctx, p.Org, p.Name)
+	// 1. Audit Forgejo Repository
+	repoExists, repoErr := m.forgejoClient.RepoExists(ctx, p.Org, p.Name)
+	repoURL := p.ForgejoURL
+	if repoURL == "" {
+		repoURL = p.GiteaURL
+	}
 	if repoErr != nil {
 		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Gitea Repository",
+			Name:    "Forgejo Repository",
 			Status:  "warning",
-			Message: fmt.Sprintf("Gitea service unreachable (%v)", repoErr),
+			Message: fmt.Sprintf("Forgejo service unreachable (%v)", repoErr),
 		})
 		report.WarningCount++
 	} else if repoExists {
 		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Gitea Repository",
+			Name:    "Forgejo Repository",
 			Status:  "ok",
-			Message: fmt.Sprintf("Repository %s/%s exists and is accessible (%s)", p.Org, p.Name, p.GiteaURL),
+			Message: fmt.Sprintf("Repository %s/%s exists and is accessible (%s)", p.Org, p.Name, repoURL),
 		})
 	} else {
-		// Auto-heal Gitea repository
-		healErr := m.giteaClient.EnsureRepo(ctx, p.Org, p.Name, p.Description, true)
+		// Auto-heal Forgejo repository
+		healErr := m.forgejoClient.EnsureRepo(ctx, p.Org, p.Name, p.Description, true)
 		if healErr == nil {
 			report.Checks = append(report.Checks, CheckItem{
-				Name:    "Gitea Repository",
+				Name:    "Forgejo Repository",
 				Status:  "healed",
-				Message: fmt.Sprintf("Auto-healed missing Gitea repository %s/%s", p.Org, p.Name),
+				Message: fmt.Sprintf("Auto-healed missing Forgejo repository %s/%s", p.Org, p.Name),
 				Healed:  true,
 			})
 			report.HealedCount++
 		} else {
 			report.Checks = append(report.Checks, CheckItem{
-				Name:         "Gitea Repository",
+				Name:         "Forgejo Repository",
 				Status:       "error",
-				Message:      fmt.Sprintf("Gitea repository %s/%s missing and repair failed: %v", p.Org, p.Name, healErr),
+				Message:      fmt.Sprintf("Forgejo repository %s/%s missing and repair failed: %v", p.Org, p.Name, healErr),
 				Unrepairable: true,
 			})
 			report.ErrorCount++
@@ -562,8 +596,12 @@ func FormatList(projects []*Project) string {
 		if i > 0 {
 			sb.WriteString("\n")
 		}
+		repoURL := p.ForgejoURL
+		if repoURL == "" {
+			repoURL = p.GiteaURL
+		}
 		sb.WriteString(fmt.Sprintf("● %s / %s\n", p.Org, p.Name))
-		sb.WriteString(fmt.Sprintf("    Gitea:       %s\n", p.GiteaURL))
+		sb.WriteString(fmt.Sprintf("    Forgejo:     %s\n", repoURL))
 		sb.WriteString(fmt.Sprintf("    SonarQube:   %s\n", p.SonarURL))
 		sb.WriteString(fmt.Sprintf("    Scan Status: %s\n", p.ScanStatus))
 	}

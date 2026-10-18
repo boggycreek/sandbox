@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
-// Package gitea provides a REST client for Gitea forge operations and administrative tasks.
-package gitea
+// Package forgejo provides a REST client for Forgejo forge operations and administrative tasks.
+package forgejo
 
 import (
 	"bytes"
@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// ClientConfig holds connection and authentication details for Gitea API
+// ClientConfig holds connection and authentication details for Forgejo API
 type ClientConfig struct {
 	BaseURL   string
 	AdminUser string
@@ -28,13 +28,13 @@ type ClientConfig struct {
 	Timeout   time.Duration
 }
 
-// Client provides an HTTP client for Gitea administrative and organizational operations
+// Client provides an HTTP client for Forgejo administrative and organizational operations
 type Client struct {
 	cfg        ClientConfig
 	httpClient *http.Client
 }
 
-// NewClient constructs a new Gitea API client
+// NewClient constructs a new Forgejo API client
 func NewClient(cfg ClientConfig) *Client {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "http://127.0.0.1:3000"
@@ -44,7 +44,7 @@ func NewClient(cfg ClientConfig) *Client {
 		cfg.Timeout = 10 * time.Second
 	}
 	if cfg.AdminUser == "" {
-		cfg.AdminUser = "giteaadmin"
+		cfg.AdminUser = "forgejoadmin"
 	}
 
 	return &Client{
@@ -55,7 +55,7 @@ func NewClient(cfg ClientConfig) *Client {
 	}
 }
 
-// doRequest performs an authenticated HTTP request against Gitea REST API
+// doRequest performs an authenticated HTTP request against Forgejo REST API
 func (c *Client) doRequest(ctx context.Context, method, endpoint string, body interface{}) (statusCode int, respBody []byte, err error) {
 	apiURL := fmt.Sprintf("%s/api/v1%s", c.cfg.BaseURL, endpoint)
 
@@ -98,7 +98,7 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body in
 	return resp.StatusCode, respBody, nil
 }
 
-// EnsureUser creates a user in Gitea if it does not already exist
+// EnsureUser creates a user in Forgejo if it does not already exist
 func (c *Client) EnsureUser(ctx context.Context, username, password, email string) error {
 	username = strings.TrimSpace(username)
 	if username == "" {
@@ -128,13 +128,13 @@ func (c *Client) EnsureUser(ctx context.Context, username, password, email strin
 		return err
 	}
 	if statusCode != http.StatusCreated && statusCode != http.StatusOK && statusCode != http.StatusConflict {
-		return fmt.Errorf("failed creating gitea user %s (status %d): %s", username, statusCode, string(respBody))
+		return fmt.Errorf("failed creating forgejo user %s (status %d): %s", username, statusCode, string(respBody))
 	}
 
 	return nil
 }
 
-// DeleteUser purges a user account and associated repositories from Gitea
+// DeleteUser purges a user account and associated repositories from Forgejo
 func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) error {
 	username = strings.TrimSpace(username)
 	if username == "" {
@@ -147,7 +147,7 @@ func (c *Client) DeleteUser(ctx context.Context, username string, purge bool) er
 		return err
 	}
 	if statusCode != http.StatusNoContent && statusCode != http.StatusOK && statusCode != http.StatusNotFound {
-		return fmt.Errorf("failed deleting gitea user %s (status %d): %s", username, statusCode, string(respBody))
+		return fmt.Errorf("failed deleting forgejo user %s (status %d): %s", username, statusCode, string(respBody))
 	}
 
 	return nil
@@ -175,7 +175,7 @@ func (c *Client) AddUserSSHKey(ctx context.Context, username, title, keyContent 
 	if err != nil {
 		return err
 	}
-	// Gitea returns 201 Created on success, 422/409 if key already exists
+	// Forgejo returns 201 Created on success, 422/409 if key already exists
 	if statusCode != http.StatusCreated && statusCode != http.StatusOK && statusCode != http.StatusConflict && statusCode != http.StatusUnprocessableEntity {
 		return fmt.Errorf("failed adding ssh key for %s (status %d): %s", username, statusCode, string(respBody))
 	}
@@ -230,7 +230,7 @@ func (c *Client) AddOrgMember(ctx context.Context, orgName, username string) err
 	}
 
 	if statusCode == http.StatusMethodNotAllowed {
-		// Gitea manages org members through teams. Resolve teams and add to an unprivileged team (Contributors, Agents, or first non-owners team).
+		// Forgejo manages org members through teams. Resolve teams and add to an unprivileged team (Contributors, Agents, or first non-owners team).
 		var teams []struct {
 			ID   int64  `json:"id"`
 			Name string `json:"name"`
@@ -349,7 +349,7 @@ func (c *Client) DeleteRepo(ctx context.Context, orgName, repoName string) error
 	return fmt.Errorf("failed deleting repository %s/%s (status %d): %s", orgName, repoName, statusCode, string(respBody))
 }
 
-// User represents a Gitea user object
+// User represents a Forgejo user object
 type User struct {
 	ID       int64  `json:"id"`
 	UserName string `json:"username"`
@@ -357,14 +357,14 @@ type User struct {
 	Email    string `json:"email,omitempty"`
 }
 
-// Label represents a Gitea issue label
+// Label represents a Forgejo issue label
 type Label struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	Color string `json:"color,omitempty"`
 }
 
-// Issue represents a Gitea issue or task
+// Issue represents a Forgejo issue or task
 type Issue struct {
 	ID        int64     `json:"id"`
 	Index     int64     `json:"number"`
@@ -385,7 +385,7 @@ type PRBranch struct {
 	Sha   string `json:"sha"`
 }
 
-// PullRequest represents a Gitea pull request
+// PullRequest represents a Forgejo pull request
 type PullRequest struct {
 	ID        int64     `json:"id"`
 	Index     int64     `json:"number"`
@@ -409,7 +409,7 @@ type PullReview struct {
 	Submitted time.Time `json:"submitted_at,omitempty"`
 }
 
-// FileContent represents file metadata and content retrieved from Gitea
+// FileContent represents file metadata and content retrieved from Forgejo
 type FileContent struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`

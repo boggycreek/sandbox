@@ -14,23 +14,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 )
 
-type mockGiteaClient struct {
-	listIssuesFunc        func(ctx context.Context, owner, repo, state string, page, limit int) ([]*gitea.Issue, error)
-	createIssueFunc       func(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*gitea.Issue, error)
-	createPullRequestFunc func(ctx context.Context, owner, repo, title, body, head, base string) (*gitea.PullRequest, error)
-	getPullRequestFunc    func(ctx context.Context, owner, repo string, index int64) (*gitea.PullRequest, error)
-	reviewPullRequestFunc func(ctx context.Context, owner, repo string, index int64, event, body string) (*gitea.PullReview, error)
-	getFileFunc           func(ctx context.Context, owner, repo, filePath, ref string) (*gitea.FileContent, error)
+type mockForgejoClient struct {
+	listIssuesFunc        func(ctx context.Context, owner, repo, state string, page, limit int) ([]*forgejo.Issue, error)
+	createIssueFunc       func(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*forgejo.Issue, error)
+	createPullRequestFunc func(ctx context.Context, owner, repo, title, body, head, base string) (*forgejo.PullRequest, error)
+	getPullRequestFunc    func(ctx context.Context, owner, repo string, index int64) (*forgejo.PullRequest, error)
+	reviewPullRequestFunc func(ctx context.Context, owner, repo string, index int64, event, body string) (*forgejo.PullReview, error)
+	getFileFunc           func(ctx context.Context, owner, repo, filePath, ref string) (*forgejo.FileContent, error)
 }
 
-func (m *mockGiteaClient) ListIssues(ctx context.Context, owner, repo, state string, page, limit int) ([]*gitea.Issue, error) {
+type mockGiteaClient = mockForgejoClient
+
+func (m *mockGiteaClient) ListIssues(ctx context.Context, owner, repo, state string, page, limit int) ([]*forgejo.Issue, error) {
 	if m.listIssuesFunc != nil {
 		return m.listIssuesFunc(ctx, owner, repo, state, page, limit)
 	}
-	return []*gitea.Issue{
+	return []*forgejo.Issue{
 		{
 			ID:        1,
 			Index:     101,
@@ -42,11 +44,11 @@ func (m *mockGiteaClient) ListIssues(ctx context.Context, owner, repo, state str
 	}, nil
 }
 
-func (m *mockGiteaClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*gitea.Issue, error) {
+func (m *mockGiteaClient) CreateIssue(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*forgejo.Issue, error) {
 	if m.createIssueFunc != nil {
 		return m.createIssueFunc(ctx, owner, repo, title, body, labels, assignees)
 	}
-	return &gitea.Issue{
+	return &forgejo.Issue{
 		ID:        2,
 		Index:     102,
 		Title:     title,
@@ -56,26 +58,26 @@ func (m *mockGiteaClient) CreateIssue(ctx context.Context, owner, repo, title, b
 	}, nil
 }
 
-func (m *mockGiteaClient) CreatePullRequest(ctx context.Context, owner, repo, title, body, head, base string) (*gitea.PullRequest, error) {
+func (m *mockGiteaClient) CreatePullRequest(ctx context.Context, owner, repo, title, body, head, base string) (*forgejo.PullRequest, error) {
 	if m.createPullRequestFunc != nil {
 		return m.createPullRequestFunc(ctx, owner, repo, title, body, head, base)
 	}
-	return &gitea.PullRequest{
+	return &forgejo.PullRequest{
 		ID:    10,
 		Index: 1,
 		Title: title,
 		Body:  body,
 		State: "open",
-		Head:  &gitea.PRBranch{Ref: head},
-		Base:  &gitea.PRBranch{Ref: base},
+		Head:  &forgejo.PRBranch{Ref: head},
+		Base:  &forgejo.PRBranch{Ref: base},
 	}, nil
 }
 
-func (m *mockGiteaClient) GetPullRequest(ctx context.Context, owner, repo string, index int64) (*gitea.PullRequest, error) {
+func (m *mockGiteaClient) GetPullRequest(ctx context.Context, owner, repo string, index int64) (*forgejo.PullRequest, error) {
 	if m.getPullRequestFunc != nil {
 		return m.getPullRequestFunc(ctx, owner, repo, index)
 	}
-	return &gitea.PullRequest{
+	return &forgejo.PullRequest{
 		ID:    10,
 		Index: index,
 		Title: "Existing PR",
@@ -83,11 +85,11 @@ func (m *mockGiteaClient) GetPullRequest(ctx context.Context, owner, repo string
 	}, nil
 }
 
-func (m *mockGiteaClient) ReviewPullRequest(ctx context.Context, owner, repo string, index int64, event, body string) (*gitea.PullReview, error) {
+func (m *mockGiteaClient) ReviewPullRequest(ctx context.Context, owner, repo string, index int64, event, body string) (*forgejo.PullReview, error) {
 	if m.reviewPullRequestFunc != nil {
 		return m.reviewPullRequestFunc(ctx, owner, repo, index, event, body)
 	}
-	return &gitea.PullReview{
+	return &forgejo.PullReview{
 		ID:        5,
 		State:     event,
 		Body:      body,
@@ -95,11 +97,11 @@ func (m *mockGiteaClient) ReviewPullRequest(ctx context.Context, owner, repo str
 	}, nil
 }
 
-func (m *mockGiteaClient) GetFile(ctx context.Context, owner, repo, filePath, ref string) (*gitea.FileContent, error) {
+func (m *mockGiteaClient) GetFile(ctx context.Context, owner, repo, filePath, ref string) (*forgejo.FileContent, error) {
 	if m.getFileFunc != nil {
 		return m.getFileFunc(ctx, owner, repo, filePath, ref)
 	}
-	return &gitea.FileContent{
+	return &forgejo.FileContent{
 		Name:    filePath,
 		Path:    filePath,
 		Content: "package main\n\nfunc main() {}\n",
@@ -166,19 +168,19 @@ func TestMCPServerLifecycle(t *testing.T) {
 
 func TestMCPServerClientErrors(t *testing.T) {
 	errClient := &mockGiteaClient{
-		listIssuesFunc: func(_ context.Context, _, _, _ string, _, _ int) ([]*gitea.Issue, error) {
+		listIssuesFunc: func(_ context.Context, _, _, _ string, _, _ int) ([]*forgejo.Issue, error) {
 			return nil, errors.New("list failure")
 		},
-		createIssueFunc: func(_ context.Context, _, _, _, _ string, _, _ []string) (*gitea.Issue, error) {
+		createIssueFunc: func(_ context.Context, _, _, _, _ string, _, _ []string) (*forgejo.Issue, error) {
 			return nil, errors.New("create issue failure")
 		},
-		createPullRequestFunc: func(_ context.Context, _, _, _, _, _, _ string) (*gitea.PullRequest, error) {
+		createPullRequestFunc: func(_ context.Context, _, _, _, _, _, _ string) (*forgejo.PullRequest, error) {
 			return nil, errors.New("create pr failure")
 		},
-		reviewPullRequestFunc: func(_ context.Context, _ string, _ string, _ int64, _, _ string) (*gitea.PullReview, error) {
+		reviewPullRequestFunc: func(_ context.Context, _ string, _ string, _ int64, _, _ string) (*forgejo.PullReview, error) {
 			return nil, errors.New("review failure")
 		},
-		getFileFunc: func(_ context.Context, _, _, _, _ string) (*gitea.FileContent, error) {
+		getFileFunc: func(_ context.Context, _, _, _, _ string) (*forgejo.FileContent, error) {
 			return nil, errors.New("read file failure")
 		},
 	}
@@ -237,7 +239,7 @@ func TestRunFunction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error running Run: %v", err)
 	}
-	if !strings.Contains(outBuf.String(), "gitea-mcp") {
-		t.Errorf("expected gitea-mcp in output, got: %s", outBuf.String())
+	if !strings.Contains(outBuf.String(), "forgejo-mcp") {
+		t.Errorf("expected forgejo-mcp in output, got: %s", outBuf.String())
 	}
 }

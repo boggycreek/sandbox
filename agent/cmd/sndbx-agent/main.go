@@ -158,8 +158,13 @@ func LoadConfig(args []string) (*Config, error) {
 		standardBins := []string{
 			"/usr/local/bin/beads-mcp",
 			"/usr/local/bin/bp-mcp",
-			"/usr/local/bin/gitea-mcp",
+			"/usr/local/bin/forgejo-mcp",
 			"/usr/local/bin/sonar-mcp",
+		}
+		if _, err := os.Stat("/usr/local/bin/forgejo-mcp"); err != nil {
+			if _, err := os.Stat("/usr/local/bin/gitea-mcp"); err == nil {
+				standardBins = append(standardBins, "/usr/local/bin/gitea-mcp")
+			}
 		}
 		for _, binPath := range standardBins {
 			if info, err := os.Stat(binPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {

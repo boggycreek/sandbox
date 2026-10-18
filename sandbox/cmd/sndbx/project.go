@@ -32,13 +32,13 @@ func handleProject(ctx context.Context, paths config.Paths, args []string, stdou
 
 Commands:
   create <name> [--org <org>] [--key <key>] [--description <desc>]
-          Create a new project linked across Gitea and SonarQube
+          Create a new project linked across Forgejo and SonarQube
   list [--json]
           List all registered projects with live Quality Gate scan status
   doctor [name] [--org <org>]
           Diagnose and auto-heal project linkages, tokens, and Quality Gates
-  link <gitea-repo> [sonar-project]
-          Link an existing Gitea repository with a SonarQube project
+  link <forgejo-repo> [sonar-project]
+          Link an existing Forgejo repository with a SonarQube project
   delete <name> [--org <org>] [--force]
           Delete project metadata and optionally remote assets
 `, bin)
@@ -98,8 +98,12 @@ func handleProjectCreate(ctx context.Context, paths config.Paths, args []string,
 		return 1
 	}
 
+	repoURL := p.ForgejoURL
+	if repoURL == "" {
+		repoURL = p.GiteaURL
+	}
 	fmt.Fprintf(stdout, "Created project %s / %s:\n", p.Org, p.Name)
-	fmt.Fprintf(stdout, "    Gitea:       %s\n", p.GiteaURL)
+	fmt.Fprintf(stdout, "    Forgejo:     %s\n", repoURL)
 	fmt.Fprintf(stdout, "    SonarQube:   %s\n", p.SonarURL)
 	fmt.Fprintf(stdout, "    Scan Status: %s\n", p.ScanStatus)
 	return 0
@@ -193,32 +197,36 @@ func handleProjectDoctor(ctx context.Context, paths config.Paths, args []string,
 
 func handleProjectLink(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	bin := binaryName()
-	var giteaRepo, sonarProject string
+	var repoRef, sonarProject string
 
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "-") {
-			if giteaRepo == "" {
-				giteaRepo = arg
+			if repoRef == "" {
+				repoRef = arg
 			} else if sonarProject == "" {
 				sonarProject = arg
 			}
 		}
 	}
 
-	if giteaRepo == "" {
-		fmt.Fprintf(stderr, "Usage: %s project link <gitea-repo> [sonar-project]\n", bin)
+	if repoRef == "" {
+		fmt.Fprintf(stderr, "Usage: %s project link <forgejo-repo> [sonar-project]\n", bin)
 		return 1
 	}
 
 	mgr := project.NewManager(paths)
-	p, err := mgr.Link(ctx, giteaRepo, sonarProject)
+	p, err := mgr.Link(ctx, repoRef, sonarProject)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s project link error: %v\n", bin, err)
 		return 1
 	}
 
+	repoURL := p.ForgejoURL
+	if repoURL == "" {
+		repoURL = p.GiteaURL
+	}
 	fmt.Fprintf(stdout, "Linked project %s / %s:\n", p.Org, p.Name)
-	fmt.Fprintf(stdout, "    Gitea:       %s\n", p.GiteaURL)
+	fmt.Fprintf(stdout, "    Forgejo:     %s\n", repoURL)
 	fmt.Fprintf(stdout, "    SonarQube:   %s\n", p.SonarURL)
 	fmt.Fprintf(stdout, "    Scan Status: %s\n", p.ScanStatus)
 	return 0

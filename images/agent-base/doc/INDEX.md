@@ -16,7 +16,7 @@ To avoid token bloat and maintain clean separation of concerns, documentation is
 | **[`ENVIRONMENT.md`](ENVIRONMENT.md)** | Container topology, unprivileged user, workspace paths, persistent volumes, and tmux supervisor. |
 | **[`BACKPLANE.md`](BACKPLANE.md)** | Cross-agent messaging (`bp`), broadcast feeds, direct tasking, threaded replies, status, and peer discovery. |
 | **[`BEADS.md`](BEADS.md)** | In-container fleet task coordination with Beads (`bd`), graph dependencies (`bd ready`), and `fleet-tasks` CLI. |
-| **[`GITEA.md`](GITEA.md)** | Local Git forge (`http://gitea:3000`), `fleet` organization, shared tools repository, and fleet task graph (`bd`). |
+| **[`FORGEJO.md`](FORGEJO.md)** | Local Git forge (`http://forgejo:3000`), `fleet` organization, shared tools repository, and fleet task graph (`bd`). |
 | **[`LLM_GATEWAY.md`](LLM_GATEWAY.md)** | Host-local OpenAI-compatible model routing (`http://llm-gateway:<port>/v1`) for Ollama, llama.cpp, and vLLM. |
 | **[`MEMORY.md`](MEMORY.md)** | Git-backed dotfiles and reflection notes backup (`fleet/agent-<name>-memory.git`). |
 | **[`SONARQUBE.md`](SONARQUBE.md)** | SonarQube deterministic mechanical analysis server (`http://sonarqube:9000`), MCP tools, and Quality Gates. |
@@ -31,7 +31,7 @@ To avoid token bloat and maintain clean separation of concerns, documentation is
 - **Send Direct Message**: `bp tell <agent> "<message>"`
 - **Read Inbox**: `bp recv`
 - **Operator Communication**: `bp human`
-- **Git Forge**: `http://gitea:3000` (org: `fleet`)
+- **Git Forge**: `http://forgejo:3000` (org: `fleet`)
 - **Model Gateway**: `http://llm-gateway:<port>/v1`
 - **SonarQube Server**: `http://sonarqube:9000` (`sonar-mcp`)
-- **Fleet Task Graph**: `~/tasks` (`fleet-tasks ready`, `bd ready`, backed by `http://gitea:3000/fleet/tasks.git`)
+- **Fleet Task Graph**: `~/tasks` (`fleet-tasks ready`, `bd ready`, backed by `http://forgejo:3000/fleet/tasks.git`)

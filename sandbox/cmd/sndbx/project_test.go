@@ -18,27 +18,27 @@ import (
 )
 
 func setupMockServersForCLI(t *testing.T) (*httptest.Server, *httptest.Server) {
-	giteaMux := http.NewServeMux()
+	forgejoMux := http.NewServeMux()
 	sonarMux := http.NewServeMux()
 
-	// Gitea endpoints
-	giteaMux.HandleFunc("/api/v1/orgs/factory", func(w http.ResponseWriter, r *http.Request) {
+	// Forgejo endpoints
+	forgejoMux.HandleFunc("/api/v1/orgs/factory", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":1,"username":"factory"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/custom", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/custom", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":2,"username":"custom"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/factory/repos", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/factory/repos", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":10,"name":"app"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/custom/repos", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/custom/repos", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":11,"name":"app"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/repos/factory/app", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/repos/factory/app", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.WriteHeader(http.StatusOK)
@@ -47,7 +47,7 @@ func setupMockServersForCLI(t *testing.T) (*httptest.Server, *httptest.Server) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})
-	giteaMux.HandleFunc("/api/v1/repos/custom/app", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/repos/custom/app", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.WriteHeader(http.StatusOK)
@@ -56,7 +56,7 @@ func setupMockServersForCLI(t *testing.T) (*httptest.Server, *httptest.Server) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})
-	giteaMux.HandleFunc("/api/v1/repos/factory/fail", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/repos/factory/fail", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
@@ -89,13 +89,13 @@ func setupMockServersForCLI(t *testing.T) (*httptest.Server, *httptest.Server) {
 		_, _ = w.Write([]byte(`{"projectStatus":{"status":"NONE"}}`))
 	})
 
-	gServer := httptest.NewServer(giteaMux)
+	fServer := httptest.NewServer(forgejoMux)
 	sServer := httptest.NewServer(sonarMux)
 	t.Cleanup(func() {
-		gServer.Close()
+		fServer.Close()
 		sServer.Close()
 	})
-	return gServer, sServer
+	return fServer, sServer
 }
 
 func TestHandleProjectGeneral(t *testing.T) {

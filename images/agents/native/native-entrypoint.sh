@@ -50,7 +50,8 @@ if [ ! -f "/home/agent/.git-credentials" ]; then
     git config --global credential.helper store
     ENCODED_NAME=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${AGENT_NAME:-agent}" 2>/dev/null || echo "${AGENT_NAME:-agent}")
     ENCODED_PASS=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${PASS}" 2>/dev/null || echo "${PASS}")
-    echo "http://${ENCODED_NAME}:${ENCODED_PASS}@gitea:3000" > /home/agent/.git-credentials
+    echo "http://${ENCODED_NAME}:${ENCODED_PASS}@forgejo:3000" > /home/agent/.git-credentials
+    echo "http://${ENCODED_NAME}:${ENCODED_PASS}@gitea:3000" >> /home/agent/.git-credentials
     chmod 600 /home/agent/.git-credentials
   fi
 fi
@@ -74,7 +75,7 @@ export BPD_DISABLED=1
 # Auto-discover installed MCP binaries if MCP_BINARIES is not explicitly set
 if [ -z "${MCP_BINARIES:-}" ]; then
     DISCOVERED=""
-    for bin in /usr/local/bin/beads-mcp /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/sonar-mcp; do
+    for bin in /usr/local/bin/beads-mcp /usr/local/bin/bp-mcp /usr/local/bin/forgejo-mcp /usr/local/bin/gitea-mcp /usr/local/bin/sonar-mcp; do
         if [ -x "$bin" ]; then
             DISCOVERED="${DISCOVERED:+$DISCOVERED,}$bin"
         fi

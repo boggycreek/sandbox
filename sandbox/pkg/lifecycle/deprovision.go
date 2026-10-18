@@ -15,7 +15,7 @@ import (
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
@@ -52,9 +52,12 @@ func DeprovisionValkeyUser(ctx context.Context, agentName string) error {
 	return err
 }
 
-// DeprovisionGiteaUser removes the agent account and public keys from the local Gitea instance.
-func DeprovisionGiteaUser(ctx context.Context, agentName string) error {
-	adminPass := os.Getenv("GITEA_ADMIN_PASSWORD")
+// DeprovisionForgejoUser removes the agent account and public keys from the local Forgejo instance.
+func DeprovisionForgejoUser(ctx context.Context, agentName string) error {
+	adminPass := os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = os.Getenv("GITEA_ADMIN_PASSWORD")
+	}
 	if adminPass == "" {
 		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	}
@@ -62,14 +65,25 @@ func DeprovisionGiteaUser(ctx context.Context, agentName string) error {
 		adminPass = "admin_backplane_pass"
 	}
 
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
 	}
 
-	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
+	}
+
+	client := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: adminUser,
 		AdminPass: adminPass,
 		Timeout:   3 * time.Second,
 	})
@@ -79,6 +93,11 @@ func DeprovisionGiteaUser(ctx context.Context, agentName string) error {
 		return nil
 	}
 	return err
+}
+
+// DeprovisionGiteaUser aliases DeprovisionForgejoUser for backward compatibility.
+func DeprovisionGiteaUser(ctx context.Context, agentName string) error {
+	return DeprovisionForgejoUser(ctx, agentName)
 }
 
 // DeprovisionSonarUser revokes the agent's analysis token and deactivates the agent account in SonarQube.
@@ -153,17 +172,17 @@ func DeprovisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config
 		report.AddStep("Valkey Identity", StatusError, fmt.Sprintf("Failed to remove Valkey identity: %v", err), err)
 	}
 
-	// 5. Deprovision Gitea user & keys
+	// 5. Deprovision Forgejo user & keys
 	if cfg.IsNoContainer() {
-		report.AddStep("Gitea Account", StatusSkipped, "No-container agent has no Gitea account (skipped)", nil)
-	} else if os.Getenv("GITEA_DISABLED") == "1" {
-		report.AddStep("Gitea Account", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
-	} else if err := DeprovisionGiteaUser(ctx, cfg.Name); err == nil {
-		report.AddStep("Gitea Account", StatusOK, "Purged Gitea user account and authorized keys", nil)
+		report.AddStep("Forgejo Account", StatusSkipped, "No-container agent has no Forgejo account (skipped)", nil)
+	} else if os.Getenv("FORGEJO_DISABLED") == "1" || os.Getenv("GITEA_DISABLED") == "1" {
+		report.AddStep("Forgejo Account", StatusSkipped, "Forgejo infrastructure is disabled via FORGEJO_DISABLED (skipped)", nil)
+	} else if err := DeprovisionForgejoUser(ctx, cfg.Name); err == nil {
+		report.AddStep("Forgejo Account", StatusOK, "Purged Forgejo user account and authorized keys", nil)
 	} else if IsOfflineError(err) {
-		report.AddStep("Gitea Account", StatusSkipped, fmt.Sprintf("Gitea infrastructure is offline (skipped): %v", err), err)
+		report.AddStep("Forgejo Account", StatusSkipped, fmt.Sprintf("Forgejo infrastructure is offline (skipped): %v", err), err)
 	} else {
-		report.AddStep("Gitea Account", StatusError, fmt.Sprintf("Failed to purge Gitea user: %v", err), err)
+		report.AddStep("Forgejo Account", StatusError, fmt.Sprintf("Failed to purge Forgejo user: %v", err), err)
 	}
 
 	// 6. Deprovision SonarQube user & analysis tokens

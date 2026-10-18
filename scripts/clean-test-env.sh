@@ -8,7 +8,7 @@
 # and stale rootless network namespaces.
 #
 # NOTE: This script targets ONLY ephemeral test instances (test-*, unit-test-*, mock-start-*).
-# Persistent shared infrastructure containers (agent-sandbox-valkey, agent-sandbox-gitea)
+# Persistent shared infrastructure containers (agent-sandbox-valkey, agent-sandbox-forgejo, agent-sandbox-gitea)
 # and their associated networks and volumes are explicitly protected and NEVER terminated.
 
 set -euo pipefail
@@ -32,7 +32,7 @@ if command -v podman >/dev/null 2>&1; then
     echo "${TEST_NETS}" | xargs -r -n 1 podman network rm -f 2>/dev/null || true
   fi
 
-  # Remove ephemeral test volumes (safeguarding agent-sandbox-valkey-data, agent-sandbox-gitea-data)
+  # Remove ephemeral test volumes (safeguarding agent-sandbox-valkey-data, agent-sandbox-forgejo-data, agent-sandbox-gitea-data)
   TEST_VOLS=$(podman volume ls --format '{{.Name}}' 2>/dev/null | grep -E '^(test-|infra-test-|unit-test-|mock-start-)' | grep -v '^agent-sandbox-' || true)
   if [ -n "${TEST_VOLS}" ]; then
     echo "Removing ephemeral test volumes: ${TEST_VOLS}"
@@ -42,7 +42,7 @@ fi
 
 # 2. Terminate orphaned conmon, slirp4netns, and rootlessport test processes.
 # Explicitly target ephemeral test containers only; NEVER kill persistent infrastructure or global slirp4netns
-pkill -9 -u "${UID_NUM}" -f "(conmon|slirp4netns|rootlessport).*(test-valkey|test-infra-|test-gitea|unit-test|test-podman|mock-start)" 2>/dev/null || true
+pkill -9 -u "${UID_NUM}" -f "(conmon|slirp4netns|rootlessport).*(test-valkey|test-infra-|test-forgejo|test-gitea|unit-test|test-podman|mock-start)" 2>/dev/null || true
 pkill -9 -u "${UID_NUM}" -f "valkey-server --aclfile /etc/valkey/users.acl" 2>/dev/null || true
 
 # 3. Clean up stale netns descriptors and rootless-netns lockfiles in /run/user/<uid>

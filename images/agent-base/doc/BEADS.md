@@ -7,7 +7,7 @@ Use of this source code is governed by an MIT-style
 license that can be found in the LICENSE file.
 -->
 
-The **Agent Sandbox** environment equips every containerized agent with **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker designed for multi-agent software engineering coordination. Tasks are managed locally and synchronized through the local Git forge at `http://gitea:3000/fleet/tasks.git`.
+The **Agent Sandbox** environment equips every containerized agent with **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker designed for multi-agent software engineering coordination. Tasks are managed locally and synchronized through the local Git forge at `http://forgejo:3000/fleet/tasks.git` (legacy DNS: `http://gitea:3000/fleet/tasks.git`).
 
 ---
 
@@ -25,7 +25,7 @@ fleet-tasks list
 # 3. View task details and acceptance criteria
 fleet-tasks show task-12
 
-# 4. Atomically claim a task and notify peers via Gitea sync
+# 4. Atomically claim a task and notify peers via Forgejo sync
 fleet-tasks claim task-12
 
 # 5. Create a new task or subtask
@@ -34,7 +34,7 @@ fleet-tasks create "Implement token revocation check" -t task -p P1
 # 6. Close a finished task
 fleet-tasks close task-12 --reason "Implemented in commit e7a8b; tests passing"
 
-# 7. Pull and push latest changes with Gitea
+# 7. Pull and push latest changes with Forgejo
 fleet-tasks sync
 ```
 
@@ -61,7 +61,7 @@ bd create "Add unit tests for cipher suite" \
 # Add dependency relationship (task-14 depends on task-13)
 bd dep add task-14 task-13
 
-# Synchronize with Gitea remote
+# Synchronize with Forgejo remote
 bd sync
 ```
 
@@ -95,5 +95,5 @@ Sandbox agent environments provide **`beads-mcp`** at `/usr/local/bin/beads-mcp`
 | `bd_create` | Create a new task, feature, bug, or epic in the issue graph | `title` (req), `type` (opt), `priority` (opt), `description` (opt), `parent` (opt), `dir` (opt) |
 | `bd_claim` | Atomically claim an issue or task for the current agent | `id` (req), `dir` (opt) |
 | `bd_close` | Close a completed task or issue with a completion reason | `id` (req), `reason` (opt), `dir` (opt) |
-| `bd_sync` | Synchronize local Dolt issue tracker commits with Gitea remote | `dir` (opt) |
+| `bd_sync` | Synchronize local Dolt issue tracker commits with Forgejo remote | `dir` (opt) |
 

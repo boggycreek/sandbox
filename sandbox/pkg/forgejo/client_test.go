@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
-package gitea
+package forgejo
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-func TestGiteaClientSuite(t *testing.T) {
-	// Mock Gitea API server
+func TestForgejoClientSuite(t *testing.T) {
+	// Mock Forgejo API server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 

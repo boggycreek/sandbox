@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
@@ -26,42 +26,42 @@ func TestNewManagerDefaults(t *testing.T) {
 		ProjectsDir: filepath.Join(tmpDir, "projects"),
 	}
 
-	t.Setenv("GITEA_URL", "http://127.0.0.1:3000")
+	t.Setenv("FORGEJO_URL", "http://127.0.0.1:3000")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:9000")
 	t.Setenv("ADMIN_BACKPLANE_PASSWORD", "testpass")
 	t.Setenv("SONAR_ADMIN_USER", "admin")
 
 	mgr := NewManager(paths)
-	if mgr == nil || mgr.giteaBase != "http://127.0.0.1:3000" || mgr.sonarBase != "http://127.0.0.1:9000" {
+	if mgr == nil || mgr.forgejoBase != "http://127.0.0.1:3000" || mgr.sonarBase != "http://127.0.0.1:9000" {
 		t.Fatalf("unexpected manager defaults: %+v", mgr)
 	}
 }
 
-func setupMockServers(t *testing.T) (*httptest.Server, *httptest.Server, *gitea.Client, *sonar.Client) {
-	giteaMux := http.NewServeMux()
+func setupMockServers(t *testing.T) (*httptest.Server, *httptest.Server, *forgejo.Client, *sonar.Client) {
+	forgejoMux := http.NewServeMux()
 	sonarMux := http.NewServeMux()
 
-	// Gitea endpoints
-	giteaMux.HandleFunc("/api/v1/orgs/factory", func(w http.ResponseWriter, r *http.Request) {
+	// Forgejo endpoints
+	forgejoMux.HandleFunc("/api/v1/orgs/factory", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":1,"username":"factory"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/fleet", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/fleet", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"id":2,"username":"fleet"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/fail-org", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/fail-org", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed org", http.StatusInternalServerError)
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/factory/repos", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/factory/repos", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":10,"name":"app"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/orgs/fleet/repos", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/orgs/fleet/repos", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"id":11,"name":"tools"}`))
 	})
-	giteaMux.HandleFunc("/api/v1/repos/factory/app", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/repos/factory/app", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.WriteHeader(http.StatusOK)
@@ -70,7 +70,7 @@ func setupMockServers(t *testing.T) (*httptest.Server, *httptest.Server, *gitea.
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})
-	giteaMux.HandleFunc("/api/v1/repos/factory/missing-repo", func(w http.ResponseWriter, r *http.Request) {
+	forgejoMux.HandleFunc("/api/v1/repos/factory/missing-repo", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 
@@ -122,16 +122,16 @@ func setupMockServers(t *testing.T) (*httptest.Server, *httptest.Server, *gitea.
 		}
 	})
 
-	giteaServer := httptest.NewServer(giteaMux)
+	forgejoServer := httptest.NewServer(forgejoMux)
 	sonarServer := httptest.NewServer(sonarMux)
 	t.Cleanup(func() {
-		giteaServer.Close()
+		forgejoServer.Close()
 		sonarServer.Close()
 	})
 
-	gClient := gitea.NewClient(gitea.ClientConfig{BaseURL: giteaServer.URL})
+	fClient := forgejo.NewClient(forgejo.ClientConfig{BaseURL: forgejoServer.URL})
 	sClient := sonar.NewClient(sonar.ClientConfig{BaseURL: sonarServer.URL})
-	return giteaServer, sonarServer, gClient, sClient
+	return forgejoServer, sonarServer, fClient, sClient
 }
 
 func TestProjectLifecycle(t *testing.T) {
@@ -189,7 +189,7 @@ func TestProjectLifecycle(t *testing.T) {
 
 	// 7. FormatList formatting
 	output := FormatList(list)
-	if !strings.Contains(output, "● factory / app") || !strings.Contains(output, "Gitea:") || !strings.Contains(output, "Scan Status: UNANALYZED") {
+	if !strings.Contains(output, "● factory / app") || !strings.Contains(output, "Forgejo:") || !strings.Contains(output, "Scan Status: UNANALYZED") {
 		t.Errorf("unexpected FormatList output:\n%s", output)
 	}
 
@@ -219,7 +219,7 @@ func TestProjectLinkAndDeleteRemote(t *testing.T) {
 
 	// Link validation
 	if _, err := mgr.Link(ctx, "", ""); err == nil {
-		t.Fatal("expected error on empty giteaRepo")
+		t.Fatal("expected error on empty repo")
 	}
 
 	// Link with org/repo
@@ -378,6 +378,8 @@ func TestProjectDoctorAndAutoHeal(t *testing.T) {
 
 func TestManagerEdgeCases(t *testing.T) {
 	// 1. NewManager with alternative env vars
+	t.Setenv("FORGEJO_URL", "")
+	t.Setenv("FORGEJO_HOST_URL", "")
 	t.Setenv("GITEA_URL", "")
 	t.Setenv("GITEA_HOST_URL", "http://127.0.0.1:3001/")
 	t.Setenv("ADMIN_BACKPLANE_PASSWORD", "")
@@ -391,8 +393,8 @@ func TestManagerEdgeCases(t *testing.T) {
 		ProjectsDir: filepath.Join(tmpDir, "projects"),
 	}
 	mgr := NewManager(paths)
-	if mgr.giteaBase != "http://127.0.0.1:3001" || mgr.sonarBase != "http://127.0.0.1:9001" {
-		t.Errorf("unexpected bases: gitea=%s, sonar=%s", mgr.giteaBase, mgr.sonarBase)
+	if mgr.forgejoBase != "http://127.0.0.1:3001" || mgr.sonarBase != "http://127.0.0.1:9001" {
+		t.Errorf("unexpected bases: forgejo=%s, sonar=%s", mgr.forgejoBase, mgr.sonarBase)
 	}
 
 	// 2. resolveScanStatus with unusual status
@@ -447,10 +449,10 @@ func TestValidateNameAndUnreachableServices(t *testing.T) {
 		ProjectsDir: filepath.Join(tmpDir, "projects"),
 	}
 
-	// 2. Unreachable Gitea and SonarQube services in Doctor
-	unreachableGitea := gitea.NewClient(gitea.ClientConfig{BaseURL: "http://127.0.0.1:65511"})
+	// 2. Unreachable Forgejo and SonarQube services in Doctor
+	unreachableForgejo := forgejo.NewClient(forgejo.ClientConfig{BaseURL: "http://127.0.0.1:65511"})
 	unreachableSonar := sonar.NewClient(sonar.ClientConfig{BaseURL: "http://127.0.0.1:65512"})
-	mgr := NewManagerWithClients(paths, unreachableGitea, unreachableSonar, "http://127.0.0.1:65511", "http://127.0.0.1:65512")
+	mgr := NewManagerWithClients(paths, unreachableForgejo, unreachableSonar, "http://127.0.0.1:65511", "http://127.0.0.1:65512")
 
 	// Save a project
 	p := &Project{

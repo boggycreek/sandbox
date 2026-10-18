@@ -19,30 +19,34 @@ import (
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp/resp"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 )
 
-// EphemeralInfraHarness manages isolated Valkey and Gitea containers for end-to-end integration tests.
+// EphemeralInfraHarness manages isolated Valkey and Forgejo containers for end-to-end integration tests.
 type EphemeralInfraHarness struct {
-	ValkeyPort    int
-	GiteaHTTPPort int
-	GiteaSSHPort  int
-	AdminPassword string
-	HumanPassword string
-	HumanName     string
-	NetworkName   string
-	ValkeyName    string
-	GiteaName     string
-	ValkeyVolName string
-	GiteaVolName  string
-	DataHome      string
-	BinPath       string
-	engine        string
-	t             *testing.T
-	teardownOnce  sync.Once
+	ValkeyPort      int
+	ForgejoHTTPPort int
+	ForgejoSSHPort  int
+	GiteaHTTPPort   int // Compatibility alias
+	GiteaSSHPort    int // Compatibility alias
+	AdminPassword   string
+	HumanPassword   string
+	HumanName       string
+	NetworkName     string
+	ValkeyName      string
+	ForgejoName     string
+	GiteaName       string // Compatibility alias
+	ValkeyVolName   string
+	ForgejoVolName  string
+	GiteaVolName    string // Compatibility alias
+	DataHome        string
+	BinPath         string
+	engine          string
+	t               *testing.T
+	teardownOnce    sync.Once
 }
 
-// StartEphemeralInfraHarness starts an isolated Valkey and Gitea stack with unique ephemeral names and dynamic ports.
+// StartEphemeralInfraHarness starts an isolated Valkey and Forgejo stack with unique ephemeral names and dynamic ports.
 func StartEphemeralInfraHarness(t *testing.T) *EphemeralInfraHarness {
 	t.Helper()
 
@@ -58,32 +62,36 @@ func StartEphemeralInfraHarness(t *testing.T) *EphemeralInfraHarness {
 		t.Fatalf("failed finding free port for test valkey: %v", err)
 	}
 
-	giteaHTTPPort, err := getFreePort()
+	forgejoHTTPPort, err := getFreePort()
 	if err != nil {
-		t.Fatalf("failed finding free port for test gitea HTTP: %v", err)
+		t.Fatalf("failed finding free port for test forgejo HTTP: %v", err)
 	}
 
-	giteaSSHPort, err := getFreePort()
+	forgejoSSHPort, err := getFreePort()
 	if err != nil {
-		t.Fatalf("failed finding free port for test gitea SSH: %v", err)
+		t.Fatalf("failed finding free port for test forgejo SSH: %v", err)
 	}
 
 	suffix := fmt.Sprintf("%d-%d", os.Getpid(), valkeyPort)
 	h := &EphemeralInfraHarness{
-		ValkeyPort:    valkeyPort,
-		GiteaHTTPPort: giteaHTTPPort,
-		GiteaSSHPort:  giteaSSHPort,
-		AdminPassword: "test_admin_backplane_pass",
-		HumanPassword: "test_human_backplane_pass",
-		HumanName:     "tester",
-		NetworkName:   fmt.Sprintf("test-infra-net-%s", suffix),
-		ValkeyName:    fmt.Sprintf("test-infra-valkey-%s", suffix),
-		GiteaName:     fmt.Sprintf("test-infra-gitea-%s", suffix),
-		ValkeyVolName: fmt.Sprintf("test-infra-valkey-data-%s", suffix),
-		GiteaVolName:  fmt.Sprintf("test-infra-gitea-data-%s", suffix),
-		DataHome:      dataHome,
-		engine:        engine,
-		t:             t,
+		ValkeyPort:      valkeyPort,
+		ForgejoHTTPPort: forgejoHTTPPort,
+		ForgejoSSHPort:  forgejoSSHPort,
+		GiteaHTTPPort:   forgejoHTTPPort,
+		GiteaSSHPort:    forgejoSSHPort,
+		AdminPassword:   "test_admin_backplane_pass",
+		HumanPassword:   "test_human_backplane_pass",
+		HumanName:       "tester",
+		NetworkName:     fmt.Sprintf("test-infra-net-%s", suffix),
+		ValkeyName:      fmt.Sprintf("test-infra-valkey-%s", suffix),
+		ForgejoName:     fmt.Sprintf("test-infra-forgejo-%s", suffix),
+		GiteaName:       fmt.Sprintf("test-infra-forgejo-%s", suffix),
+		ValkeyVolName:   fmt.Sprintf("test-infra-valkey-data-%s", suffix),
+		ForgejoVolName:  fmt.Sprintf("test-infra-forgejo-data-%s", suffix),
+		GiteaVolName:    fmt.Sprintf("test-infra-forgejo-data-%s", suffix),
+		DataHome:        dataHome,
+		engine:          engine,
+		t:               t,
 	}
 
 	// Register automatic teardown
@@ -145,29 +153,31 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~identity:* %%R~*:* &* +@all (
 		h.t.Fatalf("failed starting ephemeral Valkey container: %v (%s)", err, string(out))
 	}
 
-	// 5. Start ephemeral Gitea container
-	giteaArgs := []string{
+	// 5. Start ephemeral Forgejo container
+	forgejoArgs := []string{
 		"run", "-d",
-		"--name", h.GiteaName,
-		"--hostname", "gitea",
+		"--name", h.ForgejoName,
+		"--hostname", "forgejo",
 		"--network", h.NetworkName,
-		"-p", fmt.Sprintf("127.0.0.1:%d:3000", h.GiteaHTTPPort),
-		"-p", fmt.Sprintf("127.0.0.1:%d:2222", h.GiteaSSHPort),
-		"-e", "GITEA__server__DOMAIN=gitea",
-		"-e", "GITEA__server__HTTP_PORT=3000",
-		"-e", "GITEA__server__ROOT_URL=http://gitea:3000/",
-		"-e", "GITEA__server__SSH_PORT=2222",
-		"-e", "GITEA__server__SSH_LISTEN_PORT=2222",
-		"-e", "GITEA__database__DB_TYPE=sqlite3",
-		"-e", "GITEA__database__PATH=/var/lib/gitea/data/gitea.db",
-		"-e", "GITEA__service__DISABLE_REGISTRATION=false",
-		"-e", "GITEA__service__REQUIRE_SIGNIN_VIEW=false",
-		"-e", "GITEA__security__INSTALL_LOCK=true",
-		"-v", fmt.Sprintf("%s:/var/lib/gitea:z", h.GiteaVolName),
-		"docker.io/gitea/gitea:1.22-rootless",
+		"--network-alias", "forgejo",
+		"--network-alias", "gitea",
+		"-p", fmt.Sprintf("127.0.0.1:%d:3000", h.ForgejoHTTPPort),
+		"-p", fmt.Sprintf("127.0.0.1:%d:2222", h.ForgejoSSHPort),
+		"-e", "FORGEJO__server__DOMAIN=forgejo",
+		"-e", "FORGEJO__server__HTTP_PORT=3000",
+		"-e", "FORGEJO__server__ROOT_URL=http://forgejo:3000/",
+		"-e", "FORGEJO__server__SSH_PORT=2222",
+		"-e", "FORGEJO__server__SSH_LISTEN_PORT=2222",
+		"-e", "FORGEJO__database__DB_TYPE=sqlite3",
+		"-e", "FORGEJO__database__PATH=/var/lib/gitea/data/gitea.db",
+		"-e", "FORGEJO__service__DISABLE_REGISTRATION=false",
+		"-e", "FORGEJO__service__REQUIRE_SIGNIN_VIEW=false",
+		"-e", "FORGEJO__security__INSTALL_LOCK=true",
+		"-v", fmt.Sprintf("%s:/var/lib/gitea:z", h.ForgejoVolName),
+		"codeberg.org/forgejo/forgejo:9-rootless",
 	}
-	if out, err := exec.CommandContext(ctx, h.engine, giteaArgs...).CombinedOutput(); err != nil {
-		h.t.Fatalf("failed starting ephemeral Gitea container: %v (%s)", err, string(out))
+	if out, err := exec.CommandContext(ctx, h.engine, forgejoArgs...).CombinedOutput(); err != nil {
+		h.t.Fatalf("failed starting ephemeral Forgejo container: %v (%s)", err, string(out))
 	}
 }
 
@@ -198,19 +208,19 @@ func (h *EphemeralInfraHarness) waitForReady() {
 		h.t.Fatalf("timed out waiting for test Valkey container on port %d", h.ValkeyPort)
 	}
 
-	// Wait for Gitea
-	giteaURL := fmt.Sprintf("http://127.0.0.1:%d", h.GiteaHTTPPort)
+	// Wait for Forgejo
+	forgejoURL := fmt.Sprintf("http://127.0.0.1:%d", h.ForgejoHTTPPort)
 	httpClient := &http.Client{Timeout: 1 * time.Second}
-	deadlineGitea := time.Now().Add(25 * time.Second)
-	giteaReady := false
-	for time.Now().Before(deadlineGitea) {
+	deadlineForgejo := time.Now().Add(25 * time.Second)
+	forgejoReady := false
+	for time.Now().Before(deadlineForgejo) {
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaURL+"/api/v1/version", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, forgejoURL+"/api/v1/version", nil)
 		resp, err := httpClient.Do(req)
 		cancel()
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
-			giteaReady = true
+			forgejoReady = true
 			break
 		}
 		if resp != nil {
@@ -218,16 +228,25 @@ func (h *EphemeralInfraHarness) waitForReady() {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	if !giteaReady {
-		h.t.Fatalf("timed out waiting for test Gitea container on port %d", h.GiteaHTTPPort)
+	if !forgejoReady {
+		h.t.Fatalf("timed out waiting for test Forgejo container on port %d", h.ForgejoHTTPPort)
 	}
 
-	// Bootstrap Gitea admin user & fleet org
+	// Bootstrap Forgejo admin users & fleet org
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_ = exec.CommandContext(ctx, h.engine, "exec", h.GiteaName,
-		"gitea", "admin", "user", "create",
+	_ = exec.CommandContext(ctx, h.engine, "exec", h.ForgejoName,
+		"forgejo", "admin", "user", "create",
+		"--admin",
+		"--username", "forgejoadmin",
+		"--password", h.AdminPassword,
+		"--email", "forgejoadmin@local.sndbx",
+		"--must-change-password=false",
+	).Run()
+
+	_ = exec.CommandContext(ctx, h.engine, "exec", h.ForgejoName,
+		"forgejo", "admin", "user", "create",
 		"--admin",
 		"--username", "giteaadmin",
 		"--password", h.AdminPassword,
@@ -235,9 +254,9 @@ func (h *EphemeralInfraHarness) waitForReady() {
 		"--must-change-password=false",
 	).Run()
 
-	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	client := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: "forgejoadmin",
 		AdminPass: h.AdminPassword,
 		Timeout:   3 * time.Second,
 	})
@@ -257,7 +276,9 @@ func (h *EphemeralInfraHarness) Env() []string {
 		fmt.Sprintf("ADMIN_BACKPLANE_PASSWORD=%s", h.AdminPassword),
 		fmt.Sprintf("HUMAN_BACKPLANE_PASSWORD=%s", h.HumanPassword),
 		fmt.Sprintf("HUMAN_NAME=%s", h.HumanName),
-		fmt.Sprintf("GITEA_URL=http://127.0.0.1:%d", h.GiteaHTTPPort),
+		fmt.Sprintf("FORGEJO_URL=http://127.0.0.1:%d", h.ForgejoHTTPPort),
+		fmt.Sprintf("FORGEJO_ADMIN_PASSWORD=%s", h.AdminPassword),
+		fmt.Sprintf("GITEA_URL=http://127.0.0.1:%d", h.ForgejoHTTPPort),
 		fmt.Sprintf("GITEA_ADMIN_PASSWORD=%s", h.AdminPassword),
 		"SONAR_HOST_URL=http://127.0.0.1:65532",
 		"SONARQUBE_URL=http://127.0.0.1:65532",
@@ -280,9 +301,9 @@ func (h *EphemeralInfraHarness) Teardown() {
 		defer cancel()
 
 		if h.engine != "" {
-			_ = exec.CommandContext(ctx, h.engine, "stop", h.ValkeyName, h.GiteaName).Run()
-			_ = exec.CommandContext(ctx, h.engine, "rm", "-f", h.ValkeyName, h.GiteaName).Run()
-			_ = exec.CommandContext(ctx, h.engine, "volume", "rm", "-f", h.ValkeyVolName, h.GiteaVolName).Run()
+			_ = exec.CommandContext(ctx, h.engine, "stop", h.ValkeyName, h.ForgejoName).Run()
+			_ = exec.CommandContext(ctx, h.engine, "rm", "-f", h.ValkeyName, h.ForgejoName).Run()
+			_ = exec.CommandContext(ctx, h.engine, "volume", "rm", "-f", h.ValkeyVolName, h.ForgejoVolName).Run()
 			_ = exec.CommandContext(ctx, h.engine, "network", "rm", "-f", h.NetworkName).Run()
 		}
 	})

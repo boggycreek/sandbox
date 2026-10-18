@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
-// Package main implements the Gitea Fleet Forge Model Context Protocol (MCP) server.
+// Package main implements the Forgejo Fleet Forge Model Context Protocol (MCP) server.
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/boggycreek/sandbox/mcp/pkg/mcp"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 )
 
 // JSONRPCMessage aliases mcp.JSONRPCMessage for testing compatibility.
@@ -27,20 +27,23 @@ type (
 	property    = mcp.Property
 )
 
-// GiteaClient defines the interface required by the Gitea Forge MCP server
-type GiteaClient interface {
-	ListIssues(ctx context.Context, owner, repo, state string, page, limit int) ([]*gitea.Issue, error)
-	CreateIssue(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*gitea.Issue, error)
-	CreatePullRequest(ctx context.Context, owner, repo, title, body, head, base string) (*gitea.PullRequest, error)
-	GetPullRequest(ctx context.Context, owner, repo string, index int64) (*gitea.PullRequest, error)
-	ReviewPullRequest(ctx context.Context, owner, repo string, index int64, event, body string) (*gitea.PullReview, error)
-	GetFile(ctx context.Context, owner, repo, filePath, ref string) (*gitea.FileContent, error)
+// ForgejoClient defines the interface required by the Forgejo Forge MCP server
+type ForgejoClient interface {
+	ListIssues(ctx context.Context, owner, repo, state string, page, limit int) ([]*forgejo.Issue, error)
+	CreateIssue(ctx context.Context, owner, repo, title, body string, labels, assignees []string) (*forgejo.Issue, error)
+	CreatePullRequest(ctx context.Context, owner, repo, title, body, head, base string) (*forgejo.PullRequest, error)
+	GetPullRequest(ctx context.Context, owner, repo string, index int64) (*forgejo.PullRequest, error)
+	ReviewPullRequest(ctx context.Context, owner, repo string, index int64, event, body string) (*forgejo.PullReview, error)
+	GetFile(ctx context.Context, owner, repo, filePath, ref string) (*forgejo.FileContent, error)
 }
 
-var giteaTools = []mcp.Tool{
+// GiteaClient is an alias for ForgejoClient for backward compatibility
+type GiteaClient = ForgejoClient
+
+var forgejoTools = []mcp.Tool{
 	{
 		Name:        "forge_list_tasks",
-		Description: "List tasks, issues, and backlog items from a Gitea fleet forge repository",
+		Description: "List tasks, issues, and backlog items from a Forgejo fleet forge repository",
 		InputSchema: inputSchema{
 			Type: "object",
 			Properties: map[string]property{
@@ -193,18 +196,21 @@ var giteaTools = []mcp.Tool{
 	},
 }
 
-// MCPServer manages the STDIO JSON-RPC lifecycle for Gitea Fleet Forge integration
+// MCPServer manages the STDIO JSON-RPC lifecycle for Forgejo Fleet Forge integration
 type MCPServer struct {
 	*mcp.Server
-	giteaClient GiteaClient
+	forgejoClient ForgejoClient
 }
 
-// NewMCPServer creates a new Gitea Forge MCP server instance
-func NewMCPServer(client GiteaClient, r io.Reader, w io.Writer) *MCPServer {
+// giteaTools aliases forgejoTools for backward compatibility
+var giteaTools = forgejoTools
+
+// NewMCPServer creates a new Forgejo Forge MCP server instance
+func NewMCPServer(client ForgejoClient, r io.Reader, w io.Writer) *MCPServer {
 	s := &MCPServer{
-		giteaClient: client,
+		forgejoClient: client,
 	}
-	s.Server = mcp.NewServer("gitea-mcp", "0.1.0", r, w, giteaTools, s.executeTool)
+	s.Server = mcp.NewServer("forgejo-mcp", "0.1.0", r, w, forgejoTools, s.executeTool)
 	return s
 }
 
@@ -231,7 +237,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 			limit = int(lVal)
 		}
 
-		issues, err := s.giteaClient.ListIssues(ctx, owner, repo, state, page, limit)
+		issues, err := s.forgejoClient.ListIssues(ctx, owner, repo, state, page, limit)
 		if err != nil {
 			return mcp.ErrorResult(fmt.Sprintf("Error listing forge tasks: %v", err))
 		}
@@ -269,7 +275,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 			}
 		}
 
-		issue, err := s.giteaClient.CreateIssue(ctx, owner, repo, title, body, labels, assignees)
+		issue, err := s.forgejoClient.CreateIssue(ctx, owner, repo, title, body, labels, assignees)
 		if err != nil {
 			return mcp.ErrorResult(fmt.Sprintf("Error creating forge task: %v", err))
 		}
@@ -287,7 +293,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 			return mcp.ErrorResult("Missing required arguments ('repo', 'title', 'head')")
 		}
 
-		pr, err := s.giteaClient.CreatePullRequest(ctx, owner, repo, title, body, head, base)
+		pr, err := s.forgejoClient.CreatePullRequest(ctx, owner, repo, title, body, head, base)
 		if err != nil {
 			return mcp.ErrorResult(fmt.Sprintf("Error creating pull request: %v", err))
 		}
@@ -307,7 +313,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 		event, _ := args["event"].(string)
 		body, _ := args["body"].(string)
 
-		review, err := s.giteaClient.ReviewPullRequest(ctx, owner, repo, index, event, body)
+		review, err := s.forgejoClient.ReviewPullRequest(ctx, owner, repo, index, event, body)
 		if err != nil {
 			return mcp.ErrorResult(fmt.Sprintf("Error reviewing pull request #%d: %v", index, err))
 		}
@@ -323,7 +329,7 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 			return mcp.ErrorResult("Missing required arguments ('repo', 'file_path')")
 		}
 
-		file, err := s.giteaClient.GetFile(ctx, owner, repo, filePath, ref)
+		file, err := s.forgejoClient.GetFile(ctx, owner, repo, filePath, ref)
 		if err != nil {
 			return mcp.ErrorResult(fmt.Sprintf("Error reading file %s: %v", filePath, err))
 		}
@@ -338,22 +344,40 @@ func (s *MCPServer) executeTool(ctx context.Context, params mcp.CallToolParams) 
 
 // Run executes the MCP server reading from r and writing to w
 func Run(ctx context.Context, r io.Reader, w io.Writer) error {
-	baseURL := os.Getenv("GITEA_URL")
+	baseURL := os.Getenv("FORGEJO_URL")
+	if baseURL == "" {
+		baseURL = os.Getenv("GITEA_URL")
+	}
+	if baseURL == "" {
+		baseURL = os.Getenv("FORGEJO_HOST_URL")
+	}
 	if baseURL == "" {
 		baseURL = os.Getenv("GITEA_HOST_URL")
 	}
 	if baseURL == "" {
-		baseURL = "http://gitea:3000"
+		baseURL = "http://forgejo:3000"
 	}
 
-	token := os.Getenv("GITEA_TOKEN")
-	adminUser := os.Getenv("GITEA_ADMIN_USER")
-	adminPass := os.Getenv("GITEA_ADMIN_PASSWORD")
+	token := os.Getenv("FORGEJO_TOKEN")
+	if token == "" {
+		token = os.Getenv("GITEA_TOKEN")
+	}
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
+	}
+	adminPass := os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = os.Getenv("GITEA_ADMIN_PASSWORD")
+	}
 	if adminPass == "" {
 		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	}
 
-	client := gitea.NewClient(gitea.ClientConfig{
+	client := forgejo.NewClient(forgejo.ClientConfig{
 		BaseURL:   baseURL,
 		Token:     token,
 		AdminUser: adminUser,
@@ -366,7 +390,7 @@ func Run(ctx context.Context, r io.Reader, w io.Writer) error {
 
 func main() {
 	if err := Run(context.Background(), os.Stdin, os.Stdout); err != nil && !errors.Is(err, io.EOF) {
-		fmt.Fprintf(os.Stderr, "gitea-mcp server error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "forgejo-mcp server error: %v\n", err)
 		os.Exit(1)
 	}
 }

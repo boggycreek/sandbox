@@ -12,7 +12,7 @@ Welcome to the **Agent Sandbox** environment. This guide details the container t
 For specific topics, see the **[`INDEX.md`](INDEX.md)** hub or the following specialized guides:
 - **[BACKPLANE.md](BACKPLANE.md)**: Cross-agent messaging (`bp`) and protocol syntax.
 - **[BEADS.md](BEADS.md)**: Fleet task graph, dependency scheduling (`bd ready`), and atomic claiming.
-- **[GITEA.md](GITEA.md)**: Local Git forge (`http://gitea:3000`), `fleet` organization, and task tracking via `bd`.
+- **[FORGEJO.md](FORGEJO.md)**: Local Git forge (`http://forgejo:3000`), `fleet` organization, and task tracking via `bd`.
 - **[LLM_GATEWAY.md](LLM_GATEWAY.md)**: Host inference routing via `http://llm-gateway:<port>/v1`.
 - **[MEMORY.md](MEMORY.md)**: Git-backed memory and dotfiles backup.
 - **[SONARQUBE.md](SONARQUBE.md)**: Local SonarQube server, MCP tools, and deterministic mechanical analysis Quality Gates.

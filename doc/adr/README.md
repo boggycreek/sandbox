@@ -98,8 +98,10 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
   *Executive Summary:* Decouples IntelliJ Gateway plugins (`gateway`) from JetBrains Toolbox App integration (`toolbox`), synchronizing running sandboxes directly to Toolbox's native `ssh/settings.json` and inlined host blocks.
 
 ### Shared Fleet Services (`THEME-FLEET`)
-- **[00021 — Local Gitea Fleet Collaboration and Memory Backup](00021-LocalGiteaFleetCollaborationAndBackup.md)**  
-  *Executive Summary:* An internal rootless Gitea service provides local git hosting, inter-agent code review, task tracking backplane, and persistent remote dotfiles and memory repositories.
+- **[00021 — Local Gitea Fleet Collaboration and Memory Backup](00021-LocalGiteaFleetCollaborationAndBackup.md)** *(Superseded by 00046)*  
+  *Executive Summary:* Deprecated. An internal rootless Gitea service was previously deployed for local git hosting and memory backup. Superseded by ADR 00046, migrating the local forge to Forgejo.
+- **[00046 — Migrate Local Git Forge from Gitea to Forgejo](00046-MigrateLocalForgeFromGiteaToForgejo.md)**  
+  *Executive Summary:* Migrates the Agent Sandbox local git forge infrastructure from Gitea to the community-governed Forgejo hard fork (`codeberg.org/forgejo/forgejo:9-rootless`). Replaces all as-built Gitea container names, volumes, packages, and tooling while preserving drop-in backward compatibility with existing SQLite databases and REST API v1 endpoints. Supersedes ADR 00021.
 - **[00022 — Local OpenAI-Compatible Inference Proxy](00022-LocalOpenAiCompatibleInferenceProxy.md)**  
   *Executive Summary:* Sandboxes access LLM inference through a standardized local OpenAI-compatible HTTP gateway, shielding agents from direct external API credentials.
 - **[00027 — Local SonarQube Deterministic Mechanical Analysis and Quality Gate Infrastructure](00027-LocalSonarQubeDeterministicMechanicalAnalysisAndQualityGateInfra.md)**  

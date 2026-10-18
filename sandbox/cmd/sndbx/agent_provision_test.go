@@ -18,6 +18,7 @@ func TestAgentProvisionCommand(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("BP_HOST", "127.0.0.1")
 	t.Setenv("BP_PORT", "65530")
+	t.Setenv("FORGEJO_URL", "http://127.0.0.1:65531")
 	t.Setenv("GITEA_URL", "http://127.0.0.1:65531")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65532")
 
@@ -88,6 +89,7 @@ func TestAgentDeprovisionCommand(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("BP_HOST", "127.0.0.1")
 	t.Setenv("BP_PORT", "65530")
+	t.Setenv("FORGEJO_URL", "http://127.0.0.1:65531")
 	t.Setenv("GITEA_URL", "http://127.0.0.1:65531")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65532")
 

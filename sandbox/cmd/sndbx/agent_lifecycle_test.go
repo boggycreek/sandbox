@@ -182,6 +182,7 @@ func TestAgentCleanAndDeprovisioningWithMocks(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer giteaServer.Close()
+	t.Setenv("FORGEJO_URL", giteaServer.URL)
 	t.Setenv("GITEA_URL", giteaServer.URL)
 
 	// Mock Sonar server

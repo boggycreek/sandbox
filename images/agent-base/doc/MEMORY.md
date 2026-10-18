@@ -19,20 +19,20 @@ Every agent has a named Podman volume (`sndbx-agent-<name>-home`) mounted direct
 
 ---
 
-## 2. Remote Git-Backed Memory & Dotfiles (Gitea)
+## 2. Remote Git-Backed Memory & Dotfiles (Forgejo)
 
-Beyond local container volumes, agents can maintain remote Git repositories on the local Gitea instance (`http://gitea:3000`) for durable, version-controlled reflection notes and dotfiles:
+Beyond local container volumes, agents can maintain remote Git repositories on the local Forgejo instance (`http://forgejo:3000`) for durable, version-controlled reflection notes and dotfiles:
 
 ### Custom Dotfiles Repository (`fleet/agent-<name>-dotfiles`)
 Used to version control custom bash aliases, prompt configurations, tools, and linters:
 ```bash
-git clone http://gitea:3000/fleet/agent-${AGENT_NAME}-dotfiles.git /home/agent/.dotfiles
+git clone http://forgejo:3000/fleet/agent-${AGENT_NAME}-dotfiles.git /home/agent/.dotfiles
 ```
 
 ### Reflection & Memory Repository (`fleet/agent-<name>-memory`)
 Used by agents to persist architectural notes, long-term learning, failure post-mortems, and session reflections:
 ```bash
-git clone http://gitea:3000/fleet/agent-${AGENT_NAME}-memory.git /home/agent/.memory
+git clone http://forgejo:3000/fleet/agent-${AGENT_NAME}-memory.git /home/agent/.memory
 ```
 
 ### Best Practices
