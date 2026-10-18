@@ -25,13 +25,13 @@ set -euo pipefail
 REPO_URL_DEFAULT="https://github.com/boggycreek/sandbox.git"
 DEFAULT_BRANCH="main"
 
-DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/agent-sandbox"
+DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/fleet"
 REPO_DIR="${DATA_HOME}/repo"
 BIN_DIR="${HOME}/.local/bin"
 SECRETS_DIR="${DATA_HOME}/secrets"
 
-REMOTE_URL="${AGENT_SANDBOX_REMOTE:-${REPO_URL_DEFAULT}}"
-BRANCH="${AGENT_SANDBOX_BRANCH:-${DEFAULT_BRANCH}}"
+REMOTE_URL="${FLEET_REMOTE:-${AGENT_SANDBOX_REMOTE:-${REPO_URL_DEFAULT}}}"
+BRANCH="${FLEET_BRANCH:-${AGENT_SANDBOX_BRANCH:-${DEFAULT_BRANCH}}}"
 
 print_usage() {
   cat <<'EOF'
@@ -164,15 +164,15 @@ echo "  Data directory     : ${DATA_HOME}"
 
 # 4. Sync / Resolve Repository Location
 echo
-echo "[4/6] Setting up agent-sandbox repository..."
+echo "[4/6] Setting up fleet repository..."
 
 # Determine if we are running from an existing local clone or via piped curl
 CURRENT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo "")"
 
 if [ -n "${CURRENT_SCRIPT_DIR}" ] && [ -d "${CURRENT_SCRIPT_DIR}/.git" ]; then
   # Executing directly from within a local git repository clone
-  SANDBOX_ROOT="${CURRENT_SCRIPT_DIR}"
-  echo "  Running from local repository checkout at: ${SANDBOX_ROOT}"
+  FLEET_ROOT="${CURRENT_SCRIPT_DIR}"
+  echo "  Running from local repository checkout at: ${FLEET_ROOT}"
 else
   # Executing via curl pipe or outside a repository checkout -> ensure standard XDG checkout
   if [ -d "${REPO_DIR}/.git" ]; then
@@ -188,21 +188,33 @@ else
     echo "  Cloning ${REMOTE_URL} (branch: ${BRANCH}) into ${REPO_DIR}..."
     git clone --branch "${BRANCH}" "${REMOTE_URL}" "${REPO_DIR}"
   fi
-  SANDBOX_ROOT="${REPO_DIR}"
+  FLEET_ROOT="${REPO_DIR}"
 fi
+SANDBOX_ROOT="${FLEET_ROOT}"
 
 # 5. Generate Dedicated IDE SSH Keypair
 echo
 echo "[5/6] Ensuring dedicated IDE SSH keypair..."
-SSH_KEY="${HOME}/.ssh/agent-sandbox"
+SSH_KEY="${HOME}/.ssh/fleet"
+LEGACY_SSH_KEY="${HOME}/.ssh/agent-sandbox"
 mkdir -p "${HOME}/.ssh"
 chmod 700 "${HOME}/.ssh"
 
 if [ ! -f "${SSH_KEY}" ]; then
-  echo "  Generating dedicated IDE keypair: ${SSH_KEY} (ed25519)"
-  ssh-keygen -t ed25519 -N "" -C "agent-sandbox-ide" -f "${SSH_KEY}" >/dev/null
-  chmod 600 "${SSH_KEY}"
-  chmod 644 "${SSH_KEY}.pub"
+  if [ -f "${LEGACY_SSH_KEY}" ]; then
+    echo "  Migrating existing IDE keypair from ${LEGACY_SSH_KEY} to ${SSH_KEY}"
+    cp -p "${LEGACY_SSH_KEY}" "${SSH_KEY}"
+    if [ -f "${LEGACY_SSH_KEY}.pub" ]; then
+      cp -p "${LEGACY_SSH_KEY}.pub" "${SSH_KEY}.pub"
+    fi
+    chmod 600 "${SSH_KEY}"
+    chmod 644 "${SSH_KEY}.pub" 2>/dev/null || true
+  else
+    echo "  Generating dedicated IDE keypair: ${SSH_KEY} (ed25519)"
+    ssh-keygen -t ed25519 -N "" -C "fleet-ide" -f "${SSH_KEY}" >/dev/null
+    chmod 600 "${SSH_KEY}"
+    chmod 644 "${SSH_KEY}.pub"
+  fi
 else
   echo "  Existing IDE keypair found at ${SSH_KEY}"
 fi
@@ -211,8 +223,8 @@ fi
 MANAGED_SSH_CONFIG="${DATA_HOME}/ssh_config"
 if [ ! -f "${MANAGED_SSH_CONFIG}" ]; then
   cat > "${MANAGED_SSH_CONFIG}" <<'EOF'
-# Agent Sandbox Auto-Generated SSH Configuration
-# Managed automatically by sndbx. Do not edit manually.
+# Fleet Auto-Generated SSH Configuration
+# Managed automatically by fleet. Do not edit manually.
 EOF
   chmod 600 "${MANAGED_SSH_CONFIG}"
 fi
@@ -222,10 +234,10 @@ SSH_USER_CONFIG="${HOME}/.ssh/config"
 INCLUDE_DIRECTIVE="Include ${MANAGED_SSH_CONFIG}"
 if [ -f "${SSH_USER_CONFIG}" ]; then
   if ! grep -qF "${MANAGED_SSH_CONFIG}" "${SSH_USER_CONFIG}"; then
-    echo "  Adding Include directive for Agent Sandbox to ${SSH_USER_CONFIG}"
+    echo "  Adding Include directive for Fleet to ${SSH_USER_CONFIG}"
     TMP_CONFIG="$(mktemp)"
     {
-      echo "# Agent Sandbox Host Include"
+      echo "# Fleet Host Include"
       echo "${INCLUDE_DIRECTIVE}"
       echo ""
       cat "${SSH_USER_CONFIG}"
@@ -234,10 +246,10 @@ if [ -f "${SSH_USER_CONFIG}" ]; then
     chmod 600 "${SSH_USER_CONFIG}"
   fi
 else
-  echo "  Creating ${SSH_USER_CONFIG} with Agent Sandbox Include directive"
+  echo "  Creating ${SSH_USER_CONFIG} with Fleet Include directive"
   {
     echo "# OpenSSH Configuration"
-    echo "# Agent Sandbox Host Include"
+    echo "# Fleet Host Include"
     echo "${INCLUDE_DIRECTIVE}"
   } > "${SSH_USER_CONFIG}"
   chmod 600 "${SSH_USER_CONFIG}"
@@ -262,10 +274,11 @@ if [ ! -f "${ENV_FILE}" ]; then
   fi
 
   cat > "${ENV_FILE}" <<EOF
-# Agent Sandbox Environment Configuration
+# Fleet Environment Configuration
 # Generated for ${OS_PRETTY} (${OS}/${ARCH})
 
-SANDBOX_ROOT=${SANDBOX_ROOT}
+FLEET_ROOT=${FLEET_ROOT}
+SANDBOX_ROOT=${FLEET_ROOT}
 HUMAN_NAME=${HUMAN_NAME}
 ADMIN_BACKPLANE_PASSWORD=${ADMIN_PW}
 HUMAN_BACKPLANE_PASSWORD=${HUMAN_PW}
@@ -280,9 +293,12 @@ EOF
   chmod 600 "${ENV_FILE}"
 else
   echo "  Existing configuration file found at ${ENV_FILE}"
-  # Ensure SANDBOX_ROOT is recorded if not present
+  # Ensure FLEET_ROOT and SANDBOX_ROOT are recorded if not present
+  if ! grep -q "^FLEET_ROOT=" "${ENV_FILE}" 2>/dev/null; then
+    echo "FLEET_ROOT=${FLEET_ROOT}" >> "${ENV_FILE}"
+  fi
   if ! grep -q "^SANDBOX_ROOT=" "${ENV_FILE}" 2>/dev/null; then
-    echo "SANDBOX_ROOT=${SANDBOX_ROOT}" >> "${ENV_FILE}"
+    echo "SANDBOX_ROOT=${FLEET_ROOT}" >> "${ENV_FILE}"
   fi
   if ! grep -q "^SONAR_ADMIN_PASSWORD=" "${ENV_FILE}" 2>/dev/null; then
     # Derive from existing ADMIN_BACKPLANE_PASSWORD if available
@@ -366,7 +382,7 @@ echo "       Installation Succeeded!         "
 echo "========================================"
 echo
 echo "Target Platform     : ${OS_PRETTY} [${OS}/${ARCH}]"
-echo "Repository Location : ${SANDBOX_ROOT}"
+echo "Repository Location : ${FLEET_ROOT}"
 echo "Environment Config  : ${ENV_FILE}"
 echo "CLI Executable      : ${FLEET_BIN} (alias: ${FT_BIN})"
 echo "IDE SSH Public Key  : ${SSH_KEY}.pub"

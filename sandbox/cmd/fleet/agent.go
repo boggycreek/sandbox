@@ -617,7 +617,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		return 1
 	}
 
-	hostAlias := fmt.Sprintf("sndbx-%s", name)
+	hostAlias := ide.SSHHostTarget(name)
 
 	// Build connection descriptors for each IDE family.
 	vsCodeURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)

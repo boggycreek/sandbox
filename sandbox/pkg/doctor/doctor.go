@@ -278,13 +278,26 @@ func checkAndHealSigningKey(cfg *config.AgentConfig, paths config.Paths, report 
 
 func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 	healedKey := false
-	sshPub := paths.IDEKeyFile + ".pub"
-	if _, err := os.Stat(paths.IDEKeyFile); os.IsNotExist(err) {
-		_ = os.MkdirAll(filepath.Dir(paths.IDEKeyFile), 0700)
-		_ = exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "agent-sandbox-ide", "-f", paths.IDEKeyFile).Run()
-		healedKey = true
+	keyPath := paths.GetSSHPrivateKey()
+	if keyPath == "" {
+		keyPath = paths.IDEKeyFile
+	}
+	sshPub := keyPath + ".pub"
+	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+		_ = os.MkdirAll(filepath.Dir(keyPath), 0700)
+		legacyKey := filepath.Join(paths.SSHDir, "agent-sandbox")
+		if privBytes, err := os.ReadFile(legacyKey); err == nil {
+			_ = os.WriteFile(keyPath, privBytes, 0600)
+			if pubBytes, err := os.ReadFile(legacyKey + ".pub"); err == nil {
+				_ = os.WriteFile(sshPub, pubBytes, 0644)
+			}
+			healedKey = true
+		} else {
+			_ = exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "fleet-ide", "-f", keyPath).Run()
+			healedKey = true
+		}
 	} else if _, err := os.Stat(sshPub); os.IsNotExist(err) {
-		if out, err := exec.Command("ssh-keygen", "-y", "-f", paths.IDEKeyFile).Output(); err == nil && len(out) > 0 {
+		if out, err := exec.Command("ssh-keygen", "-y", "-f", keyPath).Output(); err == nil && len(out) > 0 {
 			_ = os.WriteFile(sshPub, out, 0644)
 			healedKey = true
 		}
@@ -294,7 +307,7 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 	healedInclude := false
 	if _, err := os.Stat(paths.SSHConfigFile); os.IsNotExist(err) {
 		_ = os.MkdirAll(filepath.Dir(paths.SSHConfigFile), 0700)
-		_ = os.WriteFile(paths.SSHConfigFile, []byte("# Agent Sandbox Auto-Generated SSH Configuration\n"), 0600)
+		_ = os.WriteFile(paths.SSHConfigFile, []byte("# Fleet Auto-Generated SSH Configuration\n"), 0600)
 		healedInclude = true
 	}
 
@@ -562,8 +575,8 @@ func checkAndHealForgejo(ctx context.Context, cfg *config.AgentConfig, paths con
 		Timeout:   2 * time.Second,
 	})
 
-	_ = client.EnsureUser(ctx, cfg.Name, cfg.Password, fmt.Sprintf("%s@local.sndbx", cfg.Name))
-	sshKeyPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
+	_ = client.EnsureUser(ctx, cfg.Name, cfg.Password, fmt.Sprintf("%s@local.fleet", cfg.Name))
+	sshKeyPub := fmt.Sprintf("%s.pub", paths.GetSSHPrivateKey())
 	if keyData, err := os.ReadFile(sshKeyPub); err == nil && len(keyData) > 0 {
 		_ = client.AddUserSSHKey(ctx, cfg.Name, fmt.Sprintf("%s-ide-key", cfg.Name), string(keyData))
 	}
@@ -621,7 +634,7 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 		return
 	}
 
-	_ = client.EnsureUser(ctx, cfg.Name, cfg.Password, cfg.Name, fmt.Sprintf("%s@local.sndbx", cfg.Name))
+	_ = client.EnsureUser(ctx, cfg.Name, cfg.Password, cfg.Name, fmt.Sprintf("%s@local.fleet", cfg.Name))
 	if cfg.SonarToken == "" {
 		token, err := client.GenerateUserToken(ctx, cfg.Name, fmt.Sprintf("%s-agent-token", cfg.Name))
 		if err == nil && token != "" {
@@ -666,14 +679,22 @@ func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths c
 			if p, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName); err == nil && p > 0 {
 				sshPort = p
 			}
-			_ = runtime.SyncSSHConfigFile(ctx, paths)
+			sshConfigTarget := paths.SSHConfigFile
+			if sshConfigTarget == "" {
+				sshConfigTarget = filepath.Join(paths.DataHome, "ssh_config")
+			}
+			data, err := os.ReadFile(sshConfigTarget)
+			expectedHost := fmt.Sprintf("Host fleet-%s", cfg.Name)
+			if err != nil || !strings.Contains(string(data), expectedHost) {
+				_ = runtime.SyncSSHConfigFile(ctx, paths)
+			}
 			if sshPort > 0 {
-				msg = fmt.Sprintf("Host container running (SSH port %d, alias: ssh sndbx-%s, connect: `sndbx agent connect %s`)", sshPort, cfg.Name, cfg.Name)
+				msg = fmt.Sprintf("Host container running (SSH port %d, alias: ssh fleet-%s, connect: `fleet agent connect %s`)", sshPort, cfg.Name, cfg.Name)
 			} else {
-				msg = fmt.Sprintf("Host container running with workspace %s (connect via `sndbx agent connect %s`)", cfg.WorkspacePath, cfg.Name)
+				msg = fmt.Sprintf("Host container running with workspace %s (connect via `fleet agent connect %s`)", cfg.WorkspacePath, cfg.Name)
 			}
 		} else {
-			msg = fmt.Sprintf("Host container %s (start via `sndbx agent start %s`)", state, cfg.Name)
+			msg = fmt.Sprintf("Host container %s (start via `fleet agent start %s`)", state, cfg.Name)
 		}
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Container & Runtime",
@@ -695,13 +716,21 @@ func checkAndHealContainer(ctx context.Context, cfg *config.AgentConfig, paths c
 		}
 	}
 
-	_ = runtime.SyncSSHConfigFile(ctx, paths)
+	sshConfigTarget := paths.SSHConfigFile
+	if sshConfigTarget == "" {
+		sshConfigTarget = filepath.Join(paths.DataHome, "ssh_config")
+	}
+	data, err := os.ReadFile(sshConfigTarget)
+	expectedHost := fmt.Sprintf("Host fleet-%s", cfg.Name)
+	if err != nil || !strings.Contains(string(data), expectedHost) {
+		_ = runtime.SyncSSHConfigFile(ctx, paths)
+	}
 
 	var msg string
 	if state == "running" && sshPort > 0 {
-		msg = fmt.Sprintf("Container running (SSH port %d, alias: ssh sndbx-%s)", sshPort, cfg.Name)
+		msg = fmt.Sprintf("Container running (SSH port %d, alias: ssh fleet-%s)", sshPort, cfg.Name)
 	} else {
-		msg = fmt.Sprintf("Container %s (start via `sndbx agent start %s`)", state, cfg.Name)
+		msg = fmt.Sprintf("Container %s (start via `fleet agent start %s`)", state, cfg.Name)
 	}
 
 	report.Checks = append(report.Checks, CheckItem{

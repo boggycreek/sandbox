@@ -191,3 +191,9 @@ func TestFamilyAssignment(t *testing.T) {
 		}
 	}
 }
+
+func TestSSHHostTarget(t *testing.T) {
+	if got := ide.SSHHostTarget("myagent"); got != "fleet-myagent" {
+		t.Errorf("expected fleet-myagent, got %s", got)
+	}
+}

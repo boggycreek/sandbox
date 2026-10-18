@@ -28,18 +28,18 @@ const (
 	PluginIDToolbox = "toolbox"
 	PluginIDVSCode  = "vscode"
 
-	JetBrainsPluginID      = "com.boggycreek.sndbx.gateway"
-	JetBrainsPluginName    = "Agent Sandbox Gateway"
+	JetBrainsPluginID      = "com.boggycreek.fleet.gateway"
+	JetBrainsPluginName    = "Fleet Gateway"
 	JetBrainsPluginVersion = "0.1.0-alpha"
 	JetBrainsPluginVendor  = "Boggy Creek Software LLC"
 
-	ToolboxPluginID         = "com.boggycreek.sndbx.toolbox"
-	ToolboxPluginName       = "Agent Sandbox Toolbox"
+	ToolboxPluginID         = "com.boggycreek.fleet.toolbox"
+	ToolboxPluginName       = "Fleet Toolbox"
 	ToolboxPluginVersion    = "0.1.0-alpha"
 	ToolboxPluginAPIVersion = "1.13.87111"
 
-	ManagedSSHConfigHeader = "# --- BEGIN AGENT SANDBOX MANAGED HOSTS ---"
-	ManagedSSHConfigFooter = "# --- END AGENT SANDBOX MANAGED HOSTS ---"
+	ManagedSSHConfigHeader = "# --- BEGIN FLEET MANAGED HOSTS ---"
+	ManagedSSHConfigFooter = "# --- END FLEET MANAGED HOSTS ---"
 )
 
 // ExecCommandContext is a variable for stubbing in tests.
@@ -109,8 +109,8 @@ func GenerateGatewayPluginXML() string {
     <depends optional="true">com.jetbrains.gateway</depends>
 
     <extensions defaultExtensionNs="com.jetbrains">
-        <gatewayConnector implementation="com.boggycreek.sndbx.gateway.SndbxGatewayConnector" />
-        <gatewayConnectionProvider implementation="com.boggycreek.sndbx.gateway.SndbxGatewayConnectionProvider" />
+        <gatewayConnector implementation="com.boggycreek.fleet.gateway.FleetGatewayConnector" />
+        <gatewayConnectionProvider implementation="com.boggycreek.fleet.gateway.FleetGatewayConnectionProvider" />
     </extensions>
 </idea-plugin>
 `
@@ -155,10 +155,10 @@ func GenerateToolboxExtensionJSON() string {
   "version": "` + ToolboxPluginVersion + `",
   "apiVersion": "` + ToolboxPluginAPIVersion + `",
   "meta": {
-    "readableName": "Agent Sandbox",
-    "description": "Direct JetBrains Toolbox integration for local agent sandboxes",
+    "readableName": "Fleet",
+    "description": "Direct JetBrains Toolbox integration for local fleet agent sandboxes",
     "vendor": "` + JetBrainsPluginVendor + `",
-    "url": "https://github.com/boggycreek/sandbox"
+    "url": "https://github.com/boggycreek/fleet"
   }
 }
 `
@@ -212,7 +212,7 @@ func GenerateToolboxPluginJAR() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating service entry: %w", err)
 	}
-	serviceContent := "com.boggycreek.sndbx.toolbox.SndbxRemoteDevExtension\n"
+	serviceContent := "com.boggycreek.fleet.toolbox.FleetRemoteDevExtension\n"
 	if _, err := serviceWriter.Write([]byte(serviceContent)); err != nil {
 		return nil, fmt.Errorf("writing service entry: %w", err)
 	}
@@ -288,14 +288,14 @@ func GetDefaultToolboxPluginDir() string {
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "JetBrains", "Toolbox", "plugins", "sndbx")
+		return filepath.Join(home, "Library", "Application Support", "JetBrains", "Toolbox", "plugins", "fleet")
 	case "windows":
 		if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-			return filepath.Join(localAppData, "JetBrains", "Toolbox", "plugins", "sndbx")
+			return filepath.Join(localAppData, "JetBrains", "Toolbox", "plugins", "fleet")
 		}
-		return filepath.Join(home, "AppData", "Local", "JetBrains", "Toolbox", "plugins", "sndbx")
+		return filepath.Join(home, "AppData", "Local", "JetBrains", "Toolbox", "plugins", "fleet")
 	default:
-		return filepath.Join(home, ".local", "share", "JetBrains", "Toolbox", "plugins", "sndbx")
+		return filepath.Join(home, ".local", "share", "JetBrains", "Toolbox", "plugins", "fleet")
 	}
 }
 
@@ -318,8 +318,9 @@ func GetDefaultToolboxSSHSettingsPath() string {
 	}
 }
 
-// sshConfigCommentHeader is the standard header preceding the Agent Sandbox OpenSSH Include directive.
-const sshConfigCommentHeader = "# Agent Sandbox Host Include"
+// sshConfigCommentHeader is the standard header preceding the Fleet OpenSSH Include directive.
+const sshConfigCommentHeader = "# Fleet Host Include"
+const legacySSHConfigCommentHeader = "# Agent Sandbox Host Include"
 
 var sshConfigMutex sync.Mutex
 
@@ -503,7 +504,7 @@ func RemoveSSHConfigInclude(targetSSHConfigFile, hostSSHConfigFile string) (bool
 		if isTargetInclude(line, targetSSHConfigFile) {
 			removed = true
 			// Remove our preceding comment header if immediately before this include
-			if len(newLines) > 0 && strings.TrimSpace(newLines[len(newLines)-1]) == sshConfigCommentHeader {
+			if len(newLines) > 0 && (strings.TrimSpace(newLines[len(newLines)-1]) == sshConfigCommentHeader || strings.TrimSpace(newLines[len(newLines)-1]) == legacySSHConfigCommentHeader) {
 				newLines = newLines[:len(newLines)-1]
 			}
 			// Skip at most one blank line following our include if present
@@ -548,15 +549,15 @@ func EnsureSSHConfigManagedHosts(ctx context.Context, paths config.Paths, hostSS
 
 	var blockBuf bytes.Buffer
 	blockBuf.WriteString(ManagedSSHConfigHeader + "\n")
-	blockBuf.WriteString("# Auto-generated by sndbx for tools (like JetBrains Toolbox) that do not support OpenSSH 'Include'.\n\n")
+	blockBuf.WriteString("# Auto-generated by fleet for tools (like JetBrains Toolbox) that do not support OpenSSH 'Include'.\n\n")
 
-	ideKeyFile := paths.IDEKeyFile
+	ideKeyFile := paths.GetSSHPrivateKey()
 	if ideKeyFile == "" {
 		home, _ := os.UserHomeDir()
 		if home == "" {
 			home = "/tmp"
 		}
-		ideKeyFile = filepath.Join(home, ".ssh", "agent-sandbox")
+		ideKeyFile = filepath.Join(home, ".ssh", "fleet")
 	}
 	blockBuf.WriteString("Match host 127.0.0.1,localhost user agent\n")
 	blockBuf.WriteString(fmt.Sprintf("    IdentityFile %s\n", ideKeyFile))
@@ -567,7 +568,7 @@ func EnsureSSHConfigManagedHosts(ctx context.Context, paths config.Paths, hostSS
 		port, err := sndbxRuntime.GetAgentSSHPort(ctx, c.ContainerName)
 		if err == nil && port > 0 {
 			blockBuf.WriteString("\n")
-			blockBuf.WriteString(sndbxRuntime.FormatSSHConfigBlock(c.Name, port, paths.IDEKeyFile))
+			blockBuf.WriteString(sndbxRuntime.FormatSSHConfigBlock(c.Name, port, ideKeyFile))
 			blockBuf.WriteString("\n")
 		}
 	}
@@ -586,10 +587,18 @@ func EnsureSSHConfigManagedHosts(ctx context.Context, paths config.Paths, hostSS
 	strContent := string(content)
 	startIdx := strings.Index(strContent, ManagedSSHConfigHeader)
 	endIdx := strings.Index(strContent, ManagedSSHConfigFooter)
+	legacyHeader := "# --- BEGIN AGENT SANDBOX MANAGED HOSTS ---"
+	legacyFooter := "# --- END AGENT SANDBOX MANAGED HOSTS ---"
+	footerLen := len(ManagedSSHConfigFooter)
+	if startIdx == -1 {
+		startIdx = strings.Index(strContent, legacyHeader)
+		endIdx = strings.Index(strContent, legacyFooter)
+		footerLen = len(legacyFooter)
+	}
 
 	var updated string
 	if startIdx != -1 && endIdx != -1 && endIdx >= startIdx {
-		afterBlock := endIdx + len(ManagedSSHConfigFooter)
+		afterBlock := endIdx + footerLen
 		if afterBlock < len(strContent) && strContent[afterBlock] == '\n' {
 			afterBlock++
 		}
@@ -625,12 +634,18 @@ func RemoveSSHConfigManagedHosts(hostSSHConfigFile string) error {
 	strContent := string(content)
 	startIdx := strings.Index(strContent, ManagedSSHConfigHeader)
 	endIdx := strings.Index(strContent, ManagedSSHConfigFooter)
+	footerLen := len(ManagedSSHConfigFooter)
+	if startIdx == -1 {
+		startIdx = strings.Index(strContent, "# --- BEGIN AGENT SANDBOX MANAGED HOSTS ---")
+		endIdx = strings.Index(strContent, "# --- END AGENT SANDBOX MANAGED HOSTS ---")
+		footerLen = len("# --- END AGENT SANDBOX MANAGED HOSTS ---")
+	}
 
 	if startIdx == -1 || endIdx == -1 || endIdx < startIdx {
 		return nil
 	}
 
-	afterBlock := endIdx + len(ManagedSSHConfigFooter)
+	afterBlock := endIdx + footerLen
 	if afterBlock < len(strContent) && strContent[afterBlock] == '\n' {
 		afterBlock++
 	}
@@ -680,23 +695,23 @@ func SyncToolboxSSHSettings(ctx context.Context, paths config.Paths, settingsPat
 		_ = json.Unmarshal([]byte(cacheStr), &cacheMap)
 	}
 
-	// Filter out existing sndbx- entries
+	// Filter out existing fleet- and legacy sndbx- entries
 	var keptRemotes []ToolboxRemoteEntry
 	for _, r := range payload.Remotes {
-		if !strings.HasPrefix(r.Host, "sndbx-") {
+		if !strings.HasPrefix(r.Host, "fleet-") && !strings.HasPrefix(r.Host, "sndbx-") {
 			keptRemotes = append(keptRemotes, r)
 		}
 	}
 	for k := range cacheMap {
-		if strings.Contains(k, "sndbx-") {
+		if strings.Contains(k, "fleet-") || strings.Contains(k, "sndbx-") {
 			delete(cacheMap, k)
 		}
 	}
 	for k := range root {
-		if strings.HasPrefix(k, "TBX_DEPLOYMENT_TARGET_ENV") && strings.Contains(k, "sndbx-") {
+		if strings.HasPrefix(k, "TBX_DEPLOYMENT_TARGET_ENV") && (strings.Contains(k, "fleet-") || strings.Contains(k, "sndbx-")) {
 			delete(root, k)
 		}
-		if strings.HasPrefix(k, "TBX_AUTO_CONNECT_ENV") && strings.Contains(k, "sndbx-") {
+		if strings.HasPrefix(k, "TBX_AUTO_CONNECT_ENV") && (strings.Contains(k, "fleet-") || strings.Contains(k, "sndbx-")) {
 			delete(root, k)
 		}
 	}
@@ -706,7 +721,7 @@ func SyncToolboxSSHSettings(ctx context.Context, paths config.Paths, settingsPat
 	for _, c := range configs {
 		port, err := sndbxRuntime.GetAgentSSHPort(ctx, c.ContainerName)
 		if err == nil && port > 0 {
-			host := "sndbx-" + c.Name
+			host := "fleet-" + c.Name
 			connStr := "agent@" + host
 			entry := ToolboxRemoteEntry{
 				Host:                     host,
@@ -783,20 +798,20 @@ func RemoveToolboxSSHSettings(settingsPath string) error {
 
 	var keptRemotes []ToolboxRemoteEntry
 	for _, r := range payload.Remotes {
-		if !strings.HasPrefix(r.Host, "sndbx-") {
+		if !strings.HasPrefix(r.Host, "fleet-") && !strings.HasPrefix(r.Host, "sndbx-") {
 			keptRemotes = append(keptRemotes, r)
 		}
 	}
 	for k := range cacheMap {
-		if strings.Contains(k, "sndbx-") {
+		if strings.Contains(k, "fleet-") || strings.Contains(k, "sndbx-") {
 			delete(cacheMap, k)
 		}
 	}
 	for k := range root {
-		if strings.HasPrefix(k, "TBX_DEPLOYMENT_TARGET_ENV") && strings.Contains(k, "sndbx-") {
+		if strings.HasPrefix(k, "TBX_DEPLOYMENT_TARGET_ENV") && (strings.Contains(k, "fleet-") || strings.Contains(k, "sndbx-")) {
 			delete(root, k)
 		}
-		if strings.HasPrefix(k, "TBX_AUTO_CONNECT_ENV") && strings.Contains(k, "sndbx-") {
+		if strings.HasPrefix(k, "TBX_AUTO_CONNECT_ENV") && (strings.Contains(k, "fleet-") || strings.Contains(k, "sndbx-")) {
 			delete(root, k)
 		}
 	}
@@ -817,7 +832,7 @@ func RemoveToolboxSSHSettings(settingsPath string) error {
 	return os.WriteFile(settingsPath, outBytes, 0600)
 }
 
-// InstallGatewayPlugin packages and deploys the Agent Sandbox JetBrains Gateway IntelliJ plugin.
+// InstallGatewayPlugin packages and deploys the Fleet JetBrains Gateway IntelliJ plugin.
 func InstallGatewayPlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*InstallResult, error) {
 	jarBytes, err := GenerateGatewayPluginJAR()
 	if err != nil {
@@ -826,23 +841,30 @@ func InstallGatewayPlugin(ctx context.Context, paths config.Paths, stdout io.Wri
 
 	var installedPaths []string
 
-	// 1. Central repository installation: ~/.local/share/agent-sandbox/plugins/jetbrains-gateway
-	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway", "lib")
+	// 1. Central repository installation: ~/.local/share/fleet/plugins/jetbrains-gateway
+	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "fleet-gateway", "lib")
 	if err := os.MkdirAll(centralDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating central gateway plugin dir: %w", err)
 	}
-	centralJar := filepath.Join(centralDir, "sndbx-gateway.jar")
+	centralJar := filepath.Join(centralDir, "fleet-gateway.jar")
 	if err := os.WriteFile(centralJar, jarBytes, 0644); err != nil {
 		return nil, fmt.Errorf("writing central gateway plugin jar: %w", err)
 	}
 	installedPaths = append(installedPaths, centralJar)
 
+	// Clean up legacy sndbx-gateway if present
+	legacyCentralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway")
+	_ = os.RemoveAll(legacyCentralDir)
+
 	// 2. Discovered JetBrains IDE plugin directories
 	jbDirs := FindJetBrainsPluginDirs()
 	for _, jbDir := range jbDirs {
-		targetLibDir := filepath.Join(jbDir, "sndbx-gateway", "lib")
+		// Clean up legacy sndbx-gateway
+		_ = os.RemoveAll(filepath.Join(jbDir, "sndbx-gateway"))
+
+		targetLibDir := filepath.Join(jbDir, "fleet-gateway", "lib")
 		if err := os.MkdirAll(targetLibDir, 0755); err == nil {
-			targetJar := filepath.Join(targetLibDir, "sndbx-gateway.jar")
+			targetJar := filepath.Join(targetLibDir, "fleet-gateway.jar")
 			if err := os.WriteFile(targetJar, jarBytes, 0644); err == nil {
 				installedPaths = append(installedPaths, targetJar)
 			}
@@ -863,22 +885,32 @@ func InstallGatewayPlugin(ctx context.Context, paths config.Paths, stdout io.Wri
 	}, nil
 }
 
-// RemoveGatewayPlugin uninstalls the Agent Sandbox JetBrains Gateway plugin.
+// RemoveGatewayPlugin uninstalls the Fleet JetBrains Gateway plugin.
 func RemoveGatewayPlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*RemoveResult, error) {
 	var removedPaths []string
 
-	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway")
+	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "fleet-gateway")
 	if _, err := os.Stat(centralDir); err == nil {
 		_ = os.RemoveAll(centralDir)
 		removedPaths = append(removedPaths, centralDir)
 	}
+	legacyCentralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway")
+	if _, err := os.Stat(legacyCentralDir); err == nil {
+		_ = os.RemoveAll(legacyCentralDir)
+		removedPaths = append(removedPaths, legacyCentralDir)
+	}
 
 	jbDirs := FindJetBrainsPluginDirs()
 	for _, jbDir := range jbDirs {
-		targetDir := filepath.Join(jbDir, "sndbx-gateway")
+		targetDir := filepath.Join(jbDir, "fleet-gateway")
 		if _, err := os.Stat(targetDir); err == nil {
 			_ = os.RemoveAll(targetDir)
 			removedPaths = append(removedPaths, targetDir)
+		}
+		legacyDir := filepath.Join(jbDir, "sndbx-gateway")
+		if _, err := os.Stat(legacyDir); err == nil {
+			_ = os.RemoveAll(legacyDir)
+			removedPaths = append(removedPaths, legacyDir)
 		}
 	}
 
@@ -893,22 +925,24 @@ func RemoveGatewayPlugin(ctx context.Context, paths config.Paths, stdout io.Writ
 	}, nil
 }
 
-// InstallToolboxPlugin packages and deploys the Agent Sandbox JetBrains Toolbox App integration.
+// InstallToolboxPlugin packages and deploys the Fleet JetBrains Toolbox App integration.
 func InstallToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*InstallResult, error) {
 	var installedPaths []string
 
-	// 1. Central repository directory: ~/.local/share/agent-sandbox/plugins/jetbrains-toolbox/sndbx
-	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx")
+	// 1. Central repository directory: ~/.local/share/fleet/plugins/jetbrains-toolbox/fleet
+	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "fleet")
 	if err := os.MkdirAll(centralDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating central toolbox plugin dir: %w", err)
 	}
 	_ = os.WriteFile(filepath.Join(centralDir, "extension.json"), []byte(GenerateToolboxExtensionJSON()), 0644)
 	_ = os.WriteFile(filepath.Join(centralDir, "pluginIcon.svg"), []byte(GenerateToolboxPluginIconSVG()), 0644)
 	if jarBytes, err := GenerateToolboxPluginJAR(); err == nil {
-		centralJar := filepath.Join(centralDir, "sndbx-toolbox.jar")
+		centralJar := filepath.Join(centralDir, "fleet-toolbox.jar")
 		_ = os.WriteFile(centralJar, jarBytes, 0644)
 		installedPaths = append(installedPaths, centralJar)
 	}
+	// Clean up legacy sndbx toolbox dir in central
+	_ = os.RemoveAll(filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx"))
 
 	// 2. Deploy directly to JetBrains Toolbox external plugins folder
 	toolboxDir := GetDefaultToolboxPluginDir()
@@ -916,7 +950,7 @@ func InstallToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Wri
 		if err := os.MkdirAll(toolboxDir, 0755); err == nil {
 			extFile := filepath.Join(toolboxDir, "extension.json")
 			iconFile := filepath.Join(toolboxDir, "pluginIcon.svg")
-			jarFile := filepath.Join(toolboxDir, "sndbx-toolbox.jar")
+			jarFile := filepath.Join(toolboxDir, "fleet-toolbox.jar")
 			_ = os.WriteFile(extFile, []byte(GenerateToolboxExtensionJSON()), 0644)
 			_ = os.WriteFile(iconFile, []byte(GenerateToolboxPluginIconSVG()), 0644)
 			if jarBytes, err := GenerateToolboxPluginJAR(); err == nil {
@@ -942,14 +976,19 @@ func InstallToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Wri
 	}, nil
 }
 
-// RemoveToolboxPlugin uninstalls the Agent Sandbox JetBrains Toolbox App integration.
+// RemoveToolboxPlugin uninstalls the Fleet JetBrains Toolbox App integration.
 func RemoveToolboxPlugin(ctx context.Context, paths config.Paths, stdout io.Writer) (*RemoveResult, error) {
 	var removedPaths []string
 
-	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx")
+	centralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "fleet")
 	if _, err := os.Stat(centralDir); err == nil {
 		_ = os.RemoveAll(centralDir)
 		removedPaths = append(removedPaths, centralDir)
+	}
+	legacyCentralDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx")
+	if _, err := os.Stat(legacyCentralDir); err == nil {
+		_ = os.RemoveAll(legacyCentralDir)
+		removedPaths = append(removedPaths, legacyCentralDir)
 	}
 
 	toolboxDir := GetDefaultToolboxPluginDir()
@@ -1021,7 +1060,7 @@ func RemoveVSCodePlugin(ctx context.Context, paths config.Paths, stdout io.Write
 // ListPlugins enumerates available and installed IDE plugins.
 func ListPlugins(paths config.Paths) []PluginInfo {
 	// Check Gateway plugin
-	centralGatewayJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway", "lib", "sndbx-gateway.jar")
+	centralGatewayJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "fleet-gateway", "lib", "fleet-gateway.jar")
 	gatewayInstalled := false
 	var gatewayLocations []string
 	if _, err := os.Stat(centralGatewayJar); err == nil {
@@ -1029,7 +1068,7 @@ func ListPlugins(paths config.Paths) []PluginInfo {
 		gatewayLocations = append(gatewayLocations, centralGatewayJar)
 	}
 	for _, dir := range FindJetBrainsPluginDirs() {
-		jarPath := filepath.Join(dir, "sndbx-gateway", "lib", "sndbx-gateway.jar")
+		jarPath := filepath.Join(dir, "fleet-gateway", "lib", "fleet-gateway.jar")
 		if _, err := os.Stat(jarPath); err == nil {
 			gatewayInstalled = true
 			gatewayLocations = append(gatewayLocations, jarPath)
@@ -1037,7 +1076,7 @@ func ListPlugins(paths config.Paths) []PluginInfo {
 	}
 
 	// Check Toolbox plugin
-	centralToolboxDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx")
+	centralToolboxDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "fleet")
 	toolboxInstalled := false
 	var toolboxLocations []string
 	if _, err := os.Stat(centralToolboxDir); err == nil {

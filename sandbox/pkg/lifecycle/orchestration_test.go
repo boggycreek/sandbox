@@ -36,7 +36,8 @@ func TestProvisionAgentAndDeprovisionAgentHappyPath(t *testing.T) {
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
 		SecretsDir:    filepath.Join(tmpDir, "data", "secrets"),
 		SSHDir:        filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 		SSHConfigFile: filepath.Join(tmpDir, "ssh", "config"),
 	}
 	_ = paths.EnsureDirectories()
@@ -146,7 +147,8 @@ func TestProvisionAgentAndDeprovisionAgentOfflineServices(t *testing.T) {
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
 		SecretsDir:    filepath.Join(tmpDir, "data", "secrets"),
 		SSHDir:        filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 		SSHConfigFile: filepath.Join(tmpDir, "ssh", "config"),
 	}
 	_ = paths.EnsureDirectories()
@@ -208,7 +210,8 @@ func TestProvisionAgentAndDeprovisionAgentErrorPaths(t *testing.T) {
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
 		SecretsDir:    filepath.Join(tmpDir, "data", "secrets"),
 		SSHDir:        filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 		SSHConfigFile: filepath.Join(tmpDir, "ssh", "config"),
 	}
 	_ = paths.EnsureDirectories()

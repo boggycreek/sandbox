@@ -27,19 +27,20 @@ func TestLifecycleProvisionAndDeprovision(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	paths := config.Paths{
-		DataHome:   filepath.Join(tmpDir, "data"),
-		AgentsDir:  filepath.Join(tmpDir, "data", "agents"),
-		SecretsDir: filepath.Join(tmpDir, "data", "secrets"),
-		BinDir:     filepath.Join(tmpDir, "bin"),
-		SSHDir:     filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile: filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		DataHome:      filepath.Join(tmpDir, "data"),
+		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
+		SecretsDir:    filepath.Join(tmpDir, "data", "secrets"),
+		BinDir:        filepath.Join(tmpDir, "bin"),
+		SSHDir:        filepath.Join(tmpDir, "ssh"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 	}
 	_ = paths.EnsureDirectories()
 
 	// Write dummy IDE key file and pub file
-	_ = os.WriteFile(paths.IDEKeyFile, []byte("dummy-key"), 0o600)
+	_ = os.WriteFile(paths.SSHPrivateKey, []byte("dummy-key"), 0o600)
 	// #nosec G306 -- test fixture file
-	_ = os.WriteFile(fmt.Sprintf("%s.pub", paths.IDEKeyFile), []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 test-ide-key"), 0o600)
+	_ = os.WriteFile(fmt.Sprintf("%s.pub", paths.SSHPrivateKey), []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 test-ide-key"), 0o600)
 
 	t.Setenv("ADMIN_BACKPLANE_PASSWORD", valkey.AdminPass)
 	t.Setenv("BP_HOST", "127.0.0.1")
@@ -101,11 +102,12 @@ func TestLifecycleProvisionAndDeprovision(t *testing.T) {
 func TestGiteaProvisionAndDeprovision(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := config.Paths{
-		DataHome:   filepath.Join(tmpDir, "data"),
-		IDEKeyFile: filepath.Join(tmpDir, "agent-sandbox"),
+		DataHome:      filepath.Join(tmpDir, "data"),
+		IDEKeyFile:    filepath.Join(tmpDir, "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "fleet"),
 	}
 	// #nosec G306 -- test fixture file
-	_ = os.WriteFile(fmt.Sprintf("%s.pub", paths.IDEKeyFile), []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 dummy-key"), 0o600)
+	_ = os.WriteFile(fmt.Sprintf("%s.pub", paths.SSHPrivateKey), []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 dummy-key"), 0o600)
 
 	// Mock Gitea server
 	mockGitea := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,24 +241,25 @@ func TestSonarProvisionAndDeprovision(t *testing.T) {
 func TestEnsureIDEKeypair(t *testing.T) {
 	tmpDir := t.TempDir()
 	paths := config.Paths{
-		DataHome:   filepath.Join(tmpDir, "data"),
-		SSHDir:     filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile: filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		DataHome:      filepath.Join(tmpDir, "data"),
+		SSHDir:        filepath.Join(tmpDir, "ssh"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 	}
 
-	// 1. Empty IDEKeyFile path
+	// 1. Empty SSHPrivateKey/IDEKeyFile path
 	if err := EnsureIDEKeypair(config.Paths{}); err != nil {
-		t.Errorf("expected nil error for empty IDEKeyFile, got %v", err)
+		t.Errorf("expected nil error for empty SSHPrivateKey, got %v", err)
 	}
 
 	// 2. Initial generation
 	if err := EnsureIDEKeypair(paths); err != nil {
 		t.Fatalf("EnsureIDEKeypair initial generation failed: %v", err)
 	}
-	if _, err := os.Stat(paths.IDEKeyFile); err != nil {
+	if _, err := os.Stat(paths.SSHPrivateKey); err != nil {
 		t.Errorf("expected private key file to exist: %v", err)
 	}
-	pubFile := paths.IDEKeyFile + ".pub"
+	pubFile := paths.SSHPrivateKey + ".pub"
 	if _, err := os.Stat(pubFile); err != nil {
 		t.Errorf("expected public key file to exist: %v", err)
 	}

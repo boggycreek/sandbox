@@ -109,9 +109,9 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 
 	// 4. Test printSSHConfigBlock helper output
 	var buf bytes.Buffer
-	printSSHConfigBlock(&buf, "my-test-agent", 2222, "/home/test/.ssh/agent-sandbox")
+	printSSHConfigBlock(&buf, "my-test-agent", 2222, "/home/test/.ssh/fleet")
 	rendered := buf.String()
-	if !strings.Contains(rendered, "Host sndbx-my-test-agent") || !strings.Contains(rendered, "Port 2222") {
+	if !strings.Contains(rendered, "Host fleet-my-test-agent") || !strings.Contains(rendered, "Port 2222") {
 		t.Errorf("unexpected ssh config block rendering: %s", rendered)
 	}
 	if !strings.Contains(rendered, "IdentitiesOnly yes") || !strings.Contains(rendered, "StrictHostKeyChecking accept-new") {
@@ -130,7 +130,7 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 	if code != 0 {
 		t.Errorf("expected ssh-config to succeed for running agent, got %d: %s", code, errOut)
 	}
-	if !strings.Contains(out, "Host sndbx-stopped-agent") || !strings.Contains(out, "Port 42222") {
+	if !strings.Contains(out, "Host fleet-stopped-agent") || !strings.Contains(out, "Port 42222") {
 		t.Errorf("expected rendered ssh config block, got: %s", out)
 	}
 
@@ -138,7 +138,7 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 	cfg2, _ := config.NewAgentConfig("second-agent", "base", "tester")
 	_ = config.SaveAgentConfig(cfg2, paths)
 	code, out, _ = runFleet([]string{"agent", "ssh-config"})
-	if code != 0 || !strings.Contains(out, "Host sndbx-second-agent") {
+	if code != 0 || !strings.Contains(out, "Host fleet-second-agent") {
 		t.Errorf("expected multiple agent ssh config blocks, got: %s", out)
 	}
 

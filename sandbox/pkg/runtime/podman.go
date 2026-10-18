@@ -197,15 +197,23 @@ func EnsureVolume(ctx context.Context, volName string) error {
 	return createCmd.Run()
 }
 
-// ClearAgentKnownHosts removes any stale per-agent known hosts file
+// ClearAgentKnownHosts removes any stale per-agent known hosts file.
+// It removes ~/.ssh/known_hosts.fleet-%s and cleans up legacy known_hosts.sndbx-%s if present.
 func ClearAgentKnownHosts(name string, paths config.Paths) {
 	home, _ := os.UserHomeDir()
 	if home != "" {
+		_ = os.Remove(filepath.Join(home, ".ssh", fmt.Sprintf("known_hosts.fleet-%s", name)))
 		_ = os.Remove(filepath.Join(home, ".ssh", fmt.Sprintf("known_hosts.sndbx-%s", name)))
 	}
 	if paths.SSHDir != "" {
+		_ = os.Remove(filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.fleet-%s", name)))
 		_ = os.Remove(filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.sndbx-%s", name)))
 	}
+}
+
+// CleanAgentKnownHosts removes any stale per-agent known hosts file (alias for ClearAgentKnownHosts).
+func CleanAgentKnownHosts(name string, paths config.Paths) {
+	ClearAgentKnownHosts(name, paths)
 }
 
 // StartEgressFilterContainer starts or creates the companion egress filter sidecar container for an agent.
@@ -327,10 +335,10 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	}
 
 	// Build run arguments
-	sshKeyPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
+	sshKeyPub := fmt.Sprintf("%s.pub", paths.GetSSHPrivateKey())
 	var mounts []string
 	if _, err := os.Stat(sshKeyPub); err == nil {
-		mounts = append(mounts, "-v", fmt.Sprintf("%s:/tmp/host-keys/agent-sandbox.pub:ro", sshKeyPub))
+		mounts = append(mounts, "-v", fmt.Sprintf("%s:/tmp/host-keys/fleet.pub:ro", sshKeyPub))
 	}
 	mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent:z", cfg.VolumeName))
 
@@ -454,10 +462,10 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 	_ = EnsureNetwork(ctx, netName)
 
 	// Build run arguments for host-connected container
-	sshKeyPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
+	sshKeyPub := fmt.Sprintf("%s.pub", paths.GetSSHPrivateKey())
 	var mounts []string
 	if _, err := os.Stat(sshKeyPub); err == nil {
-		mounts = append(mounts, "-v", fmt.Sprintf("%s:/tmp/host-keys/agent-sandbox.pub:ro", sshKeyPub))
+		mounts = append(mounts, "-v", fmt.Sprintf("%s:/tmp/host-keys/fleet.pub:ro", sshKeyPub))
 	}
 	if cfg.VolumeName != "" {
 		mounts = append(mounts, "-v", fmt.Sprintf("%s:/home/agent:z", cfg.VolumeName))
@@ -994,7 +1002,7 @@ func BootstrapForgejo(ctx context.Context, adminPass string) error {
 		"--admin",
 		"--username", adminUser,
 		"--password", adminPass,
-		"--email", fmt.Sprintf("%s@local.sndbx", adminUser),
+		"--email", fmt.Sprintf("%s@local.fleet", adminUser),
 		"--must-change-password=false",
 	)
 	_ = createAdminCmd.Run()
@@ -1015,7 +1023,7 @@ func BootstrapForgejo(ctx context.Context, adminPass string) error {
 			"--admin",
 			"--username", "giteaadmin",
 			"--password", adminPass,
-			"--email", "giteaadmin@local.sndbx",
+			"--email", "giteaadmin@local.fleet",
 			"--must-change-password=false",
 		).Run()
 		_ = CommandContext(ctx, "podman", "exec", infraForgejoContainer,
@@ -1152,8 +1160,8 @@ func FormatSSHConfigBlock(name string, port int, keyFile string) string {
 	if home == "" {
 		home = "/tmp"
 	}
-	knownHostsFile := filepath.Join(home, ".ssh", fmt.Sprintf("known_hosts.sndbx-%s", name))
-	return fmt.Sprintf("Host sndbx-%s\n    HostName 127.0.0.1\n    Port %d\n    User agent\n    IdentityFile %s\n    IdentitiesOnly yes\n    UserKnownHostsFile %s\n    StrictHostKeyChecking accept-new\n", name, port, keyFile, knownHostsFile)
+	knownHostsFile := filepath.Join(home, ".ssh", fmt.Sprintf("known_hosts.fleet-%s", name))
+	return fmt.Sprintf("Host fleet-%s\n    HostName 127.0.0.1\n    Port %d\n    User agent\n    IdentityFile %s\n    IdentitiesOnly yes\n    UserKnownHostsFile %s\n    StrictHostKeyChecking accept-new\n", name, port, keyFile, knownHostsFile)
 }
 
 // SyncSSHConfigFile updates the managed SSH config file with Host blocks for all currently running agents.
@@ -1164,16 +1172,16 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 	}
 
 	var buf bytes.Buffer
-	buf.WriteString("# Agent Sandbox Auto-Generated SSH Configuration\n")
-	buf.WriteString("# Managed automatically by sndbx. Do not edit manually.\n\n")
+	buf.WriteString("# Fleet Auto-Generated SSH Configuration\n")
+	buf.WriteString("# Managed automatically by fleet. Do not edit manually.\n\n")
 
-	ideKeyFile := paths.IDEKeyFile
+	ideKeyFile := paths.GetSSHPrivateKey()
 	if ideKeyFile == "" {
 		home, _ := os.UserHomeDir()
 		if home == "" {
 			home = "/tmp"
 		}
-		ideKeyFile = filepath.Join(home, ".ssh", "agent-sandbox")
+		ideKeyFile = filepath.Join(home, ".ssh", "fleet")
 	}
 	buf.WriteString("Match host 127.0.0.1,localhost user agent\n")
 	buf.WriteString(fmt.Sprintf("    IdentityFile %s\n", ideKeyFile))
@@ -1187,7 +1195,7 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 			if runningCount > 0 {
 				buf.WriteString("\n")
 			}
-			buf.WriteString(FormatSSHConfigBlock(c.Name, port, paths.IDEKeyFile))
+			buf.WriteString(FormatSSHConfigBlock(c.Name, port, ideKeyFile))
 			runningCount++
 		}
 	}
@@ -1199,6 +1207,11 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 		_ = os.MkdirAll(dir, 0700)
 	}
 	return os.WriteFile(paths.SSHConfigFile, buf.Bytes(), 0600)
+}
+
+// UpdateSSHConfig updates the managed SSH config file (alias for SyncSSHConfigFile).
+func UpdateSSHConfig(ctx context.Context, paths config.Paths) error {
+	return SyncSSHConfigFile(ctx, paths)
 }
 
 // RecreateValkeyContainer stops, removes, and recreates the shared Valkey container with updated ACL and volume mounts.

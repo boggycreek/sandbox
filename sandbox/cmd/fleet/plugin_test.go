@@ -25,7 +25,7 @@ func TestHandlePluginCommands(t *testing.T) {
 		DataHome:      filepath.Join(tmpDir, "data"),
 		AgentsDir:     filepath.Join(tmpDir, "data", "agents"),
 		SSHDir:        filepath.Join(tmpDir, ".ssh"),
-		IDEKeyFile:    filepath.Join(tmpDir, ".ssh", "agent-sandbox"),
+		IDEKeyFile:    filepath.Join(tmpDir, ".ssh", "fleet"),
 		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
 	}
 	_ = paths.EnsureDirectories()
@@ -51,7 +51,7 @@ func TestHandlePluginCommands(t *testing.T) {
 		if code != 0 {
 			t.Errorf("expected exit code 0 for help flag %s, got %d", h, code)
 		}
-		if !strings.Contains(stdout.String(), "Agent Sandbox Plugin Manager") {
+		if !strings.Contains(stdout.String(), "Fleet Plugin Manager") {
 			t.Errorf("expected plugin manager help text, got: %s", stdout.String())
 		}
 	}
@@ -85,7 +85,7 @@ func TestHandlePluginCommands(t *testing.T) {
 		if code != 0 {
 			t.Errorf("expected exit code 0 for add gateway, got %d (stderr: %s)", code, stderr.String())
 		}
-		if !strings.Contains(stdout.String(), "Agent Sandbox JetBrains Gateway Plugin") {
+		if !strings.Contains(stdout.String(), "Fleet JetBrains Gateway Plugin") {
 			t.Errorf("expected gateway plugin success text, got: %s", stdout.String())
 		}
 
@@ -106,7 +106,7 @@ func TestHandlePluginCommands(t *testing.T) {
 		if code != 0 {
 			t.Errorf("expected exit code 0 for add toolbox, got %d (stderr: %s)", code, stderr.String())
 		}
-		if !strings.Contains(stdout.String(), "Agent Sandbox JetBrains Toolbox Plugin") {
+		if !strings.Contains(stdout.String(), "Fleet JetBrains Toolbox Plugin") {
 			t.Errorf("expected toolbox plugin success text, got: %s", stdout.String())
 		}
 
@@ -144,7 +144,7 @@ func TestHandlePluginCommands(t *testing.T) {
 		if code != 0 {
 			t.Errorf("expected exit code 0 for add vscode, got %d", code)
 		}
-		if !strings.Contains(stdout.String(), "Agent Sandbox VS Code Integration") {
+		if !strings.Contains(stdout.String(), "Fleet VS Code Integration") {
 			t.Errorf("expected vscode output, got: %s", stdout.String())
 		}
 

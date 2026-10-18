@@ -38,7 +38,8 @@ func TestSndbxCLIEndToEnd(t *testing.T) {
 	}
 
 	// Compile fleet binary to a temporary path
-	binPath := filepath.Join(tmpDir, "fleet")
+	binDir := t.TempDir()
+	binPath := filepath.Join(binDir, "fleet")
 	cmd := exec.Command("go", "build", "-o", binPath, "github.com/boggycreek/sandbox/cmd/fleet")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

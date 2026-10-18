@@ -100,7 +100,8 @@ func StartEphemeralInfraHarness(t *testing.T) *EphemeralInfraHarness {
 	})
 
 	// Build isolated fleet binary in temp dir
-	h.BinPath = filepath.Join(dataHome, "fleet")
+	binDir := t.TempDir()
+	h.BinPath = filepath.Join(binDir, "fleet")
 	buildCmd := exec.Command("go", "build", "-o", h.BinPath, "github.com/boggycreek/sandbox/cmd/fleet")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed building test fleet binary: %v (%s)", err, string(out))
@@ -241,7 +242,7 @@ func (h *EphemeralInfraHarness) waitForReady() {
 		"--admin",
 		"--username", "forgejoadmin",
 		"--password", h.AdminPassword,
-		"--email", "forgejoadmin@local.sndbx",
+		"--email", "forgejoadmin@local.fleet",
 		"--must-change-password=false",
 	).Run()
 
@@ -250,7 +251,7 @@ func (h *EphemeralInfraHarness) waitForReady() {
 		"--admin",
 		"--username", "giteaadmin",
 		"--password", h.AdminPassword,
-		"--email", "giteaadmin@local.sndbx",
+		"--email", "giteaadmin@local.fleet",
 		"--must-change-password=false",
 	).Run()
 

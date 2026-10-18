@@ -366,7 +366,7 @@ func TestInstallAndRemoveGatewayPlugin(t *testing.T) {
 		t.Fatalf("expected at least 1 installed path")
 	}
 
-	centralJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway", "lib", "sndbx-gateway.jar")
+	centralJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "fleet-gateway", "lib", "fleet-gateway.jar")
 	if _, err := os.Stat(centralJar); err != nil {
 		t.Errorf("central gateway jar not found: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestInstallAndRemoveToolboxPlugin(t *testing.T) {
 		t.Fatalf("expected at least 1 installed path")
 	}
 
-	centralExt := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx", "extension.json")
+	centralExt := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "fleet", "extension.json")
 	if _, err := os.Stat(centralExt); err != nil {
 		t.Errorf("central toolbox extension.json not found: %v", err)
 	}
@@ -559,12 +559,12 @@ func TestListPluginsInstalledState(t *testing.T) {
 	_ = paths.EnsureDirectories()
 
 	// Create central gateway jar
-	centralGatewayJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "sndbx-gateway", "lib", "sndbx-gateway.jar")
+	centralGatewayJar := filepath.Join(paths.DataHome, "plugins", "jetbrains-gateway", "fleet-gateway", "lib", "fleet-gateway.jar")
 	_ = os.MkdirAll(filepath.Dir(centralGatewayJar), 0755)
 	_ = os.WriteFile(centralGatewayJar, []byte("fake-jar"), 0644)
 
 	// Create central toolbox dir and active toolbox dir
-	centralToolboxDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "sndbx")
+	centralToolboxDir := filepath.Join(paths.DataHome, "plugins", "jetbrains-toolbox", "fleet")
 	_ = os.MkdirAll(centralToolboxDir, 0755)
 	_ = os.MkdirAll(tbDir, 0755)
 

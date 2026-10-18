@@ -19,7 +19,7 @@ cd /home/agent/workspace
 # Configure default git author identity if not configured
 if [ ! -f "/home/agent/.gitconfig" ]; then
   git config --global user.name "${AGENT_NAME:-agent}"
-  git config --global user.email "${AGENT_NAME:-agent}@local.sndbx"
+  git config --global user.email "${AGENT_NAME:-agent}@local.fleet"
   git config --global init.defaultBranch main
 fi
 

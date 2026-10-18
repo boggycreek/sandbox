@@ -216,7 +216,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 0 {
 		t.Errorf("expected code 0 for host container open --no-launch, got %d: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "SSH host alias prepared: sndbx-host-ctr-open") {
+	if !strings.Contains(stdout.String(), "SSH host alias prepared: fleet-host-ctr-open") {
 		t.Errorf("expected host alias output, got: %s", stdout.String())
 	}
 }
@@ -289,10 +289,10 @@ func TestAgentOpenExecution(t *testing.T) {
 	if !strings.Contains(outStr, "1) VS Code (/usr/bin/code)") {
 		t.Errorf("expected VS Code option in prompt, got: %s", outStr)
 	}
-	if !strings.Contains(outStr, "SSH host alias prepared: sndbx-ide-agent (Port: 32777)") {
+	if !strings.Contains(outStr, "SSH host alias prepared: fleet-ide-agent (Port: 32777)") {
 		t.Errorf("expected host alias prepared output, got: %s", outStr)
 	}
-	if !strings.Contains(outStr, "vscode-remote://ssh-remote+sndbx-ide-agent/home/agent/workspace") {
+	if !strings.Contains(outStr, "vscode-remote://ssh-remote+fleet-ide-agent/home/agent/workspace") {
 		t.Errorf("expected VS Code Remote URI, got: %s", outStr)
 	}
 
@@ -367,7 +367,7 @@ func TestAgentOpenExecution(t *testing.T) {
 	foundCodeCmd := false
 	foundExtensionInstall := false
 	for _, cmd := range executedCmds {
-		if strings.Contains(cmd, "--file-uri") && strings.Contains(cmd, "vscode-remote://ssh-remote+sndbx-ide-agent") {
+		if strings.Contains(cmd, "--file-uri") && strings.Contains(cmd, "vscode-remote://ssh-remote+fleet-ide-agent") {
 			foundCodeCmd = true
 		}
 		if strings.Contains(cmd, "anthropic.claude-code") {
