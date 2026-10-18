@@ -105,7 +105,7 @@ func (c *Client) EnsureUser(ctx context.Context, username, password, email strin
 		return fmt.Errorf("username cannot be empty")
 	}
 	if email == "" {
-		email = fmt.Sprintf("%s@local.sndbx", username)
+		email = fmt.Sprintf("%s@local.fleet", username)
 	}
 
 	// Check if user exists

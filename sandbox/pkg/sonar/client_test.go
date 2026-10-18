@@ -268,7 +268,7 @@ func TestEnsureUser(t *testing.T) {
 		AdminUser: "admin",
 		AdminPass: "secret",
 	})
-	err := client.EnsureUser(context.Background(), "agent-bob", "pass123", "Bob Agent", "bob@local.sndbx")
+	err := client.EnsureUser(context.Background(), "agent-bob", "pass123", "Bob Agent", "bob@local.fleet")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestEnsureUser(t *testing.T) {
 	}))
 	defer server500.Close()
 	client500 := NewClient(ClientConfig{BaseURL: server500.URL})
-	if err := client500.EnsureUser(context.Background(), "agent-bob", "pass123", "Bob", "bob@local.sndbx"); err == nil {
+	if err := client500.EnsureUser(context.Background(), "agent-bob", "pass123", "Bob", "bob@local.fleet"); err == nil {
 		t.Fatal("expected error on 500, got nil")
 	}
 }

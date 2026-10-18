@@ -23,8 +23,17 @@ type Paths struct {
 	EnvFile       string
 	SSHDir        string
 	IDEKeyFile    string
+	SSHPrivateKey string
 	SSHConfigFile string
 	BPProfilesDir string
+}
+
+// GetSSHPrivateKey returns SSHPrivateKey if set, or IDEKeyFile as fallback.
+func (p Paths) GetSSHPrivateKey() string {
+	if p.SSHPrivateKey != "" {
+		return p.SSHPrivateKey
+	}
+	return p.IDEKeyFile
 }
 
 // GetPaths returns standard paths resolved against XDG environment variables
@@ -44,9 +53,10 @@ func GetPaths() Paths {
 		xdgState = filepath.Join(home, ".local", "state")
 	}
 
-	dataHome := filepath.Join(xdgData, "agent-sandbox")
+	dataHome := filepath.Join(xdgData, "fleet")
 	sshDir := filepath.Join(home, ".ssh")
 	bpProfilesDir := filepath.Join(xdgState, "bp", "profiles")
+	sshPrivateKey := filepath.Join(sshDir, "fleet")
 
 	return Paths{
 		DataHome:      dataHome,
@@ -57,7 +67,8 @@ func GetPaths() Paths {
 		BinDir:        filepath.Join(home, ".local", "bin"),
 		EnvFile:       filepath.Join(dataHome, ".env"),
 		SSHDir:        sshDir,
-		IDEKeyFile:    filepath.Join(sshDir, "agent-sandbox"),
+		IDEKeyFile:    sshPrivateKey,
+		SSHPrivateKey: sshPrivateKey,
 		SSHConfigFile: filepath.Join(dataHome, "ssh_config"),
 		BPProfilesDir: bpProfilesDir,
 	}
@@ -181,11 +192,21 @@ func (p Paths) SetEnvVar(key, value string) error {
 
 
 // ResolveRepoDir returns the absolute path to the local repository checkout.
-// It checks AGENT_SANDBOX_REPO, SANDBOX_ROOT, the parent of the binary,
-// the current working directory, and the standard ~/.local/share/agent-sandbox/repo fallback.
+// It checks FLEET_REPO, AGENT_SANDBOX_REPO, FLEET_ROOT, SANDBOX_ROOT, the parent of the binary,
+// the current working directory, and the standard ~/.local/share/fleet/repo fallback.
 func (p Paths) ResolveRepoDir() string {
 	// 1. Explicit environment variable override
+	if repo := os.Getenv("FLEET_REPO"); repo != "" {
+		if fi, err := os.Stat(filepath.Join(repo, "Makefile")); err == nil && !fi.IsDir() {
+			return repo
+		}
+	}
 	if repo := os.Getenv("AGENT_SANDBOX_REPO"); repo != "" {
+		if fi, err := os.Stat(filepath.Join(repo, "Makefile")); err == nil && !fi.IsDir() {
+			return repo
+		}
+	}
+	if repo := os.Getenv("FLEET_ROOT"); repo != "" {
 		if fi, err := os.Stat(filepath.Join(repo, "Makefile")); err == nil && !fi.IsDir() {
 			return repo
 		}

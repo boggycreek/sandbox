@@ -57,20 +57,22 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 		return handlePluginRemove(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown command %q (see 'sndbx plugin help')\n", action)
+		bin := binaryName()
+		fmt.Fprintf(stderr, "%s plugin: unknown command %q (see '%s plugin help')\n", bin, action, bin)
 		return 1
 	}
 }
 
 func handlePluginAdd(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	switch target {
 	case "gateway":
 		res, err := plugin.InstallGatewayPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error installing gateway plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error installing gateway plugin: %v\n", bin, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway Plugin")
+		fmt.Fprintln(stdout, "Fleet JetBrains Gateway Plugin")
 		fmt.Fprintln(stdout, "=====================================")
 		fmt.Fprintf(stdout, "Plugin:     %s (v%s)\n", res.PluginName, res.Version)
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
@@ -85,17 +87,17 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 		}
 		fmt.Fprintln(stdout, "\nNext Steps:")
 		fmt.Fprintln(stdout, "  1. Launch JetBrains Gateway or your JetBrains IDE (GoLand, CLion, WebStorm, PyCharm).")
-		fmt.Fprintln(stdout, "  2. Connect to your running agents via the 'Agent Sandbox' provider")
-		fmt.Fprintln(stdout, "     or select any 'sndbx-<name>' host under SSH Connections.")
+		fmt.Fprintln(stdout, "  2. Connect to your running agents via the 'Fleet' provider")
+		fmt.Fprintln(stdout, "     or select any 'fleet-<name>' host under SSH Connections.")
 		return 0
 
 	case "toolbox":
 		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error installing toolbox plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error installing toolbox plugin: %v\n", bin, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Toolbox Plugin")
+		fmt.Fprintln(stdout, "Fleet JetBrains Toolbox Plugin")
 		fmt.Fprintln(stdout, "=====================================")
 		fmt.Fprintf(stdout, "Plugin:     %s (v%s)\n", res.PluginName, res.Version)
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
@@ -110,17 +112,17 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 		}
 		fmt.Fprintln(stdout, "\nNext Steps:")
 		fmt.Fprintln(stdout, "  1. Restart JetBrains Toolbox.")
-		fmt.Fprintln(stdout, "  2. Connect to running agents under 'SSH Connections' or the 'Agent Sandbox' provider.")
+		fmt.Fprintln(stdout, "  2. Connect to running agents under 'SSH Connections' or the 'Fleet' provider.")
 		return 0
 
 	case "vscode":
 		res, err := plugin.InstallVSCodePlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error configuring VS Code integration: %v\n", err)
+			fmt.Fprintf(stderr, "%s error configuring VS Code integration: %v\n", bin, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox VS Code Integration")
-		fmt.Fprintln(stdout, "==================================")
+		fmt.Fprintln(stdout, "Fleet VS Code Integration")
+		fmt.Fprintln(stdout, "=========================")
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
 		if res.SSHConfigLinked {
 			fmt.Fprintln(stdout, "SSH Config: Linked managed config into ~/.ssh/config")
@@ -128,24 +130,25 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 			fmt.Fprintln(stdout, "SSH Config: Already linked in ~/.ssh/config")
 		}
 		fmt.Fprintln(stdout, "\nNext Steps:")
-		fmt.Fprintln(stdout, "  Run 'sndbx agent open <name>' to launch an agent in VS Code.")
+		fmt.Fprintf(stdout, "  Run '%s agent open <name>' to launch an agent in VS Code.\n", bin)
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin %q (see 'sndbx plugin help')\n", target)
+		fmt.Fprintf(stderr, "%s plugin: unknown plugin %q (see '%s plugin help')\n", bin, target, bin)
 		return 1
 	}
 }
 
 func handlePluginRemove(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	switch target {
 	case "gateway":
 		res, err := plugin.RemoveGatewayPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error removing gateway plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error removing gateway plugin: %v\n", bin, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway Plugin")
+		fmt.Fprintln(stdout, "Fleet JetBrains Gateway Plugin")
 		fmt.Fprintln(stdout, "=====================================")
 		fmt.Fprintf(stdout, "Plugin:     %s\n", res.PluginName)
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
@@ -163,10 +166,10 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 	case "toolbox":
 		res, err := plugin.RemoveToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error removing toolbox plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error removing toolbox plugin: %v\n", bin, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Toolbox Plugin")
+		fmt.Fprintln(stdout, "Fleet JetBrains Toolbox Plugin")
 		fmt.Fprintln(stdout, "=====================================")
 		fmt.Fprintf(stdout, "Plugin:     %s\n", res.PluginName)
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
@@ -184,11 +187,11 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 	case "vscode":
 		res, err := plugin.RemoveVSCodePlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error removing VS Code integration: %v\n", err)
+			fmt.Fprintf(stderr, "%s error removing VS Code integration: %v\n", bin, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, "Agent Sandbox VS Code Integration")
-		fmt.Fprintln(stdout, "==================================")
+		fmt.Fprintln(stdout, "Fleet VS Code Integration")
+		fmt.Fprintln(stdout, "=========================")
 		fmt.Fprintf(stdout, "Status:     %s\n", res.Message)
 		if res.SSHConfigUnlinked {
 			fmt.Fprintln(stdout, "SSH Config: Unlinked managed config from ~/.ssh/config")
@@ -196,13 +199,13 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin %q (see 'sndbx plugin help')\n", target)
+		fmt.Fprintf(stderr, "%s plugin: unknown plugin %q (see '%s plugin help')\n", bin, target, bin)
 		return 1
 	}
 }
 
 func printPluginUsage(out io.Writer) {
-	fmt.Fprintf(out, `Agent Sandbox Plugin Manager
+	fmt.Fprintf(out, `Fleet Plugin Manager
 
 Usage:
   %s plugin <command> [target]

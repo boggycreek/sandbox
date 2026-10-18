@@ -29,7 +29,11 @@ if [ ! -f "${SSH_DIR}/ssh_host_rsa_key" ]; then
 fi
 
 # Import host IDE public key if mounted
-if [ -f "/tmp/host-keys/agent-sandbox.pub" ]; then
+if [ -f "/tmp/host-keys/fleet.pub" ]; then
+  cat "/tmp/host-keys/fleet.pub" >> "${SSH_DIR}/authorized_keys"
+  sort -u "${SSH_DIR}/authorized_keys" -o "${SSH_DIR}/authorized_keys"
+  chmod 600 "${SSH_DIR}/authorized_keys"
+elif [ -f "/tmp/host-keys/agent-sandbox.pub" ]; then
   cat "/tmp/host-keys/agent-sandbox.pub" >> "${SSH_DIR}/authorized_keys"
   sort -u "${SSH_DIR}/authorized_keys" -o "${SSH_DIR}/authorized_keys"
   chmod 600 "${SSH_DIR}/authorized_keys"
@@ -131,7 +135,7 @@ fi
 # Configure default git author identity if not configured
 if [ ! -f "/home/agent/.gitconfig" ]; then
   git config --global user.name "${AGENT_NAME:-agent}"
-  git config --global user.email "${AGENT_NAME:-agent}@local.sndbx"
+  git config --global user.email "${AGENT_NAME:-agent}@local.fleet"
   git config --global init.defaultBranch main
 fi
 

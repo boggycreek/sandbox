@@ -106,12 +106,12 @@ func RegisterForgejoUser(ctx context.Context, cfg *config.AgentConfig, paths con
 	})
 
 	// 1. Provision user account in Forgejo
-	if err := client.EnsureUser(ctx, cfg.Name, cfg.Password, fmt.Sprintf("%s@local.sndbx", cfg.Name)); err != nil {
+	if err := client.EnsureUser(ctx, cfg.Name, cfg.Password, fmt.Sprintf("%s@local.fleet", cfg.Name)); err != nil {
 		return err
 	}
 
 	// 2. Add public SSH key if host IDE key exists
-	sshKeyPub := filepath.Clean(fmt.Sprintf("%s.pub", paths.IDEKeyFile))
+	sshKeyPub := filepath.Clean(fmt.Sprintf("%s.pub", paths.GetSSHPrivateKey()))
 	// #nosec G304 -- reading controlled IDE public key file
 	if keyData, err := os.ReadFile(sshKeyPub); err == nil && len(keyData) > 0 {
 		if keyErr := client.AddUserSSHKey(ctx, cfg.Name, fmt.Sprintf("%s-ide-key", cfg.Name), string(keyData)); keyErr != nil {
@@ -162,7 +162,7 @@ func RegisterSonarUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 	}
 
 	// 1. Provision user in SonarQube
-	if err := client.EnsureUser(ctx, cfg.Name, cfg.Password, cfg.Name, fmt.Sprintf("%s@local.sndbx", cfg.Name)); err != nil {
+	if err := client.EnsureUser(ctx, cfg.Name, cfg.Password, cfg.Name, fmt.Sprintf("%s@local.fleet", cfg.Name)); err != nil {
 		return err
 	}
 
@@ -209,19 +209,20 @@ func EnsureAgentKeys(cfg *config.AgentConfig, paths config.Paths) error {
 	return config.SaveAgentConfig(cfg, paths)
 }
 
-// EnsureIDEKeypair guarantees the dedicated host IDE keypair exists at paths.IDEKeyFile (~/.ssh/agent-sandbox).
+// EnsureIDEKeypair guarantees the dedicated host IDE keypair exists at paths.SSHPrivateKey (~/.ssh/fleet).
 func EnsureIDEKeypair(paths config.Paths) error {
-	if paths.IDEKeyFile == "" {
+	keyPath := paths.GetSSHPrivateKey()
+	if keyPath == "" {
 		return nil
 	}
-	sshPub := fmt.Sprintf("%s.pub", paths.IDEKeyFile)
-	if _, err := os.Stat(paths.IDEKeyFile); os.IsNotExist(err) {
-		_ = os.MkdirAll(filepath.Dir(paths.IDEKeyFile), 0700)
-		cmd := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "agent-sandbox-ide", "-f", paths.IDEKeyFile)
+	sshPub := fmt.Sprintf("%s.pub", keyPath)
+	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+		_ = os.MkdirAll(filepath.Dir(keyPath), 0700)
+		cmd := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "", "-C", "fleet-ide", "-f", keyPath)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("failed generating IDE keypair: %w (%s)", err, string(out))
 		}
-		_ = os.Chmod(paths.IDEKeyFile, 0600)
+		_ = os.Chmod(keyPath, 0600)
 		_ = os.Chmod(sshPub, 0644)
 	} else {
 		// Private key exists; check public key
@@ -229,7 +230,7 @@ func EnsureIDEKeypair(paths config.Paths) error {
 		existingPub := strings.TrimSpace(string(existingPubBytes))
 
 		// Try deriving public key non-interactively with empty passphrase flag (-P "")
-		cmd := exec.Command("ssh-keygen", "-y", "-P", "", "-f", paths.IDEKeyFile)
+		cmd := exec.Command("ssh-keygen", "-y", "-P", "", "-f", keyPath)
 		out, err := cmd.Output()
 		if err != nil {
 			// If ssh-keygen derivation fails (e.g. key has passphrase or tool unavailable):
@@ -243,7 +244,7 @@ func EnsureIDEKeypair(paths config.Paths) error {
 		derivedPub := strings.TrimSpace(string(out))
 		if readErr != nil || len(existingPub) == 0 || existingPub != derivedPub {
 			if len(existingPub) > 0 && existingPub != derivedPub {
-				fmt.Fprintf(os.Stderr, "sndbx warning: %s does not match private key %s; updating public key file\n", sshPub, paths.IDEKeyFile)
+				fmt.Fprintf(os.Stderr, "fleet warning: %s does not match private key %s; updating public key file\n", sshPub, keyPath)
 			}
 			pubData := append([]byte(derivedPub), '\n')
 			dir := filepath.Dir(sshPub)

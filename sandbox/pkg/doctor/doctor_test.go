@@ -45,7 +45,8 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		SecretsDir:    filepath.Join(tmpDir, "data", "secrets"),
 		BinDir:        filepath.Join(tmpDir, "bin"),
 		SSHDir:        filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
 		BPProfilesDir: filepath.Join(tmpDir, "data", "profiles"),
 	}
@@ -126,16 +127,24 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected warning in summary: %s", offlineOut)
 	}
 
-	// 7. Test SSH key healing (delete IDE key)
-	_ = os.Remove(paths.IDEKeyFile)
-	_ = os.Remove(paths.IDEKeyFile + ".pub")
+	// 7. Test SSH key healing and migration (simulate legacy ~/.ssh/agent-sandbox)
+	_ = os.Remove(paths.SSHPrivateKey)
+	_ = os.Remove(paths.SSHPrivateKey + ".pub")
+	legacyKey := filepath.Join(paths.SSHDir, "agent-sandbox")
+	_ = os.WriteFile(legacyKey, []byte("legacy-priv-key"), 0600)
+	_ = os.WriteFile(legacyKey+".pub", []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 legacy-pub-key"), 0644)
+
 	userSSHConfig := filepath.Join(paths.SSHDir, "config")
 	_ = os.WriteFile(userSSHConfig, []byte("Host existing\n  HostName example.com\n"), 0600)
 	_ = os.Remove(paths.SSHConfigFile)
 
 	sshHealReport, _ := DiagnoseAndHealAgent(ctx, "heal-agent", paths)
 	if sshHealReport.HealedCount == 0 {
-		t.Errorf("expected healed count > 0 for SSH key and include healing")
+		t.Errorf("expected healed count > 0 for SSH key migration and include healing")
+	}
+	migratedPriv, _ := os.ReadFile(paths.SSHPrivateKey)
+	if string(migratedPriv) != "legacy-priv-key" {
+		t.Errorf("expected migrated private key to match legacy, got %q", string(migratedPriv))
 	}
 
 	// 8. Test FormatDoctorReport with all status types
@@ -175,7 +184,7 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	defer giteaServer.Close()
 
 	os.Setenv("GITEA_URL", giteaServer.URL)
-	_ = os.WriteFile(paths.IDEKeyFile+".pub", []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA mock-ide-key"), 0644)
+	_ = os.WriteFile(paths.SSHPrivateKey+".pub", []byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA mock-ide-key"), 0644)
 	reportGitea := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealGitea(ctx, cfg, paths, reportGitea)
 	if len(reportGitea.Checks) == 0 || reportGitea.Checks[0].Status != StatusOK {
@@ -183,7 +192,7 @@ func TestDoctorDiagnosticsAndHealing(t *testing.T) {
 	}
 
 	// 10. Direct storage, container, host SSH pubkey heal, and signing key tests
-	_ = os.Remove(paths.IDEKeyFile + ".pub")
+	_ = os.Remove(paths.SSHPrivateKey + ".pub")
 	reportSSHPub := &DoctorReport{AgentName: "heal-agent"}
 	checkAndHealHostSSH(paths, reportSSHPub)
 
@@ -443,7 +452,8 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 		BinDir:        filepath.Join(tmpDir, "bin"),
 		EnvFile:       filepath.Join(tmpDir, "data", ".env"),
 		SSHDir:        filepath.Join(tmpDir, "ssh"),
-		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "agent-sandbox"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
 		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
 	}
 

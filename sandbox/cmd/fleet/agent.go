@@ -183,14 +183,15 @@ Commands:
 		}
 		return 1
 	default:
-		fmt.Fprintf(stderr, "sndbx agent: unknown command %q\n", sub)
+		fmt.Fprintf(stderr, "%s agent: unknown command %q\n", bin, sub)
 		return 1
 	}
 }
 
 func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--host] [--no-container] [--pwd <path>] [--model-url <url>] [--model-name <name>] [--model-key <key>]\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent create <name> [as <type|oci>] [--image <type|oci>] [--role <role>] [--host] [--no-container] [--pwd <path>] [--model-url <url>] [--model-name <name>] [--model-key <key>]\n", bin)
 		return 1
 	}
 
@@ -233,7 +234,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	if isHostContainer && isNoContainer {
-		fmt.Fprintln(stderr, "sndbx error: cannot specify both --host and --no-container")
+		fmt.Fprintf(stderr, "%s error: cannot specify both --host and --no-container\n", bin)
 		return 1
 	}
 
@@ -242,7 +243,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		if pwdPath == "" {
 			cwd, err := os.Getwd()
 			if err != nil {
-				fmt.Fprintf(stderr, "sndbx error resolving working directory: %v\n", err)
+				fmt.Fprintf(stderr, "%s error resolving working directory: %v\n", bin, err)
 				return 1
 			}
 			pwdPath = cwd
@@ -250,17 +251,17 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		var err error
 		absPwd, err = filepath.Abs(pwdPath)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error resolving absolute path for %q: %v\n", pwdPath, err)
+			fmt.Fprintf(stderr, "%s error resolving absolute path for %q: %v\n", bin, pwdPath, err)
 			return 1
 		}
 		st, err := os.Stat(absPwd)
 		if err != nil || !st.IsDir() {
-			fmt.Fprintf(stderr, "sndbx error: workspace directory %q does not exist or is not a directory\n", absPwd)
+			fmt.Fprintf(stderr, "%s error: workspace directory %q does not exist or is not a directory\n", bin, absPwd)
 			return 1
 		}
 		realPwd, err := filepath.EvalSymlinks(absPwd)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error resolving symlinks for %q: %v\n", absPwd, err)
+			fmt.Fprintf(stderr, "%s error resolving symlinks for %q: %v\n", bin, absPwd, err)
 			return 1
 		}
 		cleanPwd := filepath.Clean(realPwd)
@@ -268,16 +269,16 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		// Disallow projecting root, system paths, or user home directly
 		homeDir, _ := os.UserHomeDir()
 		if cleanPwd == "/" {
-			fmt.Fprintln(stderr, "sndbx error: cannot project root filesystem '/' as workspace directory")
+			fmt.Fprintf(stderr, "%s error: cannot project root filesystem '/' as workspace directory\n", bin)
 			return 1
 		}
 		if homeDir != "" && cleanPwd == filepath.Clean(homeDir) {
-			fmt.Fprintf(stderr, "sndbx error: projecting user home directory %q directly is not permitted (specify a project subdirectory via --pwd)\n", cleanPwd)
+			fmt.Fprintf(stderr, "%s error: projecting user home directory %q directly is not permitted (specify a project subdirectory via --pwd)\n", bin, cleanPwd)
 			return 1
 		}
 		for _, sysDir := range []string{"/etc", "/usr", "/bin", "/sbin", "/var", "/lib", "/dev", "/proc", "/sys", "/boot"} {
 			if cleanPwd == sysDir || strings.HasPrefix(cleanPwd, sysDir+"/") {
-				fmt.Fprintf(stderr, "sndbx error: cannot project system directory %q as workspace directory\n", cleanPwd)
+				fmt.Fprintf(stderr, "%s error: cannot project system directory %q as workspace directory\n", bin, cleanPwd)
 				return 1
 			}
 		}
@@ -297,7 +298,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		var isLocal bool
 		resolvedImage, isLocal = runtime.ResolveAgentImage(ctx, image)
 		if resolvedImage == "" {
-			fmt.Fprintf(stderr, "sndbx error: unable to resolve image %q\n", image)
+			fmt.Fprintf(stderr, "%s error: unable to resolve image %q\n", bin, image)
 			return 1
 		}
 		_ = isLocal
@@ -305,7 +306,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 
 	cfg, err := config.NewAgentConfig(agentName, resolvedImage, role, modelURL, modelName, modelKey)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -318,8 +319,8 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	if isHostContainer {
 		cfg.Runtime = "host-container"
 		cfg.WorkspacePath = absPwd
-		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", cfg.Name)
-		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", cfg.Name)
+		cfg.ContainerName = fmt.Sprintf("fleet-agent-%s", cfg.Name)
+		cfg.VolumeName = fmt.Sprintf("fleet-agent-%s-home", cfg.Name)
 	} else if isNoContainer {
 		cfg.Runtime = "no-container"
 		cfg.HostOnly = true
@@ -329,7 +330,7 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	}
 
 	if err := config.SaveAgentConfig(cfg, paths); err != nil {
-		fmt.Fprintf(stderr, "sndbx error saving config: %v\n", err)
+		fmt.Fprintf(stderr, "%s error saving config: %v\n", bin, err)
 		return 1
 	}
 
@@ -372,26 +373,27 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 		fmt.Fprint(stdout, formatted)
 	}
 	if report.HasErrors() {
-		fmt.Fprintf(stderr, "sndbx warning: agent %q provisioned with errors; run 'sndbx agent doctor %s' to diagnose\n", cfg.Name, cfg.Name)
+		fmt.Fprintf(stderr, "%s warning: agent %q provisioned with errors; run '%s agent doctor %s' to diagnose\n", bin, cfg.Name, bin, cfg.Name)
 	}
 	if cfg.IsNoContainer() {
 		fmt.Fprintf(stdout, "To use:   bp --profile %s tell <recipient> <msg>\n", cfg.Name)
 	} else {
-		fmt.Fprintf(stdout, "To start: sndbx agent start %s\n", cfg.Name)
+		fmt.Fprintf(stdout, "To start: %s agent start %s\n", bin, cfg.Name)
 	}
 	return 0
 }
 
 func handleAgentStart(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent start <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent start <name>\n", bin)
 		return 1
 	}
 
 	name := args[0]
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -403,46 +405,47 @@ func handleAgentStart(ctx context.Context, paths config.Paths, args []string, st
 
 	bpCfg := libbp.LoadClientFromEnv()
 	if err := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsHostContainer() {
 		lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 		fmt.Fprintf(stdout, "Host agent %q started (%s) with workspace %s.\n", cfg.Name, cfg.ContainerName, cfg.WorkspacePath)
-		fmt.Fprintf(stdout, "Connect: sndbx agent connect %s\n", cfg.Name)
-		fmt.Fprintf(stdout, "SSH:     sndbx agent ssh %s\n", cfg.Name)
-		fmt.Fprintf(stdout, "IDE:     sndbx agent open %s\n", cfg.Name)
+		fmt.Fprintf(stdout, "Connect: %s agent connect %s\n", bin, cfg.Name)
+		fmt.Fprintf(stdout, "SSH:     %s agent ssh %s\n", bin, cfg.Name)
+		fmt.Fprintf(stdout, "IDE:     %s agent open %s\n", bin, cfg.Name)
 		return 0
 	}
 
 	lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
 
 	fmt.Fprintf(stdout, "Agent %q started (%s).\n", cfg.Name, cfg.ContainerName)
-	fmt.Fprintf(stdout, "SSH:   sndbx agent ssh %s\n", cfg.Name)
-	fmt.Fprintf(stdout, "IDE:   sndbx agent open %s\n", cfg.Name)
-	fmt.Fprintf(stdout, "Tmux:  sndbx agent tmux %s\n", cfg.Name)
+	fmt.Fprintf(stdout, "SSH:   %s agent ssh %s\n", bin, cfg.Name)
+	fmt.Fprintf(stdout, "IDE:   %s agent open %s\n", bin, cfg.Name)
+	fmt.Fprintf(stdout, "Tmux:  %s agent tmux %s\n", bin, cfg.Name)
 	return 0
 }
 
 func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent tmux <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent tmux <name>\n", bin)
 		return 1
 	}
 	name := args[0]
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsNoContainer() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (no container or tmux session)\n", cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a no-container agent (no container or tmux session)\n", bin, cfg.Name)
 		return 1
 	}
 	if cfg.IsHostContainer() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a host tool container without tmux (connect via 'sndbx agent connect %s')\n", cfg.Name, cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a host tool container without tmux (connect via '%s agent connect %s')\n", bin, cfg.Name, bin, cfg.Name)
 		return 1
 	}
 
@@ -451,16 +454,17 @@ func handleAgentTmux(ctx context.Context, paths config.Paths, args []string, std
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(stderr, "sndbx tmux error: %v\n", err)
+		fmt.Fprintf(stderr, "%s tmux error: %v\n", bin, err)
 		return 1
 	}
 	return 0
 }
 
 func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Notice: '%s agent connect' is deprecated. Please use '%s agent tmux <name>' instead.\n", binaryName(), binaryName())
-		fmt.Fprintf(stderr, "Usage: %s agent connect <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Notice: '%s agent connect' is deprecated. Please use '%s agent tmux <name>' instead.\n", bin, bin)
+		fmt.Fprintf(stderr, "Usage: %s agent connect <name>\n", bin)
 		return 1
 	}
 	name := args[0]
@@ -468,7 +472,7 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 	if err == nil && cfg.IsHostContainer() {
 		info, err := runtime.InspectAgentContainer(ctx, cfg.ContainerName)
 		if err != nil || info == nil || info.State != "running" {
-			fmt.Fprintf(stderr, "sndbx error: container %s is not running (start via: sndbx agent start %s)\n", cfg.ContainerName, cfg.Name)
+			fmt.Fprintf(stderr, "%s error: container %s is not running (start via: %s agent start %s)\n", bin, cfg.ContainerName, bin, cfg.Name)
 			return 1
 		}
 		cmd := runtime.CommandContext(ctx, "podman", "exec", "-it", "--user", "1000", cfg.ContainerName, "/bin/bash")
@@ -476,12 +480,12 @@ func handleAgentConnect(ctx context.Context, paths config.Paths, args []string, 
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx connect error: %v\n", err)
+			fmt.Fprintf(stderr, "%s connect error: %v\n", bin, err)
 			return 1
 		}
 		return 0
 	}
-	fmt.Fprintf(stderr, "Notice: 'sndbx agent connect' is deprecated. Please use 'sndbx agent tmux %s' instead.\n", args[0])
+	fmt.Fprintf(stderr, "Notice: '%s agent connect' is deprecated. Please use '%s agent tmux %s' instead.\n", bin, bin, args[0])
 	return handleAgentTmux(ctx, paths, args, stdout, stderr)
 }
 
@@ -539,18 +543,18 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 			help = strings.Join(installedNames, ", ")
 		}
 		if target.Name == "" {
-			fmt.Fprintf(stderr, "sndbx error: unknown IDE %q. Installed IDEs: %s\n", ideName, help)
+			fmt.Fprintf(stderr, "%s error: unknown IDE %q. Installed IDEs: %s\n", bin, ideName, help)
 			return 1
 		}
 		if !installed {
-			fmt.Fprintf(stderr, "sndbx error: %s (%s) is not installed on this host. Installed IDEs: %s\n",
-				target.DisplayName, target.BinaryName, help)
+			fmt.Fprintf(stderr, "%s error: %s (%s) is not installed on this host. Installed IDEs: %s\n",
+				bin, target.DisplayName, target.BinaryName, help)
 			return 1
 		}
 	} else {
 		discovered := ide.Discover()
 		if len(discovered) == 0 {
-			fmt.Fprintln(stderr, "sndbx error: no supported IDEs detected on PATH (supported: code, cursor, goland, clion, webstorm, pycharm, idea, ...)")
+			fmt.Fprintf(stderr, "%s error: no supported IDEs detected on PATH (supported: code, cursor, goland, clion, webstorm, pycharm, idea, ...)\n", bin)
 			return 1
 		}
 
@@ -559,7 +563,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 			for _, d := range discovered {
 				names = append(names, d.Name)
 			}
-			fmt.Fprintf(stderr, "sndbx error: target IDE is required. Specify 'in <ide>' with one of: %s\n", strings.Join(names, ", "))
+			fmt.Fprintf(stderr, "%s error: target IDE is required. Specify 'in <ide>' with one of: %s\n", bin, strings.Join(names, ", "))
 			return 1
 		}
 
@@ -571,13 +575,13 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 
 		scanner := bufio.NewScanner(stdin)
 		if !scanner.Scan() {
-			fmt.Fprintln(stderr, "sndbx error: invalid selection")
+			fmt.Fprintf(stderr, "%s error: invalid selection\n", bin)
 			return 1
 		}
 		input := strings.TrimSpace(scanner.Text())
 		choice, err := strconv.Atoi(input)
 		if err != nil || choice < 1 || choice > len(discovered) {
-			fmt.Fprintln(stderr, "sndbx error: invalid selection")
+			fmt.Fprintf(stderr, "%s error: invalid selection\n", bin)
 			return 1
 		}
 		target = discovered[choice-1]
@@ -585,12 +589,12 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsNoContainer() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (runs directly on host, no container SSH IDE forwarding)\n", cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a no-container agent (runs directly on host, no container SSH IDE forwarding)\n", bin, cfg.Name)
 		return 1
 	}
 
@@ -598,22 +602,22 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 	if err != nil || port <= 0 {
 		bpCfg := libbp.LoadClientFromEnv()
 		if startErr := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); startErr != nil {
-			fmt.Fprintf(stderr, "sndbx error starting agent container %s: %v\n", cfg.ContainerName, startErr)
+			fmt.Fprintf(stderr, "%s error starting agent container %s: %v\n", bin, cfg.ContainerName, startErr)
 			return 1
 		}
 		port, err = runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 		if err != nil || port <= 0 {
-			fmt.Fprintf(stderr, "sndbx error discovering SSH port for %s: %v\n", cfg.Name, err)
+			fmt.Fprintf(stderr, "%s error discovering SSH port for %s: %v\n", bin, cfg.Name, err)
 			return 1
 		}
 	}
 
 	if err := syncAllSSHConfigs(ctx, paths); err != nil {
-		fmt.Fprintf(stderr, "sndbx error syncing SSH config: %v\n", err)
+		fmt.Fprintf(stderr, "%s error syncing SSH config: %v\n", bin, err)
 		return 1
 	}
 
-	hostAlias := fmt.Sprintf("sndbx-%s", name)
+	hostAlias := ide.SSHHostTarget(name)
 
 	// Build connection descriptors for each IDE family.
 	vsCodeURI := fmt.Sprintf("vscode-remote://ssh-remote+%s/home/agent/workspace", hostAlias)
@@ -644,7 +648,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, err)
+			fmt.Fprintf(stderr, "%s error launching %s: %v\n", bin, target.DisplayName, err)
 			return 1
 		}
 		// Best-effort: install the Claude Code extension if VS Code server is running.
@@ -670,7 +674,7 @@ func handleAgentOpen(ctx context.Context, paths config.Paths, args []string, std
 			fallbackCmd.Stdout = stdout
 			fallbackCmd.Stderr = stderr
 			if fallbackErr := fallbackCmd.Run(); fallbackErr != nil {
-				fmt.Fprintf(stderr, "sndbx error launching %s: %v\n", target.DisplayName, fallbackErr)
+				fmt.Fprintf(stderr, "%s error launching %s: %v\n", bin, target.DisplayName, fallbackErr)
 				return 1
 			}
 		}
@@ -689,25 +693,26 @@ func syncAllSSHConfigs(ctx context.Context, paths config.Paths) error {
 }
 
 func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent ssh <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent ssh <name>\n", bin)
 		return 1
 	}
 	name := args[0]
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsNoContainer() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (runs directly on host, no SSH connection required)\n", cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a no-container agent (runs directly on host, no SSH connection required)\n", bin, cfg.Name)
 		return 1
 	}
 
 	port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error discovering SSH port for %s: %v\n", cfg.Name, err)
+		fmt.Fprintf(stderr, "%s error discovering SSH port for %s: %v\n", bin, cfg.Name, err)
 		return 1
 	}
 
@@ -730,6 +735,7 @@ func handleAgentSSH(ctx context.Context, paths config.Paths, args []string, stdo
 }
 
 func handleAgentSSHConfig(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	var targetAgent string
 	for _, a := range args {
 		if a != "--all" && !strings.HasPrefix(a, "-") && targetAgent == "" {
@@ -740,12 +746,12 @@ func handleAgentSSHConfig(ctx context.Context, paths config.Paths, args []string
 	if targetAgent != "" {
 		cfg, err := config.LoadAgentConfig(targetAgent, paths)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+			fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 			return 1
 		}
 		port, err := runtime.GetAgentSSHPort(ctx, cfg.ContainerName)
 		if err != nil || port <= 0 {
-			fmt.Fprintf(stderr, "sndbx error: agent %q is not running or SSH port is unavailable\n", cfg.Name)
+			fmt.Fprintf(stderr, "%s error: agent %q is not running or SSH port is unavailable\n", bin, cfg.Name)
 			return 1
 		}
 		printSSHConfigBlock(stdout, cfg.Name, port, paths.IDEKeyFile)
@@ -754,7 +760,7 @@ func handleAgentSSHConfig(ctx context.Context, paths config.Paths, args []string
 
 	configs, err := config.ListAgentConfigs(paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -778,15 +784,16 @@ func printSSHConfigBlock(w io.Writer, name string, port int, keyFile string) {
 }
 
 func handleAgentDoctor(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent doctor <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent doctor <name>\n", bin)
 		return 1
 	}
 
 	name := args[0]
 	report, err := doctor.DiagnoseAndHealAgent(ctx, name, paths)
 	if err != nil && report == nil {
-		fmt.Fprintf(stderr, "sndbx doctor error: %v\n", err)
+		fmt.Fprintf(stderr, "%s doctor error: %v\n", bin, err)
 		return 1
 	}
 
@@ -798,8 +805,9 @@ func handleAgentDoctor(ctx context.Context, paths config.Paths, args []string, s
 }
 
 func handleAgentStop(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent stop <name> [--all]\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent stop <name> [--all]\n", bin)
 		return 1
 	}
 
@@ -819,7 +827,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	name := args[0]
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -829,7 +837,7 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 	}
 
 	if err := runtime.StopAgentContainer(ctx, cfg.ContainerName); err != nil {
-		fmt.Fprintf(stderr, "sndbx error stopping %s: %v\n", cfg.Name, err)
+		fmt.Fprintf(stderr, "%s error stopping %s: %v\n", bin, cfg.Name, err)
 		return 1
 	}
 	lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
@@ -838,24 +846,25 @@ func handleAgentStop(ctx context.Context, paths config.Paths, args []string, std
 }
 
 func handleAgentClean(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent clean <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent clean <name>\n", bin)
 		return 1
 	}
 	name := args[0]
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsNoContainer() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a no-container agent (no container or home volume to clean; use 'sndbx agent retire %s' to deprovision)\n", cfg.Name, cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a no-container agent (no container or home volume to clean; use '%s agent retire %s' to deprovision)\n", bin, cfg.Name, bin, cfg.Name)
 		return 1
 	}
 
 	if err := runtime.CleanAgentContainer(ctx, cfg.ContainerName); err != nil {
-		fmt.Fprintf(stderr, "sndbx error cleaning %s: %v\n", cfg.Name, err)
+		fmt.Fprintf(stderr, "%s error cleaning %s: %v\n", bin, cfg.Name, err)
 		return 1
 	}
 	lifecycle.WarnOnErr(stderr, syncAllSSHConfigs(ctx, paths), "sync ssh config")
@@ -888,7 +897,7 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -901,21 +910,22 @@ func handleAgentRetire(ctx context.Context, paths config.Paths, args []string, s
 	}
 	fmt.Fprint(stdout, lifecycle.FormatReport(report))
 	if report.HasErrors() {
-		fmt.Fprintf(stderr, "sndbx warning: agent %q deprovisioned with errors\n", name)
+		fmt.Fprintf(stderr, "%s warning: agent %q deprovisioned with errors\n", bin, name)
 	}
 	return 0
 }
 
 func handleAgentProvision(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent provision <name>\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent provision <name>\n", bin)
 		return 1
 	}
 
 	name := strings.ToLower(strings.TrimSpace(args[0]))
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -925,7 +935,7 @@ func handleAgentProvision(ctx context.Context, paths config.Paths, args []string
 		fmt.Fprint(stdout, formatted)
 	}
 	if report.HasErrors() {
-		fmt.Fprintf(stderr, "sndbx warning: agent %q provisioned with errors; run 'sndbx agent doctor %s' to diagnose\n", cfg.Name, cfg.Name)
+		fmt.Fprintf(stderr, "%s warning: agent %q provisioned with errors; run '%s agent doctor %s' to diagnose\n", bin, cfg.Name, bin, cfg.Name)
 		return 1
 	}
 	fmt.Fprintf(stdout, "Agent %q is fully provisioned.\n", cfg.Name)
@@ -937,6 +947,7 @@ func handleAgentDeprovision(ctx context.Context, paths config.Paths, args []stri
 }
 
 func handleAgentKeys(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	var targetAgent string
 	if len(args) > 0 {
 		targetAgent = strings.ToLower(strings.TrimSpace(args[0]))
@@ -944,7 +955,7 @@ func handleAgentKeys(ctx context.Context, paths config.Paths, args []string, std
 
 	configs, err := config.ListAgentConfigs(paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error listing agents: %v\n", err)
+		fmt.Fprintf(stderr, "%s error listing agents: %v\n", bin, err)
 		return 1
 	}
 
@@ -975,13 +986,14 @@ func handleAgentKeys(ctx context.Context, paths config.Paths, args []string, std
 	}
 
 	if targetAgent != "" && !found {
-		fmt.Fprintf(stderr, "sndbx error: agent %q not found\n", targetAgent)
+		fmt.Fprintf(stderr, "%s error: agent %q not found\n", bin, targetAgent)
 		return 1
 	}
 	return 0
 }
 
 func handleAgentList(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	jsonOutput := false
 	for _, a := range args {
 		if a == "--json" {
@@ -991,7 +1003,7 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 
 	configs, err := config.ListAgentConfigs(paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
@@ -1060,8 +1072,9 @@ func handleAgentList(ctx context.Context, paths config.Paths, args []string, std
 }
 
 func handleAgentClone(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) < 2 {
-		fmt.Fprintf(stderr, "Usage: %s agent clone <name> <repo-url> [dir]\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent clone <name> <repo-url> [dir]\n", bin)
 		return 1
 	}
 
@@ -1074,12 +1087,12 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host filesystem; use host 'git clone' directly)\n", cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a host agent (runs directly on host filesystem; use host 'git clone' directly)\n", bin, cfg.Name)
 		return 1
 	}
 
@@ -1089,7 +1102,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 	if err != nil || strings.TrimSpace(string(out)) != "true" {
 		bpCfg := libbp.LoadClientFromEnv()
 		if startErr := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); startErr != nil {
-			fmt.Fprintf(stderr, "sndbx error starting agent container %s: %v\n", cfg.ContainerName, startErr)
+			fmt.Fprintf(stderr, "%s error starting agent container %s: %v\n", bin, cfg.ContainerName, startErr)
 			return 1
 		}
 	}
@@ -1098,7 +1111,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 	if targetDir != "" {
 		cleaned := filepath.Clean(filepath.Join("/home/agent/workspace", targetDir))
 		if !strings.HasPrefix(cleaned, "/home/agent/workspace") {
-			fmt.Fprintln(stderr, "sndbx error: target directory must remain within /home/agent/workspace")
+			fmt.Fprintf(stderr, "%s error: target directory must remain within /home/agent/workspace\n", bin)
 			return 1
 		}
 	}
@@ -1112,7 +1125,7 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(stderr, "sndbx error: git clone failed: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: git clone failed: %v\n", bin, err)
 		return 1
 	}
 
@@ -1121,20 +1134,21 @@ func handleAgentClone(ctx context.Context, paths config.Paths, args []string, st
 }
 
 func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s agent remote <name> [get|list|set <remote-name> <url>] [--dir <dir>]\n", binaryName())
+		fmt.Fprintf(stderr, "Usage: %s agent remote <name> [get|list|set <remote-name> <url>] [--dir <dir>]\n", bin)
 		return 1
 	}
 
 	name := strings.ToLower(strings.TrimSpace(args[0]))
 	cfg, err := config.LoadAgentConfig(name, paths)
 	if err != nil {
-		fmt.Fprintf(stderr, "sndbx error: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: %v\n", bin, err)
 		return 1
 	}
 
 	if cfg.IsHost() {
-		fmt.Fprintf(stderr, "sndbx error: agent %q is a host agent (runs directly on host filesystem; use host 'git remote' directly)\n", cfg.Name)
+		fmt.Fprintf(stderr, "%s error: agent %q is a host agent (runs directly on host filesystem; use host 'git remote' directly)\n", bin, cfg.Name)
 		return 1
 	}
 
@@ -1144,7 +1158,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	if err != nil || strings.TrimSpace(string(out)) != "true" {
 		bpCfg := libbp.LoadClientFromEnv()
 		if startErr := runtime.StartAgentContainer(ctx, cfg, paths, bpCfg.Host, bpCfg.Port); startErr != nil {
-			fmt.Fprintf(stderr, "sndbx error starting agent container %s: %v\n", cfg.ContainerName, startErr)
+			fmt.Fprintf(stderr, "%s error starting agent container %s: %v\n", bin, cfg.ContainerName, startErr)
 			return 1
 		}
 	}
@@ -1172,7 +1186,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	if targetDir != "" {
 		cleaned := filepath.Clean(filepath.Join("/home/agent/workspace", targetDir))
 		if !strings.HasPrefix(cleaned, "/home/agent/workspace") {
-			fmt.Fprintln(stderr, "sndbx error: target directory must remain within /home/agent/workspace")
+			fmt.Fprintf(stderr, "%s error: target directory must remain within /home/agent/workspace\n", bin)
 			return 1
 		}
 		workDir = cleaned
@@ -1205,7 +1219,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 		gitArgs = []string{"exec", "--user", "1000", "-w", workDir, cfg.ContainerName, "git", "remote", "get-url", "--", remoteName}
 	case "set":
 		if len(cleanArgs) < 3 {
-			fmt.Fprintf(stderr, "Usage: %s agent remote <name> set <remote-name> <url> [--dir <dir>]\n", binaryName())
+			fmt.Fprintf(stderr, "Usage: %s agent remote <name> set <remote-name> <url> [--dir <dir>]\n", bin)
 			return 1
 		}
 		remoteName := strings.TrimSpace(cleanArgs[1])
@@ -1219,7 +1233,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 			return 0
 		}
 	default:
-		fmt.Fprintf(stderr, "sndbx agent remote: unknown subcommand %q\n", subCmd)
+		fmt.Fprintf(stderr, "%s agent remote: unknown subcommand %q\n", bin, subCmd)
 		return 1
 	}
 
@@ -1227,7 +1241,7 @@ func handleAgentRemote(ctx context.Context, paths config.Paths, args []string, s
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(stderr, "sndbx error: git remote operation failed: %v\n", err)
+		fmt.Fprintf(stderr, "%s error: git remote operation failed: %v\n", bin, err)
 		return 1
 	}
 	return 0

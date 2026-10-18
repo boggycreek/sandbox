@@ -8,7 +8,7 @@
 #
 # Runs as non-root user 'agent' (UID 1000).
 # Starts base infrastructure (unprivileged sshd on port 2222) and executes
-# sndbx-agent directly as PID 1.
+# fleet-agent directly as PID 1.
 
 set -euo pipefail
 
@@ -25,7 +25,11 @@ if [ ! -f "${SSH_DIR}/ssh_host_rsa_key" ]; then
 fi
 
 # Import host IDE public key if mounted
-if [ -f "/tmp/host-keys/agent-sandbox.pub" ]; then
+if [ -f "/tmp/host-keys/fleet.pub" ]; then
+  cat "/tmp/host-keys/fleet.pub" >> "${SSH_DIR}/authorized_keys"
+  sort -u "${SSH_DIR}/authorized_keys" -o "${SSH_DIR}/authorized_keys"
+  chmod 600 "${SSH_DIR}/authorized_keys"
+elif [ -f "/tmp/host-keys/agent-sandbox.pub" ]; then
   cat "/tmp/host-keys/agent-sandbox.pub" >> "${SSH_DIR}/authorized_keys"
   sort -u "${SSH_DIR}/authorized_keys" -o "${SSH_DIR}/authorized_keys"
   chmod 600 "${SSH_DIR}/authorized_keys"
@@ -39,7 +43,7 @@ fi
 # Configure default git author identity and credentials
 if [ ! -f "/home/agent/.gitconfig" ]; then
   git config --global user.name "${AGENT_NAME:-agent}"
-  git config --global user.email "${AGENT_NAME:-agent}@local.sndbx"
+  git config --global user.email "${AGENT_NAME:-agent}@local.fleet"
   git config --global init.defaultBranch main
   git config --global beads.role contributor
 fi
@@ -70,7 +74,7 @@ fi
 mkdir -p /home/agent/workspace
 cd /home/agent/workspace
 
-# Disable legacy bpd since sndbx-agent handles the backplane inbox directly
+# Disable legacy bpd since fleet-agent handles the backplane inbox directly
 export BPD_DISABLED=1
 # Auto-discover installed MCP binaries if MCP_BINARIES is not explicitly set
 if [ -z "${MCP_BINARIES:-}" ]; then
@@ -85,6 +89,6 @@ if [ -z "${MCP_BINARIES:-}" ]; then
     fi
 fi
 
-echo "Native Agent Sandbox container initialized [$(hostname)]. Starting sndbx-agent..."
+echo "Native Agent Sandbox container initialized [$(hostname)]. Starting fleet-agent..."
 
-exec /usr/local/bin/sndbx-agent "$@"
+exec /usr/local/bin/fleet-agent "$@"

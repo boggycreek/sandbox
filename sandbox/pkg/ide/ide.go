@@ -8,6 +8,7 @@
 package ide
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -27,7 +28,7 @@ const (
 
 // IDE describes a discovered IDE launcher on the host machine.
 type IDE struct {
-	// Name is the canonical short name used in "sndbx agent open <agent> in <name>".
+	// Name is the canonical short name used in "fleet agent open <agent> in <name>".
 	Name string
 	// DisplayName is a human-readable label shown in help and error messages.
 	DisplayName string
@@ -39,7 +40,7 @@ type IDE struct {
 	Family Family
 }
 
-// knownIDEs is the full catalogue of IDE launchers sndbx knows about, ordered by
+// knownIDEs is the full catalogue of IDE launchers fleet knows about, ordered by
 // family and then approximate popularity. Discovery is performed by resolving each
 // BinaryName against the host PATH at runtime.
 var knownIDEs = []IDE{
@@ -49,7 +50,7 @@ var knownIDEs = []IDE{
 	{Name: "cursor", DisplayName: "Cursor", BinaryName: "cursor", Family: FamilyVSCode},
 	{Name: "windsurf", DisplayName: "Windsurf", BinaryName: "windsurf", Family: FamilyVSCode},
 
-	// JetBrains family — connects via SSH host alias sndbx-<name>
+	// JetBrains family — connects via SSH host alias fleet-<name>
 	{Name: "goland", DisplayName: "GoLand", BinaryName: "goland", Family: FamilyJetBrains},
 	{Name: "clion", DisplayName: "CLion", BinaryName: "clion", Family: FamilyJetBrains},
 	{Name: "webstorm", DisplayName: "WebStorm", BinaryName: "webstorm", Family: FamilyJetBrains},
@@ -121,4 +122,9 @@ func NamesInstalled() []string {
 		names = append(names, ide.Name)
 	}
 	return names
+}
+
+// SSHHostTarget returns the OpenSSH host target alias for an agent (fleet-<name>).
+func SSHHostTarget(agentName string) string {
+	return fmt.Sprintf("fleet-%s", agentName)
 }

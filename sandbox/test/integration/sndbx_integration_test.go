@@ -37,15 +37,16 @@ func TestSndbxCLIEndToEnd(t *testing.T) {
 		"SONAR_DISABLED=1",
 	}
 
-	// Compile sndbx binary to a temporary path
-	binPath := filepath.Join(tmpDir, "sndbx")
-	cmd := exec.Command("go", "build", "-o", binPath, "github.com/boggycreek/sandbox/cmd/sndbx")
+	// Compile fleet binary to a temporary path
+	binDir := t.TempDir()
+	binPath := filepath.Join(binDir, "fleet")
+	cmd := exec.Command("go", "build", "-o", binPath, "github.com/boggycreek/sandbox/cmd/fleet")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("failed building sndbx binary: %v (%s)", err, string(out))
+		t.Fatalf("failed building fleet binary: %v (%s)", err, string(out))
 	}
 
-	runSndbx := func(ctx context.Context, args ...string) (string, error) {
+	runFleet := func(ctx context.Context, args ...string) (string, error) {
 		execCmd := exec.CommandContext(ctx, binPath, args...)
 		execCmd.Env = append(os.Environ(), env...)
 		res, err := execCmd.CombinedOutput()
@@ -55,37 +56,37 @@ func TestSndbxCLIEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// 1. Create Agent via sndbx CLI
-	outStr, err := runSndbx(ctx, "agent", "create", "test-bot", "as", "base", "--role", "tester")
+	// 1. Create Agent via fleet CLI
+	outStr, err := runFleet(ctx, "agent", "create", "test-bot", "as", "base", "--role", "tester")
 	if err != nil {
-		t.Fatalf("sndbx agent create failed: %v (%s)", err, outStr)
+		t.Fatalf("fleet agent create failed: %v (%s)", err, outStr)
 	}
 	if !strings.Contains(outStr, "Agent \"test-bot\" created successfully") {
 		t.Errorf("unexpected create output: %s", outStr)
 	}
 
 	// 2. Doctor agent
-	docStr, err := runSndbx(ctx, "agent", "doctor", "test-bot")
+	docStr, err := runFleet(ctx, "agent", "doctor", "test-bot")
 	if err != nil {
-		t.Fatalf("sndbx agent doctor failed: %v (%s)", err, docStr)
+		t.Fatalf("fleet agent doctor failed: %v (%s)", err, docStr)
 	}
 	if !strings.Contains(docStr, "Diagnosing agent \"test-bot\"") {
 		t.Errorf("unexpected doctor output: %s", docStr)
 	}
 
-	// 3. List agents via sndbx CLI
-	listStr, err := runSndbx(ctx, "agent", "list")
+	// 3. List agents via fleet CLI
+	listStr, err := runFleet(ctx, "agent", "list")
 	if err != nil {
-		t.Fatalf("sndbx agent list failed: %v (%s)", err, listStr)
+		t.Fatalf("fleet agent list failed: %v (%s)", err, listStr)
 	}
 	if !strings.Contains(listStr, "test-bot") {
 		t.Errorf("expected test-bot in agent list: %s", listStr)
 	}
 
-	// 4. Retire agent via sndbx CLI
-	retireStr, err := runSndbx(ctx, "agent", "retire", "test-bot", "--force")
+	// 4. Retire agent via fleet CLI
+	retireStr, err := runFleet(ctx, "agent", "retire", "test-bot", "--force")
 	if err != nil {
-		t.Fatalf("sndbx agent retire failed: %v (%s)", err, retireStr)
+		t.Fatalf("fleet agent retire failed: %v (%s)", err, retireStr)
 	}
 	if !strings.Contains(retireStr, "retired and deprovisioned successfully") {
 		t.Errorf("unexpected retire output: %s", retireStr)

@@ -126,7 +126,7 @@ sbom: ## Generate Software Bill of Materials (SBOM) in SPDX and CycloneDX format
 	@echo "==> Generating Software Bill of Materials (SBOM)..."
 	@mkdir -p $(DIST_DIR)/sbom
 	@if command -v syft >/dev/null 2>&1; then \
-		syft dir:. -o spdx-json=$(DIST_DIR)/sbom/agent-sandbox.spdx.json -o cyclonedx-json=$(DIST_DIR)/sbom/agent-sandbox.cyclonedx.json; \
+		syft dir:. -o spdx-json=$(DIST_DIR)/sbom/fleet.spdx.json -o cyclonedx-json=$(DIST_DIR)/sbom/fleet.cyclonedx.json; \
 		echo "SBOM generated in $(DIST_DIR)/sbom/ (SPDX & CycloneDX)"; \
 	else \
 		echo "Notice: syft not installed. Install via: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b $(HOME)/.local/bin"; \
@@ -138,13 +138,13 @@ check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) +
 
 build: build-cli build-libbp ## Build all CLI binaries and libraries
 
-build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
+build-cli: ## Build native Go CLI binaries (fleet, bp, bpd, mcps)
 	@echo "==> Building CLI binaries..."
 	@mkdir -p $(BIN_DIR)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./sandbox/cmd/sndbx; \
-		ln -sf sndbx $(BIN_DIR)/sb; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx-agent ./agent/cmd/sndbx-agent; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/fleet ./sandbox/cmd/fleet; \
+		ln -sf fleet $(BIN_DIR)/ft; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/fleet-agent ./agent/cmd/fleet-agent; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./mcp/cmd/bp-mcp; \
@@ -152,7 +152,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 		ln -sf forgejo-mcp $(BIN_DIR)/gitea-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/beads-mcp ./mcp/cmd/beads-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./mcp/cmd/sonar-mcp; \
-		echo "Binaries built in $(BIN_DIR)/ (alias: $(BIN_DIR)/sb)"; \
+		echo "Binaries built in $(BIN_DIR)/ (alias: $(BIN_DIR)/ft)"; \
 	else \
 		echo "Notice: go.work not yet initialized. Skipping build."; \
 	fi
@@ -160,22 +160,22 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 install: build-cli ## Install CLI binaries and aliases into $(INSTALL_BIN_DIR)
 	@echo "==> Installing CLI binaries into $(INSTALL_BIN_DIR)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
-	@cp -f $(BIN_DIR)/sndbx $(INSTALL_BIN_DIR)/sndbx
-	@existing_sb=$$(command -v sb 2>/dev/null || true); \
-	if [ -n "$$existing_sb" ] && [ "$$existing_sb" != "$(INSTALL_BIN_DIR)/sb" ]; then \
-		echo "Notice: Skipping 'sb' alias in $(INSTALL_BIN_DIR): another 'sb' was found on PATH ($$existing_sb)"; \
-	elif [ ! -e $(INSTALL_BIN_DIR)/sb ] && [ ! -L $(INSTALL_BIN_DIR)/sb ]; then \
-		(cd $(INSTALL_BIN_DIR) && ln -s sndbx sb); \
-	elif [ -L $(INSTALL_BIN_DIR)/sb ]; then \
-		link_target=$$(readlink $(INSTALL_BIN_DIR)/sb 2>/dev/null || true); \
-		if [ "$$link_target" = "sndbx" ] || [ "$$(basename "$$link_target")" = "sndbx" ]; then \
-			(cd $(INSTALL_BIN_DIR) && ln -sf sndbx sb); \
+	@cp -f $(BIN_DIR)/fleet $(INSTALL_BIN_DIR)/fleet
+	@existing_ft=$$(command -v ft 2>/dev/null || true); \
+	if [ -n "$$existing_ft" ] && [ "$$existing_ft" != "$(INSTALL_BIN_DIR)/ft" ]; then \
+		echo "Notice: Skipping 'ft' alias in $(INSTALL_BIN_DIR): another 'ft' was found on PATH ($$existing_ft)"; \
+	elif [ ! -e $(INSTALL_BIN_DIR)/ft ] && [ ! -L $(INSTALL_BIN_DIR)/ft ]; then \
+		(cd $(INSTALL_BIN_DIR) && ln -s fleet ft); \
+	elif [ -L $(INSTALL_BIN_DIR)/ft ]; then \
+		link_target=$$(readlink $(INSTALL_BIN_DIR)/ft 2>/dev/null || true); \
+		if [ "$$link_target" = "fleet" ] || [ "$$(basename "$$link_target")" = "fleet" ]; then \
+			(cd $(INSTALL_BIN_DIR) && ln -sf fleet ft); \
 		fi; \
 	fi
-	@for bin in sndbx-agent bp bpd bp-mcp forgejo-mcp gitea-mcp beads-mcp sonar-mcp; do \
+	@for bin in fleet-agent bp bpd bp-mcp forgejo-mcp gitea-mcp beads-mcp sonar-mcp; do \
 		if [ -f $(BIN_DIR)/$$bin ]; then cp -f $(BIN_DIR)/$$bin $(INSTALL_BIN_DIR)/$$bin; fi; \
 	done
-	@echo "Installed binaries (sndbx (alias: sb), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"
+	@echo "Installed binaries (fleet (alias: ft), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"
 
 build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 	@echo "==> Building C-shared libbp library..."
@@ -190,46 +190,46 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 build-images: build-image-core build-image-daemon-base build-image-tool-base build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
 
-build-image-core: ## Build foundational agent-sandbox-core OCI image with Podman (ADR 00043)
-	@echo "==> Building agent-sandbox-core OCI image..."
-	podman build -t agent-sandbox-core:latest -f images/agent-core/Dockerfile .
+build-image-core: ## Build foundational fleet-core OCI image with Podman (ADR 00043)
+	@echo "==> Building fleet-core OCI image..."
+	podman build -t fleet-core:latest -f images/agent-core/Dockerfile .
 
-build-image-daemon-base: build-image-core ## Build autonomous fleet agent-sandbox-daemon-base OCI image with Podman (ADR 00043)
-	@echo "==> Building agent-sandbox-daemon-base OCI image..."
-	podman build -t agent-sandbox-daemon-base:latest -t agent-sandbox-base:latest -f images/agent-daemon-base/Dockerfile .
+build-image-daemon-base: build-image-core ## Build autonomous fleet fleet-daemon-base OCI image with Podman (ADR 00043)
+	@echo "==> Building fleet-daemon-base OCI image..."
+	podman build -t fleet-daemon-base:latest -t fleet-base:latest -f images/agent-daemon-base/Dockerfile .
 
-build-image-tool-base: build-image-core ## Build interactive agent-sandbox-tool-base OCI image with Podman (ADR 00043)
-	@echo "==> Building agent-sandbox-tool-base OCI image..."
-	podman build -t agent-sandbox-tool-base:latest -f images/agent-tool-base/Dockerfile .
+build-image-tool-base: build-image-core ## Build interactive fleet-tool-base OCI image with Podman (ADR 00043)
+	@echo "==> Building fleet-tool-base OCI image..."
+	podman build -t fleet-tool-base:latest -f images/agent-tool-base/Dockerfile .
 
-build-image-base: build-image-daemon-base ## Build legacy agent-sandbox-base alias (maps to daemon-base)
+build-image-base: build-image-daemon-base ## Build fleet-base alias (maps to daemon-base)
 
 build-image-native: build-image-base ## Build Native Agent derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-native OCI image..."
-	podman build -t agent-sandbox-native:latest -f images/agents/native/Dockerfile .
+	@echo "==> Building fleet-native OCI image..."
+	podman build -t fleet-native:latest -f images/agents/native/Dockerfile .
 
 build-image-opencode: build-image-base ## Build OpenCode derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-opencode OCI image..."
-	podman build -t agent-sandbox-opencode:latest -f images/agents/opencode/Dockerfile .
+	@echo "==> Building fleet-opencode OCI image..."
+	podman build -t fleet-opencode:latest -f images/agents/opencode/Dockerfile .
 
 build-image-claude: build-image-base ## Build Claude Code derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-claude OCI image..."
-	podman build -t agent-sandbox-claude:latest -f images/agents/claude/Dockerfile .
+	@echo "==> Building fleet-claude OCI image..."
+	podman build -t fleet-claude:latest -f images/agents/claude/Dockerfile .
 
 build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-agy OCI image..."
-	podman build -t agent-sandbox-agy:latest -f images/agents/agy/Dockerfile .
+	@echo "==> Building fleet-agy OCI image..."
+	podman build -t fleet-agy:latest -f images/agents/agy/Dockerfile .
 
 build-image-pig: build-image-base ## Build PiG (Pi in Go) derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-pig OCI image..."
-	podman build -t agent-sandbox-pig:latest -f images/agents/pig/Dockerfile .
+	@echo "==> Building fleet-pig OCI image..."
+	podman build -t fleet-pig:latest -f images/agents/pig/Dockerfile .
 
-build-image-egress: ## Build agent-sandbox-egress OCI image with Podman
-	@echo "==> Building agent-sandbox-egress OCI image..."
-	podman build -t agent-sandbox-egress:latest -f images/egress-filter/Dockerfile .
+build-image-egress: ## Build fleet-egress OCI image with Podman
+	@echo "==> Building fleet-egress OCI image..."
+	podman build -t fleet-egress:latest -f images/egress-filter/Dockerfile .
 
 build-image-sonarqube: ## Build SonarQube Server Community Edition OCI image with Podman
-	@echo "==> Building agent-sandbox-sonarqube OCI image..."
+	@echo "==> Building fleet-sonarqube OCI image..."
 	@./scripts/build-sonarqube-image.sh
 
 clean: ## Clean build and test coverage artifacts

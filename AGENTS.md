@@ -1,8 +1,8 @@
-# Agent Sandbox — Agent Guidelines & Repository Guide
+# Fleet — Agent Guidelines & Repository Guide
 
 ## Overview
 
-The **Agent Sandbox** is a local, host-managed, multi-agent containerization platform created by **Boggy Creek Software LLC**. It is designed to run autonomous AI coding agents safely in isolated environments on physical machines (Linux and macOS) using **Podman**.
+The **Fleet** platform is a local, host-managed, multi-agent containerization platform created by **Boggy Creek Software LLC**. It is designed to run autonomous AI coding agents safely in isolated environments on physical machines (Linux and macOS) using **Podman**.
 
 The container boundary serves as the primary security perimeter: agents operate with full autonomy (`git`, `npm`, `rm`, compilers, file edits) inside isolated containers without requiring per-command human approval prompts, while guaranteeing zero leakage of host secrets.
 
@@ -13,9 +13,9 @@ The container boundary serves as the primary security perimeter: agents operate 
 This repository is structured as a pure **Go monorepo**:
 
 ```
-agent-sandbox/
+fleet/
 ├── cmd/
-│   ├── sndbx/              # Unified host management CLI
+│   ├── fleet/              # Unified host management CLI (alias ft)
 │   ├── bp/                 # Cross-agent backplane messaging CLI
 │   └── libbp-c/            # C-shared library wrapper (libbp.so / libbp.dylib)
 ├── pkg/
@@ -25,14 +25,16 @@ agent-sandbox/
 │   │   └── resp/           # Custom high-performance Valkey/Redis RESP protocol parser
 │   └── runtime/            # Podman container runtime, networks, infra orchestration
 ├── images/
-│   ├── agent-base/         # Neutral base OCI image (Debian Bookworm, non-root agent, sshd, tmux)
-│   └── agents/             # Derivative agent harnesses (opencode, claude, agy)
+│   ├── agent-core/         # Minimal base OCI image (Debian Bookworm, non-root agent)
+│   ├── agent-daemon-base/  # Autonomous daemon OCI image (sshd, tmux, bpd)
+│   ├── agent-tool-base/    # Interactive tool container base OCI image
+│   └── agents/             # Derivative agent harnesses (opencode, claude, agy, pig, native)
 ├── infra/                  # Shared local infrastructure definition (docker-compose.yml)
 ├── test/
 │   ├── harness/            # Embedded Valkey test server harness
-│   └── integration/        # End-to-end integration tests (bp, sndbx, infra lifecycle)
+│   └── integration/        # End-to-end integration tests (bp, fleet, infra lifecycle)
 ├── doc/
-│   ├── adr/                # Architecture Decision Records (00001 - 00028)
+│   ├── adr/                # Architecture Decision Records (00001 - 00046)
 │   └── ai/                 # Progressive disclosure knowledge base optimized for AI agents
 ├── install.sh              # Host installation & bootstrap script
 ├── setup.sh                # Multi-platform development environment setup & diagnostic script
@@ -48,7 +50,7 @@ For in-depth architectural specifications and operational protocols, refer to th
 - **[Architecture & Runtime](doc/ai/architecture.md)**: Podman isolation, security boundary, layered OCI hierarchy, local LLM gateway.
 - **[OCI Image Resolution & Tagging](doc/ai/image-resolution.md)**: 3-tier image resolution, well-known presets, local store discovery, remote OCI refs (ADR 00029).
 - **[Testing Guidelines & Coverage Gates](doc/ai/testing-guidelines.md)**: Strict >=90% test coverage enforcement, rootless Podman cleanup patterns, containerized smoke testing.
-- **[Diagnostic Doctor & Auto-Healing](doc/ai/doctor-diagnostics.md)**: `sndbx agent doctor` and `sndbx infra doctor` diagnostic checks and self-healing.
+- **[Diagnostic Doctor & Auto-Healing](doc/ai/doctor-diagnostics.md)**: `fleet agent doctor` and `fleet infra doctor` diagnostic checks and self-healing.
 - **[Code Review Protocol](doc/ai/code-review.md)**: Architectural, logical, and security review methodology, inspection checklist, and PR reporting format.
 - **[Workstation Setup & Contributor Guide](CONTRIBUTING.md)**: Automated `setup.sh`, XDG multi-version Go management, `--doctor` health check, quality gates, and Beads (`bd`) task tracking.
 
@@ -56,42 +58,42 @@ For in-depth architectural specifications and operational protocols, refer to th
 
 ## Repository Task Tracking for Contributors: Beads (`bd`)
 
-Contributors and AI coding agents working on the `agent-sandbox` repository itself use **Beads (`bd`)** for graph issue tracking and backlog management:
+Contributors and AI coding agents working on the `fleet` repository itself use **Beads (`bd`)** for graph issue tracking and backlog management:
 - **Prefix**: `sndbx-*` (e.g., `sndbx-cpm`)
-- **Dolt Remote**: Upstream GitHub (`git+ssh://git@github.com/boggycreek/sandbox.git`)
+- **Dolt Remote**: Upstream GitHub (`git+ssh://git@github.com/boggycreek/fleet.git`)
 - **Key Commands**: `bd ready` (find unblocked work), `bd list` (view hierarchy), `bd update <id> --claim`, `bd sync` (push/pull Dolt issue commits to GitHub).
 
-> **Architectural Boundary Notice**: This host repository issue tracker (`sndbx-*`) is strictly for platform development of `agent-sandbox`. It is completely distinct and isolated from the in-container Beads infrastructure used by autonomous fleet agents inside running sandboxes (which use local Gitea at `http://gitea:3000/fleet/tasks.git` as detailed in ADR 00028).
+> **Architectural Boundary Notice**: This host repository issue tracker (`sndbx-*`) is strictly for platform development of Fleet. It is completely distinct and isolated from the in-container Beads infrastructure used by autonomous fleet agents inside running agent containers (which use local Forgejo at `http://forgejo:3000/fleet/tasks.git` as detailed in ADR 00028).
 
 ---
 
 ## Core Components & Capabilities
 
-### 1. Host Management CLI (`sndbx`)
-Installed to `~/.local/bin/sndbx`, provides host-side management:
+### 1. Host Management CLI (`fleet`, alias `ft`)
+Installed to `~/.local/bin/fleet`, provides host-side management:
 - **Agent Lifecycle**:
-  - `sndbx agent create <name> [as <type>] [--role <role>] [--host|--no-container] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
-  - `sndbx agent start <name>`: Starts container via Podman (or reports first-class host agent status).
-  - `sndbx agent tmux <name>`: Attaches interactively to container tmux supervisor.
-  - `sndbx agent open <name> [in <ide>] [--no-launch]`: Launches desktop IDE remote development (VS Code, JetBrains).
-  - `sndbx agent ssh <name>`: Direct SSH into unprivileged agent environment.
-  - `sndbx agent ssh-config [name] [--all]`: Emits OpenSSH configuration stanzas for IDE Remote-SSH discovery.
-  - `sndbx agent doctor <name>`: Diagnoses agent configuration, keys, storage, and infrastructure provisioning, and auto-heals defects.
-  - `sndbx agent list [--json]`: Lists all agents, container status (or HOST), and dynamic SSH ports.
-  - `sndbx agent stop [name] [--all]`: Stops agent containers.
-  - `sndbx agent clean <name>`: Removes container while preserving home volume.
-  - `sndbx agent retire <name> [--force]`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Forgejo account.
+  - `fleet agent create <name> [as <type>] [--role <role>] [--host|--no-container] [--model-url <url>] [--model-name <name>] [--model-key <key>]`
+  - `fleet agent start <name>`: Starts container via Podman (or reports first-class host agent status).
+  - `fleet agent tmux <name>`: Attaches interactively to container tmux supervisor.
+  - `fleet agent open <name> [in <ide>] [--no-launch]`: Launches desktop IDE remote development (VS Code, JetBrains).
+  - `fleet agent ssh <name>`: Direct SSH into unprivileged agent environment.
+  - `fleet agent ssh-config [name] [--all]`: Emits OpenSSH configuration stanzas for IDE Remote-SSH discovery.
+  - `fleet agent doctor <name>`: Diagnoses agent configuration, keys, storage, and infrastructure provisioning, and auto-heals defects.
+  - `fleet agent list [--json]`: Lists all agents, container status (or HOST), and dynamic SSH ports.
+  - `fleet agent stop [name] [--all]`: Stops agent containers.
+  - `fleet agent clean <name>`: Removes container while preserving home volume.
+  - `fleet agent retire <name> [--force]`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Forgejo account.
 - **Shared Infrastructure**:
-  - `sndbx infra up`: Starts shared Valkey 8 (`agent-sandbox-valkey`) and Forgejo 9 (`agent-sandbox-forgejo`) containers on the `agent-sandbox-infra` bridge network.
-  - `sndbx infra list`: Inspects runtime status and ports.
-  - `sndbx infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Forgejo repos, and auto-heals defects.
-  - `sndbx infra down`: Halts infrastructure containers.
+  - `fleet infra up`: Starts shared Valkey 8 (`fleet-valkey`) and Forgejo 9 (`fleet-forgejo`) containers on the `fleet-infra` bridge network.
+  - `fleet infra list`: Inspects runtime status and ports.
+  - `fleet infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Forgejo repos, and auto-heals defects.
+  - `fleet infra down`: Halts infrastructure containers.
 - **IDE Plugins & Integration**:
-  - `sndbx plugin add <gateway|toolbox|vscode>`: Installs and configures IDE plugin / SSH integration.
-  - `sndbx plugin remove <gateway|toolbox|vscode>`: Uninstalls and unlinks IDE plugin configuration.
-  - `sndbx plugin list`: Lists supported and installed IDE plugins.
+  - `fleet plugin add <gateway|toolbox|vscode>`: Installs and configures IDE plugin / SSH integration.
+  - `fleet plugin remove <gateway|toolbox|vscode>`: Uninstalls and unlinks IDE plugin configuration.
+  - `fleet plugin list`: Lists supported and installed IDE plugins.
 - **Update & Synchronization**:
-  - `sndbx update`: Orchestrates complete host update (synchronizes git repository, rebuilds and installs native CLI binaries, and builds all native OCI images).
+  - `fleet update`: Orchestrates complete host update (synchronizes git repository, rebuilds and installs native CLI binaries, and builds all native OCI images).
 
 ### 2. Backplane Messaging CLI & Protocol (`bp`, `pkg/libbp`)
 Cross-agent communication bus built on Valkey/Redis Streams:
@@ -115,7 +117,7 @@ Cross-agent communication bus built on Valkey/Redis Streams:
   - Profiles are stateless and thread-safe via `--profile <name>` flag or `BP_PROFILE=<name>` env.
 
 ### 3. Local Forgejo Forge (`pkg/forgejo`)
-- Automated user creation, public SSH key registration, and `fleet` organization membership on `sndbx agent create`.
+- Automated user creation, public SSH key registration, and `fleet` organization membership on `fleet agent create`.
 - Pre-seeded repositories: `fleet/tools.git` (shared tools) and `fleet/tasks.git` (task tracking via `bd`).
 
 ### 4. Local Model Gateway (`llm-gateway`)
@@ -124,8 +126,8 @@ Cross-agent communication bus built on Valkey/Redis Streams:
 
 ### 5. IDE Remote-SSH Ensembling & Managed SSH Config
 - Unprivileged OpenSSH daemon runs on port `2222` inside each agent container.
-- `install.sh` manages a dedicated keypair (`~/.ssh/agent-sandbox`) and adds `Include ~/.local/share/agent-sandbox/ssh_config` to `~/.ssh/config`.
-- `sndbx` automatically updates `~/.local/share/agent-sandbox/ssh_config` on `start`, `stop`, `clean`, and `retire`, providing zero-touch host discovery in VS Code, Cursor, and JetBrains Gateway (`ssh sndbx-<name>`).
+- `install.sh` manages a dedicated keypair (`~/.ssh/fleet`) and adds `Include ~/.local/share/fleet/ssh_config` to `~/.ssh/config`.
+- `fleet` automatically updates `~/.local/share/fleet/ssh_config` on `start`, `stop`, `clean`, and `retire`, providing zero-touch host discovery in VS Code, Cursor, and JetBrains Gateway (`ssh fleet-<name>`).
 
 
 ---
@@ -173,7 +175,7 @@ make build             # Compile all native binaries into bin/
 
 # Development Setup
 ./setup.sh             # Setup development environment & diagnostic doctor
-./install.sh           # Install/update sndbx and bp binaries in ~/.local/bin
+./install.sh           # Install/update fleet and bp binaries in ~/.local/bin
 
 # Environment & Test Cleanup
 make clean-test-env    # Safely clear stale test containers, orphaned netns, and test conmon processes

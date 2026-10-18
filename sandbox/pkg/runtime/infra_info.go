@@ -212,7 +212,7 @@ func GetInfraInfo(ctx context.Context, paths config.Paths, showSecrets bool) (*I
 	if sonarStatus == "stopped" {
 		if os.Getenv("SONAR_DISABLED") == "1" {
 			sonarStatus = "disabled"
-		} else if err := CommandContext(ctx, "podman", "image", "exists", "agent-sandbox-sonarqube:latest").Run(); err != nil {
+		} else if err := CommandContext(ctx, "podman", "image", "exists", "fleet-sonarqube:latest").Run(); err != nil {
 			sonarStatus = "not_deployed"
 		}
 	}

@@ -238,7 +238,7 @@ func TestForgejoClientSuite(t *testing.T) {
 	if err := client.EnsureUser(ctx, "existing-user", "pass", ""); err != nil {
 		t.Errorf("EnsureUser existing-user failed: %v", err)
 	}
-	if err := basicAuthClient.EnsureUser(ctx, "new-user", "pass", "custom@local.sndbx"); err != nil {
+	if err := basicAuthClient.EnsureUser(ctx, "new-user", "pass", "custom@local.fleet"); err != nil {
 		t.Errorf("EnsureUser new-user failed: %v", err)
 	}
 	if err := client.EnsureUser(ctx, "conflict-user", "pass", ""); err != nil {

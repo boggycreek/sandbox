@@ -57,11 +57,11 @@ if [ -z "${EXTRACTED_DIR}" ] || [ ! -d "${EXTRACTED_DIR}" ]; then
 fi
 
 DIR_BASENAME="$(basename "${EXTRACTED_DIR}")"
-echo "==> Building agent-sandbox-sonarqube:latest via Podman..."
+echo "==> Building fleet-sonarqube:latest via Podman..."
 podman build \
-    -t agent-sandbox-sonarqube:latest \
+    -t fleet-sonarqube:latest \
     --build-arg SONARQUBE_DIR="${DIR_BASENAME}" \
     -f "${REPO_DIR}/images/infra/sonarqube/Dockerfile" \
     "${BUILD_TMP}"
 
-echo "==> SonarQube image agent-sandbox-sonarqube:latest successfully built!"
+echo "==> SonarQube image fleet-sonarqube:latest successfully built!"

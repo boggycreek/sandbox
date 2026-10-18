@@ -300,7 +300,7 @@ func TestMainRunWithProjectDomain(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"project", "help"}, &stdout, &stderr)
 	if code != 0 {
-		t.Errorf("expected 0 for 'sndbx project help', got %d", code)
+		t.Errorf("expected 0 for 'fleet project help', got %d", code)
 	}
 	if !strings.Contains(stdout.String(), "Commands:") {
 		t.Errorf("expected usage in output: %s", stdout.String())

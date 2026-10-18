@@ -210,7 +210,7 @@ func TestRunCleanShutdown(t *testing.T) {
 	}
 
 	out := outBuf.String()
-	if !strings.Contains(out, "Starting sndbx-agent runtime") || !strings.Contains(out, "shut down cleanly") {
+	if !strings.Contains(out, "Starting fleet-agent runtime") || !strings.Contains(out, "shut down cleanly") {
 		t.Errorf("expected startup and shutdown logs, got:\n%s", out)
 	}
 }
@@ -308,7 +308,7 @@ func TestMainInvocation(t *testing.T) {
 		exitCode = code
 	}
 
-	os.Args = []string{"sndbx-agent", "--unrecognized-flag-xyz"}
+	os.Args = []string{"fleet-agent", "--unrecognized-flag-xyz"}
 	main()
 
 	if !exitCalled || exitCode != 1 {

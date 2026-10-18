@@ -1,4 +1,4 @@
-# Contributing to Agent Sandbox
+# Contributing to Fleet
 
 <!--
 Copyright (c) 2026 Boggy Creek Software LLC
@@ -7,21 +7,21 @@ Use of this source code is governed by an MIT-style
 license that can be found in the LICENSE file.
 -->
 
-Thank you for your interest in **Agent Sandbox**! This document provides governance guidelines and complete instructions for configuring your local developer environment, managing multi-version Go toolchains under XDG paths, running system diagnostics via `--doctor`, executing test suites, and tracking tasks using Beads (`bd`).
+Thank you for your interest in **Fleet**! This document provides governance guidelines and complete instructions for configuring your local developer environment, managing multi-version Go toolchains under XDG paths, running system diagnostics via `--doctor`, executing test suites, and tracking tasks using Beads (`bd`).
 
 ---
 
 ## 1. Governance & External Contributions
 
-At this time, **Agent Sandbox is maintained solely by Boggy Creek Software LLC and is not accepting external pull requests or feature requests**. Public contributions and pull requests are disabled to maintain strict security boundaries and development velocity.
+At this time, **Fleet is maintained solely by Boggy Creek Software LLC and is not accepting external pull requests or feature requests**. Public contributions and pull requests are disabled to maintain strict security boundaries and development velocity.
 
-If you are inspecting, developing, or maintaining a fork of Agent Sandbox, feel free to inspect and modify the code under the terms of the [MIT License](LICENSE). The instructions below detail the environment setup, tooling, and standards used to build and test the project.
+If you are inspecting, developing, or maintaining a fork of Fleet, feel free to inspect and modify the code under the terms of the [MIT License](LICENSE). The instructions below detail the environment setup, tooling, and standards used to build and test the project.
 
 ---
 
 ## 2. Automated Development Environment Setup (`setup.sh`)
 
-To streamline onboarding across macOS and Linux developer workstations, `agent-sandbox` provides a root setup script: [`setup.sh`](setup.sh).
+To streamline onboarding across macOS and Linux developer workstations, `fleet` provides a root setup script: [`setup.sh`](setup.sh).
 
 The script detects your operating system, CPU architecture, and available package manager, then installs and configures all required toolchains and dependencies.
 
@@ -164,14 +164,14 @@ Options:
 
 ## 7. Task Tracking for Contributors: Beads (`bd`)
 
-We use **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker — to manage backlogs, epics, features, and bug fixes for the `agent-sandbox` codebase.
+We use **Beads (`bd`)** — a distributed, Git- and Dolt-backed graph issue tracker — to manage backlogs, epics, features, and bug fixes for the `fleet` codebase.
 
 > [!IMPORTANT]
 > **Two-Plane Architectural Separation: Platform vs. Fleet**
 > 
 > Please note the strict architectural distinction between the two separate applications of Beads:
-> - **Operator / Contributor Plane (This Repository)**: Used on the host workstation by human developers and AI coding agents working *on* the `agent-sandbox` platform. Issues use the prefix `sndbx-*` and synchronize with the upstream GitHub repository (`origin` / `boggycreek/sandbox.git`).
-> - **Fleet / Workload Plane (In-Infrastructure)**: Autonomous agents executing *inside* running sandbox containers use a completely separate, air-gapped Beads instance backed by the local Gitea server (`http://gitea:3000/fleet/tasks.git`).
+> - **Operator / Contributor Plane (This Repository)**: Used on the host workstation by human developers and AI coding agents working *on* the Fleet platform. Issues use the prefix `sndbx-*` and synchronize with the upstream GitHub repository (`origin` / `boggycreek/fleet.git`).
+> - **Fleet / Workload Plane (In-Infrastructure)**: Autonomous agents executing *inside* running agent containers use a completely separate, air-gapped Beads instance backed by the local Forgejo server (`http://forgejo:3000/fleet/tasks.git`).
 > 
 > These two issue trackers share **zero storage, zero network endpoints, and zero database records**. Do not confuse or merge them.
 
@@ -231,20 +231,20 @@ make build
 # or:
 make build-cli
 ```
-Compiles `bin/sndbx` and `bin/bp`.
+Compiles `bin/fleet` and `bin/bp`.
 
 ### 5. Local Infrastructure
 ```bash
-# Start shared infrastructure (Valkey Backplane + Gitea Forge)
-sndbx infra up
+# Start shared infrastructure (Valkey Backplane + Forgejo Forge)
+fleet infra up
 # or:
 make infra-up
 
 # Verify service status
-sndbx infra list
+fleet infra list
 
 # Stop shared infrastructure
-sndbx infra down
+fleet infra down
 ```
 
 ---

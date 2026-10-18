@@ -28,12 +28,14 @@ Records are numbered serially (`00001` through `00038`) and organized by topic d
 ### Foundations & Architecture (`THEME-CORE`)
 - **[00001 — Go Monorepo and Native Static Binaries](00001-GoMonorepoAndNativeStaticBinaries.md)**  
   *Executive Summary:* All Agent Sandbox host and in-container utilities are developed in a unified Go monorepo and compiled into statically linked, zero-dependency native binaries.
-- **[00002 — Unified Host CLI (sndbx)](00002-UnifiedHostCliSndbx.md)**  
+- **[00002 — Unified Host CLI (sndbx)](00002-UnifiedHostCliSndbx.md)** *(Superseded by 00047)*  
   *Executive Summary:* A single multi-command binary (`sndbx`) acts as the sole operator entry point for fleet management, diagnostics, plugin setup, and orchestration.
 - **[00003 — Podman as Required Container Engine](00003-PodmanAsRequiredContainerEngine.md)**  
   *Executive Summary:* Rootless Podman is the mandatory container runtime dependency, eliminating root-owned daemon requirements and enforcing user-space privilege boundaries.
 - **[00034 — Multi-Version Go Toolchain Management via XDG Standard](00034-MultiVersionGoToolchainManagementViaXdgStandard.md)**  
   *Executive Summary:* Standardizes automated Go toolchain provisioning and multi-version management under the XDG Base Directory specification (`~/.local/share/go/sdk`), ensuring reproducible builds and quality gate execution across host environments without requiring root/sudo privileges or system-level modifications.
+- **[00047 — Project Rename from Sandbox to Fleet](00047-ProjectRenameFromSandboxToFleet.md)**  
+  *Executive Summary:* Formally renames the project from Agent Sandbox ('sandbox', 'sndbx') to Fleet ('fleet', short alias 'ft'). As an alpha-stage project, this transition constitutes a clean break without backward compatibility shims. Migrates host CLI binary to 'fleet' (with 'ft' alias), in-container binary to 'fleet-agent', shared infrastructure containers/networks to 'fleet-*', host paths to ~/.local/share/fleet and ~/.ssh/fleet, SSH host aliases to fleet-<name>, and upstream GitHub repository to boggycreek/fleet. Supersedes ADR 00002.
 
 ### Container Runtime & Storage (`THEME-RUNTIME`)
 - **[00004 — Non-Root Container User and Permission Bounds](00004-NonRootContainerUserAndPermissionBounds.md)**  

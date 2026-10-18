@@ -62,25 +62,30 @@ func TestClearAgentKnownHosts(t *testing.T) {
 	}
 
 	testAgentName := "test-known-hosts-agent"
-	customHostFile := filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.sndbx-%s", testAgentName))
-	_ = os.WriteFile(customHostFile, []byte("dummy host entry"), 0600)
+	fleetHostFile := filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.fleet-%s", testAgentName))
+	legacyHostFile := filepath.Join(paths.SSHDir, fmt.Sprintf("known_hosts.sndbx-%s", testAgentName))
+	_ = os.WriteFile(fleetHostFile, []byte("dummy host entry"), 0600)
+	_ = os.WriteFile(legacyHostFile, []byte("legacy host entry"), 0600)
 
-	ClearAgentKnownHosts(testAgentName, paths)
-	if _, err := os.Stat(customHostFile); !os.IsNotExist(err) {
-		t.Errorf("expected custom known hosts file to be removed")
+	CleanAgentKnownHosts(testAgentName, paths)
+	if _, err := os.Stat(fleetHostFile); !os.IsNotExist(err) {
+		t.Errorf("expected fleet known hosts file to be removed")
+	}
+	if _, err := os.Stat(legacyHostFile); !os.IsNotExist(err) {
+		t.Errorf("expected legacy sndbx known hosts file to be removed")
 	}
 }
 
 func TestFormatSSHConfigBlock(t *testing.T) {
-	block := FormatSSHConfigBlock("alpha", 34567, "/home/test/.ssh/agent-sandbox")
-	if !strings.Contains(block, "Host sndbx-alpha") || !strings.Contains(block, "Port 34567") {
+	block := FormatSSHConfigBlock("alpha", 34567, "/home/test/.ssh/fleet")
+	if !strings.Contains(block, "Host fleet-alpha") || !strings.Contains(block, "Port 34567") {
 		t.Errorf("unexpected FormatSSHConfigBlock output: %s", block)
 	}
 	if !strings.Contains(block, "IdentitiesOnly yes") || !strings.Contains(block, "StrictHostKeyChecking accept-new") {
 		t.Errorf("expected IdentitiesOnly and accept-new in FormatSSHConfigBlock: %s", block)
 	}
-	if !strings.Contains(block, "known_hosts.sndbx-alpha") {
-		t.Errorf("expected known_hosts.sndbx-alpha in UserKnownHostsFile: %s", block)
+	if !strings.Contains(block, "known_hosts.fleet-alpha") {
+		t.Errorf("expected known_hosts.fleet-alpha in UserKnownHostsFile: %s", block)
 	}
 }
 
@@ -105,21 +110,21 @@ func TestSyncSSHConfigFileWithMockPorts(t *testing.T) {
 	}
 	_ = paths.EnsureDirectories()
 
-	cfg1 := &config.AgentConfig{Name: "agent-1", ContainerName: "sndbx-agent-1"}
-	cfg2 := &config.AgentConfig{Name: "agent-2", ContainerName: "sndbx-agent-2"}
+	cfg1 := &config.AgentConfig{Name: "agent-1", ContainerName: "fleet-agent-1"}
+	cfg2 := &config.AgentConfig{Name: "agent-2", ContainerName: "fleet-agent-2"}
 	_ = config.SaveAgentConfig(cfg1, paths)
 	_ = config.SaveAgentConfig(cfg2, paths)
 
-	err := SyncSSHConfigFile(ctx, paths)
+	err := UpdateSSHConfig(ctx, paths)
 	if err != nil {
-		t.Errorf("SyncSSHConfigFile failed: %v", err)
+		t.Errorf("UpdateSSHConfig failed: %v", err)
 	}
 
 	data, err := os.ReadFile(paths.SSHConfigFile)
 	if err != nil {
 		t.Fatalf("failed reading synced ssh config: %v", err)
 	}
-	if !strings.Contains(string(data), "Host sndbx-agent-1") || !strings.Contains(string(data), "Host sndbx-agent-2") {
+	if !strings.Contains(string(data), "Host fleet-agent-1") || !strings.Contains(string(data), "Host fleet-agent-2") {
 		t.Errorf("expected both host blocks in sync'd config, got: %s", string(data))
 	}
 
@@ -224,21 +229,22 @@ func TestStartAgentContainerWithModelAndMounts(t *testing.T) {
 	ctx := context.Background()
 	tmpDir := t.TempDir()
 
-	pubKeyPath := filepath.Join(tmpDir, "agent-sandbox.pub")
+	pubKeyPath := filepath.Join(tmpDir, "fleet.pub")
 	if err := os.WriteFile(pubKeyPath, []byte("ssh-ed25519 AAAAC3... test"), 0644); err != nil {
 		t.Fatalf("failed writing mock pubkey: %v", err)
 	}
 
 	paths := config.Paths{
-		DataHome:   tmpDir,
-		IDEKeyFile: filepath.Join(tmpDir, "agent-sandbox"),
+		DataHome:      tmpDir,
+		IDEKeyFile:    filepath.Join(tmpDir, "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "fleet"),
 	}
 
 	cfg := &config.AgentConfig{
 		Name:          "model-agent",
 		ContainerName: "sndbx-model-agent",
 		VolumeName:    "sndbx-model-vol",
-		Image:         "agent-sandbox-base:latest",
+		Image:         "fleet-base:latest",
 		ModelURL:      "http://localhost:11434/v1",
 		ModelName:     "qwen2.5-coder:32b",
 		ModelAPIKey:   "secret-ollama-key",
@@ -277,7 +283,7 @@ func TestStartAgentContainerWithModelAndMounts(t *testing.T) {
 	if !strings.Contains(argsJoined, "qwen2.5-coder:32b") {
 		t.Errorf("expected model name in args: %s", argsJoined)
 	}
-	if !strings.Contains(argsJoined, "host-keys/agent-sandbox.pub:ro") {
+	if !strings.Contains(argsJoined, "host-keys/fleet.pub:ro") {
 		t.Errorf("expected pubkey mount in args: %s", argsJoined)
 	}
 }
@@ -292,7 +298,7 @@ func TestResolveAgentImageTiers(t *testing.T) {
 	restore1 := SetExecCommandContextForTesting(mockBase)
 	img, isLocal := ResolveAgentImage(ctx, "base")
 	restore1()
-	if img != "agent-sandbox-base:latest" || !isLocal {
+	if img != "fleet-base:latest" || !isLocal {
 		t.Errorf("expected base image local, got %s, %v", img, isLocal)
 	}
 
@@ -300,7 +306,7 @@ func TestResolveAgentImageTiers(t *testing.T) {
 	restore2 := SetExecCommandContextForTesting(mockBase)
 	img, isLocal = ResolveAgentImage(ctx, "")
 	restore2()
-	if img != "agent-sandbox-base:latest" || !isLocal {
+	if img != "fleet-base:latest" || !isLocal {
 		t.Errorf("expected empty string to resolve to base, got %s", img)
 	}
 

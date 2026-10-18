@@ -39,13 +39,13 @@ func TestAgentDoctorScenarios(t *testing.T) {
 
 	var code int
 	// 1. Doctor without agent name argument
-	code, _, errOut = runSndbx([]string{"agent", "doctor"})
-	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent doctor") {
+	code, _, errOut = runFleet([]string{"agent", "doctor"})
+	if code != 1 || !strings.Contains(errOut, "Usage: fleet agent doctor") {
 		t.Errorf("expected usage error when agent name missing, got code %d: %s", code, errOut)
 	}
 
 	// 2. Doctor on nonexistent agent
-	code, out, errOut = runSndbx([]string{"agent", "doctor", "missing-agent"})
+	code, out, errOut = runFleet([]string{"agent", "doctor", "missing-agent"})
 	if code != 1 || (!strings.Contains(out, "Missing config") && !strings.Contains(out, "unrepairable")) {
 		t.Errorf("expected missing agent error, got code %d: out=%s err=%s", code, out, errOut)
 	}
@@ -55,7 +55,7 @@ func TestAgentDoctorScenarios(t *testing.T) {
 	if err := os.WriteFile(corruptFile, []byte("{invalid-json"), 0600); err != nil {
 		t.Fatalf("failed to write corrupted agent json: %v", err)
 	}
-	code, out, errOut = runSndbx([]string{"agent", "doctor", "broken"})
+	code, out, errOut = runFleet([]string{"agent", "doctor", "broken"})
 	if code != 1 || (!strings.Contains(out, "Corrupt JSON") && !strings.Contains(out, "corrupted agent config")) {
 		t.Errorf("expected corrupted agent error, got code %d: out=%s err=%s", code, out, errOut)
 	}
@@ -69,7 +69,7 @@ func TestAgentDoctorScenarios(t *testing.T) {
 		t.Fatalf("failed saving agent config: %v", err)
 	}
 
-	code, out, _ = runSndbx([]string{"agent", "doctor", "doc-bot"})
+	code, out, _ = runFleet([]string{"agent", "doctor", "doc-bot"})
 	if code != 0 {
 		t.Errorf("expected doctor check to pass for healthy config, got code %d: %s", code, out)
 	}
@@ -87,7 +87,7 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 	_ = paths.EnsureDirectories()
 
 	// 1. ssh-config for nonexistent agent
-	code, out, errOut := runSndbx([]string{"agent", "ssh-config", "nonexistent"})
+	code, out, errOut := runFleet([]string{"agent", "ssh-config", "nonexistent"})
 	if code != 1 || (!strings.Contains(errOut, "not found") && !strings.Contains(out, "not found")) {
 		t.Errorf("expected error for nonexistent agent ssh-config, got %d: %s", code, errOut)
 	}
@@ -96,22 +96,22 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 	cfg, _ := config.NewAgentConfig("stopped-agent", "base", "tester")
 	_ = config.SaveAgentConfig(cfg, paths)
 
-	code, out, _ = runSndbx([]string{"agent", "ssh-config"})
+	code, out, _ = runFleet([]string{"agent", "ssh-config"})
 	if code != 0 {
 		t.Errorf("expected ssh-config to succeed, got %d: %s", code, out)
 	}
 
 	// 3. ssh-config --all flag
-	code, out, _ = runSndbx([]string{"agent", "ssh-config", "--all"})
+	code, out, _ = runFleet([]string{"agent", "ssh-config", "--all"})
 	if code != 0 {
 		t.Errorf("expected ssh-config --all to succeed, got %d: %s", code, out)
 	}
 
 	// 4. Test printSSHConfigBlock helper output
 	var buf bytes.Buffer
-	printSSHConfigBlock(&buf, "my-test-agent", 2222, "/home/test/.ssh/agent-sandbox")
+	printSSHConfigBlock(&buf, "my-test-agent", 2222, "/home/test/.ssh/fleet")
 	rendered := buf.String()
-	if !strings.Contains(rendered, "Host sndbx-my-test-agent") || !strings.Contains(rendered, "Port 2222") {
+	if !strings.Contains(rendered, "Host fleet-my-test-agent") || !strings.Contains(rendered, "Port 2222") {
 		t.Errorf("unexpected ssh config block rendering: %s", rendered)
 	}
 	if !strings.Contains(rendered, "IdentitiesOnly yes") || !strings.Contains(rendered, "StrictHostKeyChecking accept-new") {
@@ -126,19 +126,19 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 		return exec.Command("true")
 	})
 
-	code, out, errOut = runSndbx([]string{"agent", "ssh-config", "stopped-agent"})
+	code, out, errOut = runFleet([]string{"agent", "ssh-config", "stopped-agent"})
 	if code != 0 {
 		t.Errorf("expected ssh-config to succeed for running agent, got %d: %s", code, errOut)
 	}
-	if !strings.Contains(out, "Host sndbx-stopped-agent") || !strings.Contains(out, "Port 42222") {
+	if !strings.Contains(out, "Host fleet-stopped-agent") || !strings.Contains(out, "Port 42222") {
 		t.Errorf("expected rendered ssh config block, got: %s", out)
 	}
 
 	// 6. Multiple agents with port lookup mock
 	cfg2, _ := config.NewAgentConfig("second-agent", "base", "tester")
 	_ = config.SaveAgentConfig(cfg2, paths)
-	code, out, _ = runSndbx([]string{"agent", "ssh-config"})
-	if code != 0 || !strings.Contains(out, "Host sndbx-second-agent") {
+	code, out, _ = runFleet([]string{"agent", "ssh-config"})
+	if code != 0 || !strings.Contains(out, "Host fleet-second-agent") {
 		t.Errorf("expected multiple agent ssh config blocks, got: %s", out)
 	}
 
@@ -151,7 +151,7 @@ func TestAgentSSHConfigGeneration(t *testing.T) {
 	})
 	defer restoreFailExec()
 
-	code, _, errOut = runSndbx([]string{"agent", "ssh-config", "stopped-agent"})
+	code, _, errOut = runFleet([]string{"agent", "ssh-config", "stopped-agent"})
 	if code != 1 || !strings.Contains(errOut, "not running or SSH port is unavailable") {
 		t.Errorf("expected unavailable port error, got code %d: %s", code, errOut)
 	}
@@ -204,7 +204,7 @@ func TestAgentCleanAndDeprovisioningWithMocks(t *testing.T) {
 	t.Setenv("SONAR_HOST_URL", sonarServer.URL)
 
 	// 1. Create agent with Gitea and Sonar integration active
-	code, out, errOut := runSndbx([]string{"agent", "create", "fleet-agent", "as", "base", "--role", "integrator"})
+	code, out, errOut := runFleet([]string{"agent", "create", "fleet-agent", "as", "base", "--role", "integrator"})
 	if code != 0 {
 		t.Fatalf("agent create with forge mocks failed: code=%d, err=%s", code, errOut)
 	}
@@ -213,7 +213,7 @@ func TestAgentCleanAndDeprovisioningWithMocks(t *testing.T) {
 	}
 
 	// 2. Clean agent container
-	code, out, errOut = runSndbx([]string{"agent", "clean", "fleet-agent"})
+	code, out, errOut = runFleet([]string{"agent", "clean", "fleet-agent"})
 	if code != 0 {
 		t.Errorf("agent clean failed: code=%d err=%s", code, errOut)
 	}
@@ -222,7 +222,7 @@ func TestAgentCleanAndDeprovisioningWithMocks(t *testing.T) {
 	}
 
 	// 3. Retire agent with --force
-	code, out, errOut = runSndbx([]string{"agent", "retire", "fleet-agent", "--force"})
+	code, out, errOut = runFleet([]string{"agent", "retire", "fleet-agent", "--force"})
 	if code != 0 {
 		t.Fatalf("agent retire failed: code=%d err=%s", code, errOut)
 	}
@@ -236,31 +236,31 @@ func TestAgentCleanAndDeprovisioningWithMocks(t *testing.T) {
 	}
 
 	// 4. Retire and clean error handling
-	code, _, errOut = runSndbx([]string{"agent", "retire"})
+	code, _, errOut = runFleet([]string{"agent", "retire"})
 	if code != 1 || !strings.Contains(errOut, "Usage:") {
 		t.Errorf("expected usage on empty retire args")
 	}
-	code, _, errOut = runSndbx([]string{"agent", "retire", "--force"})
+	code, _, errOut = runFleet([]string{"agent", "retire", "--force"})
 	if code != 1 || !strings.Contains(errOut, "Usage:") {
 		t.Errorf("expected usage on retire --force without name")
 	}
-	code, _, errOut = runSndbx([]string{"agent", "retire", "nonexistent"})
+	code, _, errOut = runFleet([]string{"agent", "retire", "nonexistent"})
 	if code != 1 || !strings.Contains(errOut, "not found") {
 		t.Errorf("expected not found error on retire nonexistent")
 	}
 
-	code, _, errOut = runSndbx([]string{"agent", "clean"})
+	code, _, errOut = runFleet([]string{"agent", "clean"})
 	if code != 1 || !strings.Contains(errOut, "Usage:") {
 		t.Errorf("expected usage on empty clean args")
 	}
-	code, _, errOut = runSndbx([]string{"agent", "clean", "nonexistent"})
+	code, _, errOut = runFleet([]string{"agent", "clean", "nonexistent"})
 	if code != 1 || !strings.Contains(errOut, "not found") {
 		t.Errorf("expected not found error on clean nonexistent")
 	}
 }
 
 func TestInfraDoctorScenario(t *testing.T) {
-	code, out, errOut := runSndbx([]string{"infra", "doctor"})
+	code, out, errOut := runFleet([]string{"infra", "doctor"})
 	if code != 0 {
 		t.Errorf("infra doctor failed: code=%d err=%s", code, errOut)
 	}
@@ -275,7 +275,7 @@ func TestInfraUpScenario(t *testing.T) {
 	})
 	defer restoreExec()
 
-	code, out, errOut := runSndbx([]string{"infra", "up"})
+	code, out, errOut := runFleet([]string{"infra", "up"})
 	if code != 0 {
 		t.Errorf("infra up failed: code=%d err=%s", code, errOut)
 	}
@@ -284,7 +284,7 @@ func TestInfraUpScenario(t *testing.T) {
 	}
 
 	// 2. infra down
-	code, out, errOut = runSndbx([]string{"infra", "down"})
+	code, out, errOut = runFleet([]string{"infra", "down"})
 	if code != 0 {
 		t.Errorf("infra down failed: code=%d err=%s", code, errOut)
 	}
@@ -293,7 +293,7 @@ func TestInfraUpScenario(t *testing.T) {
 	}
 
 	// 3. infra list
-	code, out, errOut = runSndbx([]string{"infra", "list"})
+	code, out, errOut = runFleet([]string{"infra", "list"})
 	if code != 0 {
 		t.Errorf("infra list failed: code=%d err=%s", code, errOut)
 	}
@@ -302,17 +302,17 @@ func TestInfraUpScenario(t *testing.T) {
 	}
 
 	// 4. infra help & empty
-	code, _, errOut = runSndbx([]string{"infra"})
+	code, _, errOut = runFleet([]string{"infra"})
 	if code != 1 || !strings.Contains(errOut, "Usage:") {
 		t.Errorf("expected usage on empty infra args, got code %d: %s", code, errOut)
 	}
-	code, out, _ = runSndbx([]string{"infra", "help"})
+	code, out, _ = runFleet([]string{"infra", "help"})
 	if code != 0 || !strings.Contains(out, "Usage:") {
 		t.Errorf("expected usage on infra help, got code %d: %s", code, out)
 	}
 
 	// 5. infra unknown command
-	code, _, errOut = runSndbx([]string{"infra", "unknown-cmd"})
+	code, _, errOut = runFleet([]string{"infra", "unknown-cmd"})
 	if code != 1 || !strings.Contains(errOut, "unknown command") {
 		t.Errorf("expected unknown command error, got code %d: %s", code, errOut)
 	}
@@ -321,8 +321,8 @@ func TestInfraUpScenario(t *testing.T) {
 	restoreFail := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.Command("false")
 	})
-	code, _, errOut = runSndbx([]string{"infra", "up"})
-	if code != 1 || !strings.Contains(errOut, "sndbx infra error") {
+	code, _, errOut = runFleet([]string{"infra", "up"})
+	if code != 1 || !strings.Contains(errOut, "fleet infra error") {
 		t.Errorf("expected error on infra up failure, got code %d: %s", code, errOut)
 	}
 	restoreFail()
@@ -337,7 +337,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	_ = paths.EnsureDirectories()
 
 	// 1. Start nonexistent agent fails
-	code, _, errOut := runSndbx([]string{"agent", "start", "nonexistent-start"})
+	code, _, errOut := runFleet([]string{"agent", "start", "nonexistent-start"})
 	if code != 1 || !strings.Contains(errOut, "not found") {
 		t.Errorf("expected start nonexistent agent to fail, got %d: %s", code, errOut)
 	}
@@ -351,7 +351,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	cfg, _ := config.NewAgentConfig("run-bot", "base", "developer")
 	_ = config.SaveAgentConfig(cfg, paths)
 
-	code, out, errOut := runSndbx([]string{"agent", "start", "run-bot"})
+	code, out, errOut := runFleet([]string{"agent", "start", "run-bot"})
 	if code != 0 {
 		t.Errorf("agent start run-bot failed: code=%d err=%s", code, errOut)
 	}
@@ -360,7 +360,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	}
 
 	// 3. Stop existing agent
-	code, out, errOut = runSndbx([]string{"agent", "stop", "run-bot"})
+	code, out, errOut = runFleet([]string{"agent", "stop", "run-bot"})
 	if code != 0 {
 		t.Errorf("agent stop run-bot failed: code=%d err=%s", code, errOut)
 	}
@@ -374,7 +374,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	cfgHost.HostOnly = true
 	_ = config.SaveAgentConfig(cfgHost, paths)
 
-	code, out, errOut = runSndbx([]string{"agent", "start", "host-lifecycle-bot"})
+	code, out, errOut = runFleet([]string{"agent", "start", "host-lifecycle-bot"})
 	if code != 0 {
 		t.Errorf("agent start host-lifecycle-bot failed: code=%d err=%s", code, errOut)
 	}
@@ -383,7 +383,7 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	}
 
 	// 5. Host agent stop
-	code, out, errOut = runSndbx([]string{"agent", "stop", "host-lifecycle-bot"})
+	code, out, errOut = runFleet([]string{"agent", "stop", "host-lifecycle-bot"})
 	if code != 0 {
 		t.Errorf("expected stop host agent to exit 0, got %d: %s", code, errOut)
 	}
@@ -392,37 +392,37 @@ func TestAgentStartAndStopLifecycle(t *testing.T) {
 	}
 
 	// 6. Host agent stop --all skips host cleanly
-	code, out, errOut = runSndbx([]string{"agent", "stop", "--all"})
+	code, out, errOut = runFleet([]string{"agent", "stop", "--all"})
 	if code != 0 {
 		t.Errorf("expected stop --all to succeed, got %d: %s", code, errOut)
 	}
 
 	// 7. Host agent clean guard
-	code, _, errOut = runSndbx([]string{"agent", "clean", "host-lifecycle-bot"})
+	code, _, errOut = runFleet([]string{"agent", "clean", "host-lifecycle-bot"})
 	if code != 1 || !strings.Contains(errOut, "no container or home volume to clean") {
 		t.Errorf("expected clean guard error for host agent, got code %d: %s", code, errOut)
 	}
 
 	// 8. Host agent ssh guard
-	code, _, errOut = runSndbx([]string{"agent", "ssh", "host-lifecycle-bot"})
+	code, _, errOut = runFleet([]string{"agent", "ssh", "host-lifecycle-bot"})
 	if code != 1 || !strings.Contains(errOut, "runs directly on host, no SSH connection required") {
 		t.Errorf("expected ssh guard error for host agent, got code %d: %s", code, errOut)
 	}
 
 	// 9. Host agent tmux guard
-	code, _, errOut = runSndbx([]string{"agent", "tmux", "host-lifecycle-bot"})
+	code, _, errOut = runFleet([]string{"agent", "tmux", "host-lifecycle-bot"})
 	if code != 1 || !strings.Contains(errOut, "no container or tmux session") {
 		t.Errorf("expected tmux guard error for host agent, got code %d: %s", code, errOut)
 	}
 
 	// 10. Host agent clone guard
-	code, _, errOut = runSndbx([]string{"agent", "clone", "host-lifecycle-bot", "http://example.com/repo.git"})
+	code, _, errOut = runFleet([]string{"agent", "clone", "host-lifecycle-bot", "http://example.com/repo.git"})
 	if code != 1 || !strings.Contains(errOut, "use host 'git clone' directly") {
 		t.Errorf("expected clone guard error for host agent, got code %d: %s", code, errOut)
 	}
 
 	// 11. Host agent remote guard
-	code, _, errOut = runSndbx([]string{"agent", "remote", "host-lifecycle-bot", "list"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "host-lifecycle-bot", "list"})
 	if code != 1 || !strings.Contains(errOut, "use host 'git remote' directly") {
 		t.Errorf("expected remote guard error for host agent, got code %d: %s", code, errOut)
 	}
@@ -449,7 +449,7 @@ func TestAgentListTableMultipleAgents(t *testing.T) {
 	_ = config.SaveAgentConfig(cfgHost, paths)
 	_ = config.SaveAgentConfig(cfgHostCtr, paths)
 
-	code, out, errOut := runSndbx([]string{"agent", "list"})
+	code, out, errOut := runFleet([]string{"agent", "list"})
 	if code != 0 {
 		t.Fatalf("agent list failed: code=%d err=%s", code, errOut)
 	}
@@ -464,7 +464,7 @@ func TestAgentListTableMultipleAgents(t *testing.T) {
 	}
 
 	// JSON list output
-	code, out, errOut = runSndbx([]string{"agent", "list", "--json"})
+	code, out, errOut = runFleet([]string{"agent", "list", "--json"})
 	if code != 0 {
 		t.Fatalf("agent list --json failed: code=%d err=%s", code, errOut)
 	}
@@ -494,7 +494,7 @@ func TestUpdateFallbackAndSanitizeEnv(t *testing.T) {
 	})
 	defer restoreExec()
 
-	code, out, _ := runSndbx([]string{"update"})
+	code, out, _ := runFleet([]string{"update"})
 	if code != 0 {
 		t.Errorf("expected update to succeed via prebuilt download, got code %d", code)
 	}
@@ -511,7 +511,7 @@ func TestUpdateFallbackAndSanitizeEnv(t *testing.T) {
 			}, nil
 		},
 	}
-	code, _, _ = runSndbx([]string{"update"})
+	code, _, _ = runFleet([]string{"update"})
 	if code != 0 {
 		t.Errorf("expected update to succeed via local build fallback, got code %d", code)
 	}
@@ -553,24 +553,24 @@ func TestAgentCloneAndRemote(t *testing.T) {
 	}
 
 	// 1. Error when arguments are missing
-	code, _, errOut := runSndbx([]string{"agent", "clone"})
-	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent clone") {
+	code, _, errOut := runFleet([]string{"agent", "clone"})
+	if code != 1 || !strings.Contains(errOut, "Usage: fleet agent clone") {
 		t.Errorf("expected clone usage error, got code %d: %s", code, errOut)
 	}
 
-	code, _, errOut = runSndbx([]string{"agent", "remote"})
-	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent remote") {
+	code, _, errOut = runFleet([]string{"agent", "remote"})
+	if code != 1 || !strings.Contains(errOut, "Usage: fleet agent remote") {
 		t.Errorf("expected remote usage error, got code %d: %s", code, errOut)
 	}
 
 	// 2. Error when agent does not exist
-	code, _, errOut = runSndbx([]string{"agent", "clone", "nonexistent", "https://example.com/repo.git"})
-	if code != 1 || !strings.Contains(errOut, "sndbx error") {
+	code, _, errOut = runFleet([]string{"agent", "clone", "nonexistent", "https://example.com/repo.git"})
+	if code != 1 || !strings.Contains(errOut, "fleet error") {
 		t.Errorf("expected error on nonexistent agent clone, got code %d: %s", code, errOut)
 	}
 
-	code, _, errOut = runSndbx([]string{"agent", "remote", "nonexistent"})
-	if code != 1 || !strings.Contains(errOut, "sndbx error") {
+	code, _, errOut = runFleet([]string{"agent", "remote", "nonexistent"})
+	if code != 1 || !strings.Contains(errOut, "fleet error") {
 		t.Errorf("expected error on nonexistent agent remote, got code %d: %s", code, errOut)
 	}
 
@@ -597,7 +597,7 @@ func TestAgentCloneAndRemote(t *testing.T) {
 	defer restoreExec()
 
 	// 3. Successful clone
-	code, out, errOut := runSndbx([]string{"agent", "clone", "test-git-agent", "http://gitea:3000/fleet/tools.git", "tools"})
+	code, out, errOut := runFleet([]string{"agent", "clone", "test-git-agent", "http://gitea:3000/fleet/tools.git", "tools"})
 	if code != 0 {
 		t.Errorf("expected clone to succeed, got code %d, errOut: %s", code, errOut)
 	}
@@ -610,31 +610,31 @@ func TestAgentCloneAndRemote(t *testing.T) {
 	cfgHost.Runtime = "no-container"
 	_ = config.SaveAgentConfig(cfgHost, paths)
 
-	code, _, errOut = runSndbx([]string{"agent", "clone", "test-host-git-agent", "http://gitea:3000/fleet/tools.git"})
+	code, _, errOut = runFleet([]string{"agent", "clone", "test-host-git-agent", "http://gitea:3000/fleet/tools.git"})
 	if code != 1 || !strings.Contains(errOut, "host agent") {
 		t.Errorf("expected host agent clone error, got code %d: %s", code, errOut)
 	}
 
 	// Clone with escaping directory fails
-	code, _, errOut = runSndbx([]string{"agent", "clone", "test-git-agent", "http://gitea:3000/fleet/tools.git", "../../escape"})
+	code, _, errOut = runFleet([]string{"agent", "clone", "test-git-agent", "http://gitea:3000/fleet/tools.git", "../../escape"})
 	if code != 1 || !strings.Contains(errOut, "target directory must remain within") {
 		t.Errorf("expected escaping directory clone error, got code %d: %s", code, errOut)
 	}
 
 	// 4. Remote list / get
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "list"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "list"})
 	if code != 0 {
 		t.Errorf("expected remote list to succeed, got code %d: %s", code, errOut)
 	}
 
 	// 5. Remote set missing args
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "set", "origin"})
-	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent remote") {
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "set", "origin"})
+	if code != 1 || !strings.Contains(errOut, "Usage: fleet agent remote") {
 		t.Errorf("expected remote set usage error, got code %d: %s", code, errOut)
 	}
 
 	// 6. Remote set success
-	code, out, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "set", "origin", "http://gitea:3000/fleet/tools.git"})
+	code, out, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "set", "origin", "http://gitea:3000/fleet/tools.git"})
 	if code != 0 {
 		t.Errorf("expected remote set to succeed, got code %d: %s", code, errOut)
 	}
@@ -643,29 +643,29 @@ func TestAgentCloneAndRemote(t *testing.T) {
 	}
 
 	// 7. Remote unknown subcommand
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "invalid-sub"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "invalid-sub"})
 	if code != 1 || !strings.Contains(errOut, "unknown subcommand") {
 		t.Errorf("expected unknown subcommand error, got code %d: %s", code, errOut)
 	}
 
 	// 8. Remote on host agent
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-host-git-agent"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-host-git-agent"})
 	if code != 1 || !strings.Contains(errOut, "host agent") {
 		t.Errorf("expected host agent error for remote, got code %d: %s", code, errOut)
 	}
 
 	// 9. Remote with invalid dir
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "list", "--dir=../../escape"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "list", "--dir=../../escape"})
 	if code != 1 || !strings.Contains(errOut, "target directory must remain within") {
 		t.Errorf("expected escaping dir error, got code %d: %s", code, errOut)
 	}
 
 	// 10. Remote get
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "get", "upstream"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "get", "upstream"})
 	if code != 0 {
 		t.Errorf("expected remote get to succeed, got code %d: %s", code, errOut)
 	}
-	code, _, errOut = runSndbx([]string{"agent", "remote", "test-git-agent", "get"})
+	code, _, errOut = runFleet([]string{"agent", "remote", "test-git-agent", "get"})
 	if code != 0 {
 		t.Errorf("expected remote get default to succeed, got code %d: %s", code, errOut)
 	}
@@ -688,38 +688,38 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	_ = paths.EnsureDirectories()
 
 	// 1. Conflicting flags --host and --no-container
-	code, _, errOut := runSndbx([]string{"agent", "create", "bad-bot", "--host", "--no-container"})
+	code, _, errOut := runFleet([]string{"agent", "create", "bad-bot", "--host", "--no-container"})
 	if code != 1 || !strings.Contains(errOut, "cannot specify both --host and --no-container") {
 		t.Errorf("expected conflicting flags error, got code %d: %s", code, errOut)
 	}
 
 	// 2. Nonexistent --pwd path
-	code, _, errOut = runSndbx([]string{"agent", "create", "bad-pwd-bot", "--host", "--pwd", filepath.Join(tmpDir, "nonexistent")})
+	code, _, errOut = runFleet([]string{"agent", "create", "bad-pwd-bot", "--host", "--pwd", filepath.Join(tmpDir, "nonexistent")})
 	if code != 1 || !strings.Contains(errOut, "does not exist") {
 		t.Errorf("expected nonexistent workspace error, got code %d: %s", code, errOut)
 	}
 
 	// 2b. Root and system path projection denial
-	code, _, errOut = runSndbx([]string{"agent", "create", "bad-root-bot", "--host", "--pwd", "/"})
+	code, _, errOut = runFleet([]string{"agent", "create", "bad-root-bot", "--host", "--pwd", "/"})
 	if code != 1 || !strings.Contains(errOut, "cannot project root filesystem") {
 		t.Errorf("expected root projection denial error, got code %d: %s", code, errOut)
 	}
 
-	code, _, errOut = runSndbx([]string{"agent", "create", "bad-sys-bot", "--host", "--pwd", "/etc"})
+	code, _, errOut = runFleet([]string{"agent", "create", "bad-sys-bot", "--host", "--pwd", "/etc"})
 	if code != 1 || !strings.Contains(errOut, "cannot project system directory") {
 		t.Errorf("expected system directory projection denial error, got code %d: %s", code, errOut)
 	}
 
 	homeDir, _ := os.UserHomeDir()
 	if homeDir != "" {
-		code, _, errOut = runSndbx([]string{"agent", "create", "bad-home-bot", "--host", "--pwd", homeDir})
+		code, _, errOut = runFleet([]string{"agent", "create", "bad-home-bot", "--host", "--pwd", homeDir})
 		if code != 1 || !strings.Contains(errOut, "projecting user home directory") {
 			t.Errorf("expected home directory projection denial error, got code %d: %s", code, errOut)
 		}
 	}
 
 	// 3. Create host-connected container agent with --host and --pwd
-	code, out, errOut := runSndbx([]string{"agent", "create", "host-coder", "as", "tool", "--host", "--pwd", wsDir, "--role", "interactive-pair"})
+	code, out, errOut := runFleet([]string{"agent", "create", "host-coder", "as", "tool", "--host", "--pwd", wsDir, "--role", "interactive-pair"})
 	if code != 0 {
 		t.Fatalf("agent create --host failed: code=%d err=%s out=%s", code, errOut, out)
 	}
@@ -741,12 +741,12 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if cfg.WorkspacePath != wsDir {
 		t.Errorf("expected WorkspacePath=%q, got %q", wsDir, cfg.WorkspacePath)
 	}
-	if cfg.ContainerName != "sndbx-agent-host-coder" {
-		t.Errorf("expected ContainerName 'sndbx-agent-host-coder', got %q", cfg.ContainerName)
+	if cfg.ContainerName != "fleet-agent-host-coder" {
+		t.Errorf("expected ContainerName 'fleet-agent-host-coder', got %q", cfg.ContainerName)
 	}
 
 	// 4. Create no-container agent with --no-container
-	code, out, errOut = runSndbx([]string{"agent", "create", "bare-bot", "--no-container", "--role", "host-script"})
+	code, out, errOut = runFleet([]string{"agent", "create", "bare-bot", "--no-container", "--role", "host-script"})
 	if code != 0 {
 		t.Fatalf("agent create --no-container failed: code=%d err=%s out=%s", code, errOut, out)
 	}
@@ -783,14 +783,14 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	restoreRuntime := SetExecCommandContextForTesting(mockFn)
 	defer restoreRuntime()
 
-	code, out, errOut = runSndbx([]string{"agent", "start", "host-coder"})
+	code, out, errOut = runFleet([]string{"agent", "start", "host-coder"})
 	if code != 0 {
 		t.Fatalf("agent start host-coder failed: code=%d err=%s", code, errOut)
 	}
 	if !strings.Contains(out, "Host agent \"host-coder\" started") {
 		t.Errorf("expected Host agent started message, got: %s", out)
 	}
-	if !strings.Contains(out, "Connect: sndbx agent connect host-coder") {
+	if !strings.Contains(out, "Connect: fleet agent connect host-coder") {
 		t.Errorf("expected connect instruction in output, got: %s", out)
 	}
 
@@ -805,8 +805,8 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if runCmd == "" {
 		t.Fatalf("expected podman run command to be executed, executed: %v", executedCmds)
 	}
-	if !strings.Contains(runCmd, "--network agent-sandbox-infra") {
-		t.Errorf("expected --network agent-sandbox-infra in run command, got: %s", runCmd)
+	if !strings.Contains(runCmd, "--network fleet-infra") {
+		t.Errorf("expected --network fleet-infra in run command, got: %s", runCmd)
 	}
 	if !strings.Contains(runCmd, "--add-host llm-gateway:host-gateway") {
 		t.Errorf("expected --add-host in run command, got: %s", runCmd)

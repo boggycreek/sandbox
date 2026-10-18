@@ -29,7 +29,7 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for agent tmux without args, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "Usage: sndbx agent tmux <name>") {
+	if !strings.Contains(stderr.String(), "Usage: fleet agent tmux <name>") {
 		t.Errorf("expected usage output in stderr, got: %s", stderr.String())
 	}
 
@@ -92,7 +92,7 @@ func TestAgentTmuxAndConnect(t *testing.T) {
 	if code != 0 {
 		t.Errorf("agent connect failed: %d, stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "Notice: 'sndbx agent connect' is deprecated. Please use 'sndbx agent tmux tmux-test-agent' instead.") {
+	if !strings.Contains(stderr.String(), "Notice: 'fleet agent connect' is deprecated. Please use 'fleet agent tmux tmux-test-agent' instead.") {
 		t.Errorf("expected deprecation notice in stderr, got: %s", stderr.String())
 	}
 

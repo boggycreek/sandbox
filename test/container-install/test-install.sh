@@ -71,25 +71,25 @@ podman exec -u tester "${CONTAINER_NAME}" bash -c "
   ./install.sh
 
   # Verify XDG paths and files
-  test -f /home/tester/.local/bin/sndbx
-  test -L /home/tester/.local/bin/sb
+  test -f /home/tester/.local/bin/fleet
+  test -L /home/tester/.local/bin/ft
   test -f /home/tester/.local/bin/bp
-  test -f /home/tester/.local/share/agent-sandbox/.env
-  test -f /home/tester/.ssh/agent-sandbox
-  test -f /home/tester/.ssh/agent-sandbox.pub
+  test -f /home/tester/.local/share/fleet/.env
+  test -f /home/tester/.ssh/fleet
+  test -f /home/tester/.ssh/fleet.pub
 
   # Verify file permissions
-  test \"\$(stat -c '%a' /home/tester/.local/share/agent-sandbox/.env)\" = \"600\"
-  test \"\$(stat -c '%a' /home/tester/.ssh/agent-sandbox)\" = \"600\"
+  test \"\$(stat -c '%a' /home/tester/.local/share/fleet/.env)\" = \"600\"
+  test \"\$(stat -c '%a' /home/tester/.ssh/fleet)\" = \"600\"
 
   # Test CLI execution from outside repo directory
   cd /home/tester
   export PATH=\"/home/tester/.local/bin:\$PATH\"
-  sndbx --help >/dev/null
-  sb --help >/dev/null
+  fleet --help >/dev/null
+  ft --help >/dev/null
   bp --help >/dev/null
-  sndbx update --help >/dev/null
-  sb update --help >/dev/null
+  fleet update --help >/dev/null
+  ft update --help >/dev/null
 "
 
 echo "=========================================================="

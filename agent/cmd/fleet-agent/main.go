@@ -28,7 +28,7 @@ import (
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 )
 
-// Config encapsulates runtime parameters for sndbx-agent.
+// Config encapsulates runtime parameters for fleet-agent.
 type Config struct {
 	AgentName          string
 	AgentRole          string
@@ -91,11 +91,11 @@ func (l *Logger) Log(level, msg string, fields map[string]any) {
 
 // LoadConfig parses flags and environment variables.
 func LoadConfig(args []string) (*Config, error) {
-	fs := flag.NewFlagSet("sndbx-agent", flag.ContinueOnError)
+	fs := flag.NewFlagSet("fleet-agent", flag.ContinueOnError)
 
 	hostname, _ := os.Hostname()
 	if hostname == "" {
-		hostname = "sndbx-agent"
+		hostname = "fleet-agent"
 	}
 
 	cwd, _ := os.Getwd()
@@ -242,7 +242,7 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 	defer cancel()
 
 	logger := NewLogger(out, cfg.LogFormat)
-	logger.Log("INFO", "Starting sndbx-agent runtime", map[string]any{
+	logger.Log("INFO", "Starting fleet-agent runtime", map[string]any{
 		"agentName":    cfg.AgentName,
 		"role":         cfg.AgentRole,
 		"workspaceDir": cfg.WorkspaceDir,
@@ -349,7 +349,7 @@ func Run(ctx context.Context, cfg *Config, out io.Writer) error {
 		return err
 	}
 
-	logger.Log("INFO", "sndbx-agent runtime shut down cleanly", nil)
+	logger.Log("INFO", "fleet-agent runtime shut down cleanly", nil)
 	return nil
 }
 

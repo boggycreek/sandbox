@@ -4,10 +4,10 @@
 # Use of this source code is governed by an MIT-style
 # license that can be found in the LICENSE file.
 #
-# Agent Sandbox — Contributor & Developer Environment Setup Script
+# Fleet — Contributor & Developer Environment Setup Script
 #
 # Automatically detects the platform and installs all required dependencies
-# to build, test, and contribute to the Agent Sandbox platform.
+# to build, test, and contribute to the Fleet platform.
 #
 # Supported package managers:
 #   - macOS: Homebrew (brew)
@@ -75,7 +75,7 @@ print_usage() {
   cat <<EOF
 Usage: setup.sh [options]
 
-Setup development environment dependencies for Agent Sandbox.
+Setup development environment dependencies for Fleet.
 
 Options:
   -y, --yes, --non-interactive   Run without prompting (assumes 'yes' to package installs)
@@ -323,7 +323,7 @@ install_xdg_go() {
 
 run_environment_doctor() {
   echo "======================================================"
-  echo "    Agent Sandbox Development Environment Doctor      "
+  echo "    Fleet Development Setup & Diagnostic Doctor       "
   echo "======================================================"
   echo
 
@@ -530,7 +530,7 @@ run_environment_doctor() {
       remediation+=("Verify podman setup: podman machine start (macOS) or check rootless subuid/subgid (Linux)")
     fi
   else
-    echo "  [FAIL] Podman is not installed (Required container engine for Agent Sandbox)"
+    echo "  [FAIL] Podman is not installed (Required container engine for Fleet)"
     failures=$((failures + 1))
     remediation+=("Install Podman: ./setup.sh (or brew install podman / apt install podman)")
   fi
@@ -666,13 +666,13 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "======================================================"
-echo "    Agent Sandbox — Developer Environment Setup       "
+echo "    Fleet Development Setup & Diagnostic Doctor       "
 echo "======================================================"
 echo
 
 mkdir -p "${XDG_BIN_HOME}"
-mkdir -p "${XDG_DATA_HOME}/agent-sandbox/secrets"
-mkdir -p "${XDG_CONFIG_HOME}/sndbx"
+mkdir -p "${XDG_DATA_HOME}/fleet/secrets"
+mkdir -p "${XDG_CONFIG_HOME}/fleet"
 mkdir -p "${XDG_CACHE_HOME}"
 mkdir -p "${GO_SDK_BASE}"
 
@@ -985,5 +985,6 @@ echo "Ready to build and develop:"
 echo "  1. Verify environment health : ./setup.sh --doctor"
 echo "  2. Build CLI binaries        : make build-cli   (or make build)"
 echo "  3. Run unit test suite       : make test"
-echo "  4. Start local infrastructure: make infra-up    (or sndbx infra up)"
+echo "  4. Start local infrastructure: make infra-up    (or fleet infra up)"
+echo "  5. Create an agent           : fleet agent create <name>"
 echo

@@ -18,15 +18,24 @@ func TestPathsEnvironmentResolution(t *testing.T) {
 	// 1. Custom XDG_DATA_HOME
 	t.Setenv("XDG_DATA_HOME", filepath.Join(tmpDir, "custom-data"))
 	paths := GetPaths()
-	expectedData := filepath.Join(tmpDir, "custom-data", "agent-sandbox")
+	expectedData := filepath.Join(tmpDir, "custom-data", "fleet")
 	if paths.DataHome != expectedData {
 		t.Errorf("expected DataHome %q, got %q", expectedData, paths.DataHome)
 	}
+	if paths.SSHConfigFile != filepath.Join(expectedData, "ssh_config") {
+		t.Errorf("expected SSHConfigFile %q, got %q", filepath.Join(expectedData, "ssh_config"), paths.SSHConfigFile)
+	}
+	if !strings.HasSuffix(paths.SSHPrivateKey, filepath.Join(".ssh", "fleet")) {
+		t.Errorf("expected SSHPrivateKey to end with .ssh/fleet, got %q", paths.SSHPrivateKey)
+	}
+	if paths.GetSSHPrivateKey() != paths.SSHPrivateKey {
+		t.Errorf("expected GetSSHPrivateKey to return SSHPrivateKey")
+	}
 
-	// 2. Unset XDG_DATA_HOME uses ~/.local/share
+	// 2. Unset XDG_DATA_HOME uses ~/.local/share/fleet
 	os.Unsetenv("XDG_DATA_HOME")
 	defaultPaths := GetPaths()
-	if !strings.Contains(defaultPaths.DataHome, ".local/share/agent-sandbox") && !strings.Contains(defaultPaths.DataHome, "agent-sandbox") {
+	if !strings.Contains(defaultPaths.DataHome, ".local/share/fleet") && !strings.Contains(defaultPaths.DataHome, "fleet") {
 		t.Errorf("unexpected default DataHome: %s", defaultPaths.DataHome)
 	}
 }
@@ -67,7 +76,23 @@ func TestPathsLoadEnv(t *testing.T) {
 func TestPathsResolveRepoDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 1. AGENT_SANDBOX_REPO env override
+	// 1a. FLEET_REPO env override
+	repo1a := filepath.Join(tmpDir, "repo-fleet-env")
+	if err := os.MkdirAll(repo1a, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo1a, "Makefile"), []byte("# test"), 0644); err != nil {
+		t.Fatalf("write Makefile failed: %v", err)
+	}
+
+	t.Setenv("FLEET_REPO", repo1a)
+	p := Paths{DataHome: filepath.Join(tmpDir, "data")}
+	if r := p.ResolveRepoDir(); r != repo1a {
+		t.Errorf("expected %q from FLEET_REPO, got %q", repo1a, r)
+	}
+
+	// 1b. AGENT_SANDBOX_REPO env fallback
+	os.Unsetenv("FLEET_REPO")
 	repo1 := filepath.Join(tmpDir, "repo-env")
 	if err := os.MkdirAll(repo1, 0755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
@@ -77,13 +102,27 @@ func TestPathsResolveRepoDir(t *testing.T) {
 	}
 
 	t.Setenv("AGENT_SANDBOX_REPO", repo1)
-	p := Paths{DataHome: filepath.Join(tmpDir, "data")}
 	if r := p.ResolveRepoDir(); r != repo1 {
 		t.Errorf("expected %q from AGENT_SANDBOX_REPO, got %q", repo1, r)
 	}
 
-	// 2. SANDBOX_ROOT env override
+	// 2a. FLEET_ROOT env override
 	os.Unsetenv("AGENT_SANDBOX_REPO")
+	repo2a := filepath.Join(tmpDir, "repo-fleet-root")
+	if err := os.MkdirAll(repo2a, 0755); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo2a, "Makefile"), []byte("# test"), 0644); err != nil {
+		t.Fatalf("write Makefile failed: %v", err)
+	}
+
+	t.Setenv("FLEET_ROOT", repo2a)
+	if r := p.ResolveRepoDir(); r != repo2a {
+		t.Errorf("expected %q from FLEET_ROOT, got %q", repo2a, r)
+	}
+
+	// 2b. SANDBOX_ROOT env fallback
+	os.Unsetenv("FLEET_ROOT")
 	repo2 := filepath.Join(tmpDir, "repo-root")
 	if err := os.MkdirAll(repo2, 0755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
@@ -215,8 +254,8 @@ func TestGetDefaultProjectOrg(t *testing.T) {
 
 func TestPathsProjectsDir(t *testing.T) {
 	p := GetPaths()
-	if !strings.HasSuffix(p.ProjectsDir, filepath.Join("agent-sandbox", "projects")) {
-		t.Errorf("expected ProjectsDir to end with agent-sandbox/projects, got %s", p.ProjectsDir)
+	if !strings.HasSuffix(p.ProjectsDir, filepath.Join("fleet", "projects")) {
+		t.Errorf("expected ProjectsDir to end with fleet/projects, got %s", p.ProjectsDir)
 	}
 }
 
