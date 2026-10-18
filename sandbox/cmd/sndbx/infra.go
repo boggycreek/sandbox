@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +22,7 @@ import (
 func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout, stderr io.Writer) int {
 	bin := binaryName()
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, "Usage: %s infra <up|down|list|doctor>\n", bin)
+		fmt.Fprintf(stderr, "Usage: %s infra <up|down|list|info|doctor>\n", bin)
 		return 1
 	}
 
@@ -34,6 +35,7 @@ Commands:
   up      Start shared Valkey, Gitea, and PostgreSQL services via Podman Compose
   down    Stop shared infrastructure services
   list    Show status of running infrastructure containers
+  info    Display connection strings and web URLs for all shared infrastructure
   doctor  Diagnose shared infrastructure storage, containers, and services, and auto-heal defects
 `, bin)
 		return 0
@@ -88,6 +90,40 @@ Commands:
 			}
 			fmt.Fprintf(stdout, fmtFmt, displayName, item.State)
 		}
+		return 0
+
+	case "info":
+		showSecrets := false
+		jsonOutput := false
+		for _, arg := range args[1:] {
+			switch arg {
+			case "--show-secrets", "-s":
+				showSecrets = true
+			case "--json":
+				jsonOutput = true
+			default:
+				fmt.Fprintf(stderr, "sndbx infra info: unknown flag %q\n", arg)
+				return 1
+			}
+		}
+
+		info, err := runtime.GetInfraInfo(ctx, paths, showSecrets)
+		if err != nil {
+			fmt.Fprintf(stderr, "sndbx infra info error: %v\n", err)
+			return 1
+		}
+
+		if jsonOutput {
+			enc := json.NewEncoder(stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(info); err != nil {
+				fmt.Fprintf(stderr, "sndbx infra info error: %v\n", err)
+				return 1
+			}
+			return 0
+		}
+
+		fmt.Fprint(stdout, runtime.FormatInfraInfo(info))
 		return 0
 
 	default:
