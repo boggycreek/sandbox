@@ -34,7 +34,7 @@ func TestHandleInfraInfo_Formatted(t *testing.T) {
 		t.Fatalf("expected code 0, got %d. stderr: %s", code, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "[valkey]") || !strings.Contains(out, "[gitea]") ||
+	if !strings.Contains(out, "[valkey]") || !strings.Contains(out, "[forgejo]") ||
 		!strings.Contains(out, "[postgresql]") || !strings.Contains(out, "[sonarqube]") {
 		t.Errorf("missing headers in infra info output:\n%s", out)
 	}
@@ -93,8 +93,11 @@ func TestHandleInfraInfo_JSON(t *testing.T) {
 	if info.Valkey == nil || info.Valkey.OperatorPassword != "********" {
 		t.Errorf("expected masked valkey password in JSON, got: %+v", info.Valkey)
 	}
+	if info.Forgejo == nil || info.Forgejo.AdminPassword != "********" {
+		t.Errorf("expected masked forgejo password in JSON, got: %+v", info.Forgejo)
+	}
 	if info.Gitea == nil || info.Gitea.AdminPassword != "********" {
-		t.Errorf("expected masked gitea password in JSON, got: %+v", info.Gitea)
+		t.Errorf("expected masked gitea alias password in JSON, got: %+v", info.Gitea)
 	}
 
 	// 2. JSON output with secrets

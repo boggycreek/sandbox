@@ -21,7 +21,7 @@ func TestGetInfraInfo_Masked(t *testing.T) {
 	t.Setenv("HUMAN_BACKPLANE_PASSWORD", "superhumanpass")
 	t.Setenv("HUMAN_NAME", "operator")
 	t.Setenv("BP_PORT", "6380")
-	t.Setenv("GITEA_URL", "http://127.0.0.1:3000/")
+	t.Setenv("FORGEJO_URL", "http://127.0.0.1:3000/")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:9000/")
 	t.Setenv("SONAR_ADMIN_USER", "sonaradmin")
 	t.Setenv("SONAR_ADMIN_PASSWORD", "SuperSonar123")
@@ -31,8 +31,13 @@ func TestGetInfraInfo_Masked(t *testing.T) {
 		t.Fatalf("GetInfraInfo failed: %v", err)
 	}
 
-	if info.Valkey == nil || info.Gitea == nil || info.PostgreSQL == nil || info.SonarQube == nil {
+	if info.Valkey == nil || info.Forgejo == nil || info.PostgreSQL == nil || info.SonarQube == nil {
 		t.Fatalf("expected all service structs to be non-nil")
+	}
+
+	// Verify backward-compatibility alias
+	if info.Gitea != info.Forgejo {
+		t.Errorf("expected Gitea alias to match Forgejo struct pointer")
 	}
 
 	// Verify masking
@@ -49,8 +54,8 @@ func TestGetInfraInfo_Masked(t *testing.T) {
 		t.Errorf("cli command leaked valkey password: %s", info.Valkey.CLICommand)
 	}
 
-	if info.Gitea.AdminPassword != secretMask {
-		t.Errorf("expected gitea admin password masked, got: %s", info.Gitea.AdminPassword)
+	if info.Forgejo.AdminPassword != secretMask {
+		t.Errorf("expected forgejo admin password masked, got: %s", info.Forgejo.AdminPassword)
 	}
 
 	if info.PostgreSQL.Password != secretMask {
@@ -71,8 +76,8 @@ func TestGetInfraInfo_Masked(t *testing.T) {
 	if info.Valkey.HostPort != "127.0.0.1:6380" {
 		t.Errorf("expected port 6380, got: %s", info.Valkey.HostPort)
 	}
-	if info.Gitea.WebURL != "http://127.0.0.1:3000" {
-		t.Errorf("expected trimmed gitea URL, got: %s", info.Gitea.WebURL)
+	if info.Forgejo.WebURL != "http://127.0.0.1:3000" {
+		t.Errorf("expected trimmed forgejo URL, got: %s", info.Forgejo.WebURL)
 	}
 	if info.SonarQube.WebURL != "http://127.0.0.1:9000" {
 		t.Errorf("expected trimmed sonar URL, got: %s", info.SonarQube.WebURL)
@@ -87,7 +92,7 @@ func TestGetInfraInfo_ShowSecrets(t *testing.T) {
 	t.Setenv("HUMAN_BACKPLANE_PASSWORD", "superhumanpass")
 	t.Setenv("HUMAN_NAME", "operator")
 	t.Setenv("BP_PORT", "6379")
-	t.Setenv("GITEA_URL", "http://127.0.0.1:3000")
+	t.Setenv("FORGEJO_URL", "http://127.0.0.1:3000")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:9000")
 	t.Setenv("SONAR_ADMIN_USER", "sonaradmin")
 	t.Setenv("SONAR_ADMIN_PASSWORD", "SuperSonar123")
@@ -108,8 +113,8 @@ func TestGetInfraInfo_ShowSecrets(t *testing.T) {
 		t.Errorf("expected cli command to include password, got: %s", info.Valkey.CLICommand)
 	}
 
-	if info.Gitea.AdminPassword != "superadminpass" {
-		t.Errorf("expected revealed gitea admin password, got: %s", info.Gitea.AdminPassword)
+	if info.Forgejo.AdminPassword != "superadminpass" {
+		t.Errorf("expected revealed forgejo admin password, got: %s", info.Forgejo.AdminPassword)
 	}
 
 	if info.PostgreSQL.Password != "sonar" {
@@ -138,7 +143,10 @@ func TestGetInfraInfo_DefaultsAndFallbacks(t *testing.T) {
 	t.Setenv("HUMAN_BACKPLANE_PASSWORD", "")
 	t.Setenv("HUMAN_NAME", "")
 	t.Setenv("BP_PORT", "")
-	t.Setenv("GITEA_URL", "")
+	t.Setenv("FORGEJO_URL", "")
+	t.Setenv("GITEA_URL", "http://127.0.0.1:3000")
+	t.Setenv("FORGEJO_ADMIN_USER", "")
+	t.Setenv("GITEA_ADMIN_USER", "")
 	t.Setenv("SONAR_HOST_URL", "")
 	t.Setenv("SONARQUBE_URL", "")
 	t.Setenv("SONAR_ADMIN_USER", "")
@@ -159,8 +167,11 @@ func TestGetInfraInfo_DefaultsAndFallbacks(t *testing.T) {
 	if info.Valkey.HostPort != "127.0.0.1:6379" {
 		t.Errorf("expected default port 6379, got: %s", info.Valkey.HostPort)
 	}
-	if info.Gitea.WebURL != "http://127.0.0.1:3000" {
-		t.Errorf("expected default gitea URL, got: %s", info.Gitea.WebURL)
+	if info.Forgejo.WebURL != "http://127.0.0.1:3000" {
+		t.Errorf("expected default forgejo URL, got: %s", info.Forgejo.WebURL)
+	}
+	if info.Forgejo.AdminUser != "forgejoadmin" {
+		t.Errorf("expected default forgejoadmin, got: %s", info.Forgejo.AdminUser)
 	}
 	if info.SonarQube.Status != "disabled" {
 		t.Errorf("expected sonarqube status 'disabled' when SONAR_DISABLED=1, got: %s", info.SonarQube.Status)
@@ -179,15 +190,15 @@ func TestFormatInfraInfo_Alignment(t *testing.T) {
 			OperatorUser:     "human",
 			OperatorPassword: "********",
 		},
-		Gitea: &GiteaInfraInfo{
+		Forgejo: &ForgejoInfraInfo{
 			Status:        "running",
-			Container:     "agent-sandbox-gitea",
+			Container:     "agent-sandbox-forgejo",
 			WebURL:        "http://127.0.0.1:3000",
-			InternalURL:   "http://gitea:3000",
+			InternalURL:   "http://forgejo:3000",
 			SSHPort:       "127.0.0.1:2223",
 			GitHTTPClone:  "http://127.0.0.1:3000/fleet/tasks.git",
 			GitSSHClone:   "ssh://git@127.0.0.1:2223/fleet/tasks.git",
-			AdminUser:     "giteaadmin",
+			AdminUser:     "forgejoadmin",
 			AdminPassword: "********",
 		},
 		PostgreSQL: &PostgresInfraInfo{
@@ -213,7 +224,7 @@ func TestFormatInfraInfo_Alignment(t *testing.T) {
 
 	formatted := FormatInfraInfo(info)
 
-	if !strings.Contains(formatted, "[valkey]") || !strings.Contains(formatted, "[gitea]") ||
+	if !strings.Contains(formatted, "[valkey]") || !strings.Contains(formatted, "[forgejo]") ||
 		!strings.Contains(formatted, "[postgresql]") || !strings.Contains(formatted, "[sonarqube]") {
 		t.Fatalf("missing expected section header in formatted output:\n%s", formatted)
 	}
@@ -270,7 +281,19 @@ func TestFormatInfraInfo_NilAndPartial(t *testing.T) {
 	if !strings.Contains(out, "[valkey]") {
 		t.Errorf("expected [valkey] in output: %s", out)
 	}
-	if strings.Contains(out, "[gitea]") {
-		t.Errorf("did not expect [gitea] in partial output: %s", out)
+	if strings.Contains(out, "[forgejo]") {
+		t.Errorf("did not expect [forgejo] in partial output: %s", out)
+	}
+
+	// Test backward compatibility fallback to Gitea when Forgejo is nil
+	giteaOnly := &InfraStackInfo{
+		Gitea: &ForgejoInfraInfo{
+			Status:    "running",
+			Container: "agent-sandbox-forgejo",
+		},
+	}
+	outGitea := FormatInfraInfo(giteaOnly)
+	if !strings.Contains(outGitea, "[forgejo]") {
+		t.Errorf("expected [forgejo] header when only Gitea field is provided: %s", outGitea)
 	}
 }
