@@ -1,5 +1,5 @@
 ---
-name: agent-sandbox-image-resolution
+name: fleet-image-resolution
 description: >-
   Explains how agent container images are resolved across well-known presets, local Podman image storage, and remote OCI registries.
   Use when creating agents, configuring custom container harnesses, or debugging image resolution.
@@ -8,14 +8,14 @@ description: >-
 # OCI Image Resolution & Tagging (ADR 00029)
 
 ## Image Resolution Tiers
-When creating agents (`sndbx agent create <name> [as <target>]`):
+When creating agents (`fleet agent create <name> [as <target>]`):
 1. **Tier 1 (Well-Known Presets)**:
-   - `base` -> `agent-sandbox-base:latest` (neutral base harness for custom or manual operator build-up)
-   - `opencode` -> `agent-sandbox-opencode:latest`
-   - `claude` -> `agent-sandbox-claude:latest`
-   - `agy` -> `agent-sandbox-agy:latest`
-   - `pig` -> `agent-sandbox-pig:latest`
-   *Note*: `base` is an explicit preset target, not an implicit fallback. When `<target>` cannot be resolved, `sndbx agent create` should emit a warning/error.
+   - `base` -> `fleet-base:latest` (neutral base harness for custom or manual operator build-up)
+   - `opencode` -> `fleet-opencode:latest`
+   - `claude` -> `fleet-claude:latest`
+   - `agy` -> `fleet-agy:latest`
+   - `pig` -> `fleet-pig:latest`
+   *Note*: `base` is an explicit preset target, not an implicit fallback. When `<target>` cannot be resolved, `fleet agent create` should emit a warning/error.
 2. **Tier 2 (Local Podman Store Discovery)**:
    - Evaluates whether custom images built on the workstation exist locally before querying remote registries.
    - Probes: `<target>`, `<target>:latest`, `localhost/<target>`, `localhost/<target>:latest`.

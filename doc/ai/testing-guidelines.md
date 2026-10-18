@@ -1,5 +1,5 @@
 ---
-name: agent-sandbox-testing-guidelines
+name: fleet-testing-guidelines
 description: >-
   Testing guidelines, >= 90% statement coverage gate rules, rootless Podman cleanup patterns, and containerized smoke test execution.
   Use when writing unit or integration tests, or troubleshooting test failures.

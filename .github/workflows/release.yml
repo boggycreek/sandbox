@@ -60,7 +60,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist/${{ matrix.os }}_${{ matrix.arch }}
-          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/sndbx ./sandbox/cmd/sndbx
+          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/fleet ./sandbox/cmd/fleet
           go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/bp ./backplane/cmd/bp
           go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/bpd ./backplane/cmd/bpd
           go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.os }}_${{ matrix.arch }}/sonar-mcp ./mcp/cmd/sonar-mcp
@@ -74,10 +74,10 @@ jobs:
 
           mkdir -p release-assets
           cd dist/${{ matrix.os }}_${{ matrix.arch }}
-          tar -czf ../../release-assets/sandbox_${TAG}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz sndbx bp bpd sonar-mcp
+          tar -czf ../../release-assets/fleet_${TAG}_${{ matrix.os }}_${{ matrix.arch }}.tar.gz fleet bp bpd sonar-mcp
           
           # Standalone binaries for direct downloading
-          cp sndbx ../../release-assets/sndbx-${{ matrix.os }}-${{ matrix.arch }}
+          cp fleet ../../release-assets/fleet-${{ matrix.os }}-${{ matrix.arch }}
           cp bp ../../release-assets/bp-${{ matrix.os }}-${{ matrix.arch }}
           cp bpd ../../release-assets/bpd-${{ matrix.os }}-${{ matrix.arch }}
           cp sonar-mcp ../../release-assets/sonar-mcp-${{ matrix.os }}-${{ matrix.arch }}
@@ -108,7 +108,7 @@ jobs:
       - name: Generate Software Bill of Materials (SBOM)
         run: |
           echo "==> Generating repository source SBOMs..."
-          syft dir:. -o spdx-json=all-assets/agent-sandbox-source.spdx.json -o cyclonedx-json=all-assets/agent-sandbox-source.cyclonedx.json
+          syft dir:. -o spdx-json=all-assets/fleet-source.spdx.json -o cyclonedx-json=all-assets/fleet-source.cyclonedx.json
 
           echo "==> Generating release archive SBOMs..."
           for archive in all-assets/*.tar.gz; do
@@ -138,6 +138,6 @@ jobs:
           else
             echo "Creating release ${TAG}..."
             gh release create "${TAG}" all-assets/* \
-              --title "Agent Sandbox ${TAG}" \
-              --notes "Automated release containing prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) and Software Bill of Materials (SBOMs in SPDX & CycloneDX formats) for Linux and macOS."
+              --title "Fleet ${TAG}" \
+              --notes "Automated release containing prebuilt native CLI binaries (fleet, bp, bpd, sonar-mcp) and Software Bill of Materials (SBOMs in SPDX & CycloneDX formats) for Linux and macOS."
           fi

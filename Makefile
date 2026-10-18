@@ -126,7 +126,7 @@ sbom: ## Generate Software Bill of Materials (SBOM) in SPDX and CycloneDX format
 	@echo "==> Generating Software Bill of Materials (SBOM)..."
 	@mkdir -p $(DIST_DIR)/sbom
 	@if command -v syft >/dev/null 2>&1; then \
-		syft dir:. -o spdx-json=$(DIST_DIR)/sbom/agent-sandbox.spdx.json -o cyclonedx-json=$(DIST_DIR)/sbom/agent-sandbox.cyclonedx.json; \
+		syft dir:. -o spdx-json=$(DIST_DIR)/sbom/fleet.spdx.json -o cyclonedx-json=$(DIST_DIR)/sbom/fleet.cyclonedx.json; \
 		echo "SBOM generated in $(DIST_DIR)/sbom/ (SPDX & CycloneDX)"; \
 	else \
 		echo "Notice: syft not installed. Install via: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b $(HOME)/.local/bin"; \

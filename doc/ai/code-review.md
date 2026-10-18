@@ -1,13 +1,13 @@
 ---
-name: agent-sandbox-code-review
+name: fleet-code-review
 description: >-
   Standard protocol and instructions for performing architectural, logical, and security
-  code reviews on Pull Requests in the agent-sandbox repository.
+  code reviews on Pull Requests in the fleet repository.
 ---
 
 # Code Review Protocol & Skill
 
-This skill defines the methodology, inspection checklist, and output format for performing thorough peer reviews of Pull Requests on the `agent-sandbox` repository.
+This skill defines the methodology, inspection checklist, and output format for performing thorough peer reviews of Pull Requests on the `fleet` repository.
 
 ---
 
@@ -41,7 +41,7 @@ Inspect changes across three essential dimensions:
    - Fetch the PR diff and inspect commit history.
    - Separate production source changes from unit tests and formatting diffs.
 2. **Trace Callers & Side Effects:**
-   - Trace impacted call sites across CLIs (`cmd/sndbx`, `cmd/bp`), daemons (`bpd`), and MCP servers (`bp-mcp`, `sonar-mcp`).
+   - Trace impacted call sites across CLIs (`cmd/fleet`, `cmd/bp`), daemons (`bpd`), and MCP servers (`bp-mcp`, `sonar-mcp`).
    - Check if new configuration fields or socket timeouts unexpectedly affect existing long-polling callers.
 3. **Determine Verdict (Go / Conditional Go / No-Go):**
    - **No-Go:** High-severity findings present (data loss, credential leakage in argv, socket state desynchronization, broken core workflow).

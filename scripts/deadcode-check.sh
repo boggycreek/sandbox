@@ -136,7 +136,7 @@ elif [ "${MODE}" = "all" ]; then
   fi
   echo
 
-  echo "--- [2/2] Library Code Unreached by Binary Entrypoints (cmd/sndbx, cmd/bp) ---"
+  echo "--- [2/2] Library Code Unreached by Binary Entrypoints (cmd/fleet, cmd/bp) ---"
   BINARY_DEAD_OUTPUT="$("${DEADCODE_BIN}" ./backplane/... ./mcp/... ./sandbox/... 2>&1 || true)"
   if [ -z "${BINARY_DEAD_OUTPUT}" ]; then
     echo "  [✓] All package functions are reachable from binary entrypoints."

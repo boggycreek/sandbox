@@ -1,7 +1,7 @@
 ---
-name: agent-sandbox-architecture
+name: fleet-architecture
 description: >-
-  Architectural overview of the Agent Sandbox runtime, Podman container security perimeter, layered OCI hierarchy, and LLM gateway.
+  Architectural overview of the Fleet runtime, Podman container security perimeter, layered OCI hierarchy, and LLM gateway.
   Use when designing or debugging agent containerization and runtime environments.
 ---
 
@@ -10,15 +10,20 @@ description: >-
 ## Container Isolation & Security Boundary
 - **Engine**: Rootless Podman exclusively (ADR 00019). No Docker or docker-compose daemon dependencies.
 - **Security Perimeter**: Container boundary isolates agent actions. Agents run unprivileged (UID 1000) inside containers.
-- **Network**: Shared bridge network `agent-sandbox-infra`.
-- **Storage**: Named persistent Podman volumes (`agent-sandbox-<name>-home`).
+- **Network**: Shared bridge network `fleet-infra`.
+- **Storage**: Named persistent Podman volumes (`fleet-<name>-home`).
 
 ## Layered OCI Container Hierarchy
-- **Base Image** (`images/agent-base/Dockerfile`): Neutral Debian Bookworm with unprivileged `agent` user (UID 1000), internal SSH daemon on port 2222, tmux session supervisor, and native `bp` binary.
+- **Base Images**:
+  - `fleet-core` (`images/agent-core/Dockerfile`): Foundational Debian Bookworm with unprivileged `agent` user (UID 1000).
+  - `fleet-daemon-base` (`images/agent-daemon-base/Dockerfile`): Autonomous daemon base with internal SSH daemon (port 2222), tmux supervisor, and `bpd` entrypoint daemon.
+  - `fleet-tool-base` (`images/agent-tool-base/Dockerfile`): Interactive tool container base.
 - **Derivative Agent Images** (`images/agents/`):
   - `opencode`: OpenCode agent harness.
   - `claude`: Claude Code agent harness.
   - `agy`: Antigravity CLI runner harness.
+  - `pig`: PiG (Pi in Go) agent harness.
+  - `native`: Native Go agent harness.
 
 ## Local LLM Gateway
 - Host routing: `--add-host=llm-gateway:host-gateway`.
