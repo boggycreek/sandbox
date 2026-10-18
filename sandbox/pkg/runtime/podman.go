@@ -247,6 +247,7 @@ func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string
 		"--hostname", egressName,
 		"--network", netName,
 		"--cap-add", "NET_ADMIN",
+		"--cap-add", "NET_RAW",
 		"-p", "127.0.0.1::2222",
 		EgressImage,
 	}
