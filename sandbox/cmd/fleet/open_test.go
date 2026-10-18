@@ -42,7 +42,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for open without args, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+	if !strings.Contains(stderr.String(), "Usage: fleet agent open") {
 		t.Errorf("expected usage message, got: %s", stderr.String())
 	}
 
@@ -52,7 +52,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for dangling in, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+	if !strings.Contains(stderr.String(), "Usage: fleet agent open") {
 		t.Errorf("expected usage message, got: %s", stderr.String())
 	}
 
@@ -62,7 +62,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for dangling in with flag, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+	if !strings.Contains(stderr.String(), "Usage: fleet agent open") {
 		t.Errorf("expected usage message, got: %s", stderr.String())
 	}
 
@@ -72,7 +72,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for extra arguments, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "Usage: sndbx agent open") {
+	if !strings.Contains(stderr.String(), "Usage: fleet agent open") {
 		t.Errorf("expected usage message, got: %s", stderr.String())
 	}
 
@@ -137,7 +137,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for non-interactive stdin, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "sndbx error: target IDE is required. Specify 'in <ide>' with one of: code") {
+	if !strings.Contains(stderr.String(), "fleet error: target IDE is required. Specify 'in <ide>' with one of: code") {
 		t.Errorf("expected target IDE required error, got: %s", stderr.String())
 	}
 
@@ -150,7 +150,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for out-of-range selection, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "sndbx error: invalid selection") {
+	if !strings.Contains(stderr.String(), "fleet error: invalid selection") {
 		t.Errorf("expected invalid selection error, got: %s", stderr.String())
 	}
 
@@ -159,7 +159,7 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for non-numeric selection, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "sndbx error: invalid selection") {
+	if !strings.Contains(stderr.String(), "fleet error: invalid selection") {
 		t.Errorf("expected invalid selection error, got: %s", stderr.String())
 	}
 
@@ -176,8 +176,8 @@ func TestAgentOpenValidationAndErrors(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 for nonexistent agent, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "sndbx error:") {
-		t.Errorf("expected sndbx error, got: %s", stderr.String())
+	if !strings.Contains(stderr.String(), "fleet error:") {
+		t.Errorf("expected fleet error, got: %s", stderr.String())
 	}
 
 	// 7. No-container agent (cannot use container IDE forwarding)
@@ -444,7 +444,7 @@ func TestAgentOpenExecution(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 when launching VS Code fails, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "sndbx error launching") {
+	if !strings.Contains(stderr.String(), "fleet error launching") {
 		t.Errorf("expected launch error message in stderr, got: %s", stderr.String())
 	}
 
@@ -501,7 +501,7 @@ func TestAgentOpenExecution(t *testing.T) {
 	if code != 1 {
 		t.Errorf("expected code 1 when launching WebStorm fallback fails, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "sndbx error launching WebStorm") {
+	if !strings.Contains(stderr.String(), "fleet error launching WebStorm") {
 		t.Errorf("expected launch error for webstorm, got: %s", stderr.String())
 	}
 

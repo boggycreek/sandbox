@@ -294,9 +294,9 @@ else
   fi
 fi
 
-# Configure sndbx, bp, bpd, and sonar-mcp CLI executables
-SNDBX_BIN="${BIN_DIR}/sndbx"
-SB_BIN="${BIN_DIR}/sb"
+# Configure fleet, bp, bpd, and sonar-mcp CLI executables
+FLEET_BIN="${BIN_DIR}/fleet"
+FT_BIN="${BIN_DIR}/ft"
 BP_BIN="${BIN_DIR}/bp"
 BPD_BIN="${BIN_DIR}/bpd"
 SONAR_MCP_BIN="${BIN_DIR}/sonar-mcp"
@@ -305,7 +305,7 @@ INSTALLED_PREBUILT=true
 RELEASE_URL_BASE="https://github.com/boggycreek/sandbox/releases/latest/download"
 
 echo "  Checking for prebuilt native CLI binaries from GitHub Releases..."
-for bin_name in sndbx bp bpd sonar-mcp; do
+for bin_name in fleet bp bpd sonar-mcp; do
   target_file="${BIN_DIR}/${bin_name}"
   download_url="${RELEASE_URL_BASE}/${bin_name}-${OS}-${ARCH}"
   if curl -fsSL "${download_url}" -o "${target_file}.tmp" 2>/dev/null; then
@@ -317,46 +317,46 @@ for bin_name in sndbx bp bpd sonar-mcp; do
   fi
 done
 
-if [ "${INSTALLED_PREBUILT}" = "true" ] && [ -f "${SNDBX_BIN}" ]; then
-  echo "  Installed prebuilt native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases."
+if [ "${INSTALLED_PREBUILT}" = "true" ] && [ -f "${FLEET_BIN}" ]; then
+  echo "  Installed prebuilt native CLI binaries (fleet, bp, bpd, sonar-mcp) from GitHub Releases."
 elif command -v go >/dev/null 2>&1 && { [ -f "${SANDBOX_ROOT}/go.work" ] || [ -f "${SANDBOX_ROOT}/go.mod" ]; }; then
   echo "  Compiling native Go CLI binaries from source..."
-  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./sandbox/cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./backplane/cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./mcp/cmd/sonar-mcp)
-  chmod +x "${SNDBX_BIN}" "${BP_BIN}" "${BPD_BIN}" "${SONAR_MCP_BIN}" 2>/dev/null || true
-  echo "  Installed ${SNDBX_BIN}, ${BP_BIN}, ${BPD_BIN}, and ${SONAR_MCP_BIN}"
-elif [ ! -f "${SNDBX_BIN}" ]; then
-  cat > "${SNDBX_BIN}" <<EOF
+  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${FLEET_BIN}" ./sandbox/cmd/fleet && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BPD_BIN}" ./backplane/cmd/bpd && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SONAR_MCP_BIN}" ./mcp/cmd/sonar-mcp)
+  chmod +x "${FLEET_BIN}" "${BP_BIN}" "${BPD_BIN}" "${SONAR_MCP_BIN}" 2>/dev/null || true
+  echo "  Installed ${FLEET_BIN}, ${BP_BIN}, ${BPD_BIN}, and ${SONAR_MCP_BIN}"
+elif [ ! -f "${FLEET_BIN}" ]; then
+  cat > "${FLEET_BIN}" <<EOF
 #!/usr/bin/env bash
 # Temporary bootstrap dispatcher until native Go binary is compiled or downloaded
 if command -v go >/dev/null 2>&1 && [ -d "${SANDBOX_ROOT}" ]; then
-  echo "Compiling native sndbx binary..."
-  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${SNDBX_BIN}" ./sandbox/cmd/sndbx && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp)
-  exec "${SNDBX_BIN}" "\$@"
+  echo "Compiling native fleet binary..."
+  (cd "${SANDBOX_ROOT}" && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${FLEET_BIN}" ./sandbox/cmd/fleet && env -u GOROOT go build -trimpath -ldflags="-s -w" -o "${BP_BIN}" ./backplane/cmd/bp)
+  exec "${FLEET_BIN}" "\$@"
 fi
-echo "Agent Sandbox CLI (sndbx)"
+echo "Fleet CLI (fleet)"
 echo "Go compiler or prebuilt release required. Visit: https://github.com/boggycreek/sandbox/releases"
 exit 1
 EOF
-  chmod +x "${SNDBX_BIN}"
-  echo "  Installed bootstrap script ${SNDBX_BIN}"
+  chmod +x "${FLEET_BIN}"
+  echo "  Installed bootstrap script ${FLEET_BIN}"
 fi
 
-# Ensure relative symlink sb -> sndbx exists safely if sndbx exists, but skip if another sb command exists on operator's system
-if [ -f "${SNDBX_BIN}" ]; then
-  existing_sb="$(command -v sb 2>/dev/null || true)"
-  if [ -n "${existing_sb}" ] && [ "${existing_sb}" != "${SB_BIN}" ]; then
-    echo "  Skipping 'sb' alias: another 'sb' command was found on the system (${existing_sb})"
-  elif [ ! -e "${SB_BIN}" ] && [ ! -L "${SB_BIN}" ]; then
-    (cd "${BIN_DIR}" && ln -s sndbx sb)
-  elif [ -L "${SB_BIN}" ]; then
-    link_target=$(readlink "${SB_BIN}" 2>/dev/null || true)
-    if [ "${link_target}" = "sndbx" ] || [ "$(basename "${link_target}")" = "sndbx" ]; then
-      (cd "${BIN_DIR}" && ln -sf sndbx sb)
+# Ensure relative symlink ft -> fleet exists safely if fleet exists, but skip if another ft command exists on operator's system
+if [ -f "${FLEET_BIN}" ]; then
+  existing_ft="$(command -v ft 2>/dev/null || true)"
+  if [ -n "${existing_ft}" ] && [ "${existing_ft}" != "${FT_BIN}" ]; then
+    echo "  Skipping 'ft' alias: another 'ft' command was found on the system (${existing_ft})"
+  elif [ ! -e "${FT_BIN}" ] && [ ! -L "${FT_BIN}" ]; then
+    (cd "${BIN_DIR}" && ln -s fleet ft)
+  elif [ -L "${FT_BIN}" ]; then
+    link_target=$(readlink "${FT_BIN}" 2>/dev/null || true)
+    if [ "${link_target}" = "fleet" ] || [ "$(basename "${link_target}")" = "fleet" ]; then
+      (cd "${BIN_DIR}" && ln -sf fleet ft)
     else
-      echo "  Skipping 'sb' alias: ${SB_BIN} links to ${link_target}"
+      echo "  Skipping 'ft' alias: ${FT_BIN} links to ${link_target}"
     fi
   else
-    echo "  Skipping 'sb' alias: ${SB_BIN} is an existing regular file"
+    echo "  Skipping 'ft' alias: ${FT_BIN} is an existing regular file"
   fi
 fi
 
@@ -368,7 +368,7 @@ echo
 echo "Target Platform     : ${OS_PRETTY} [${OS}/${ARCH}]"
 echo "Repository Location : ${SANDBOX_ROOT}"
 echo "Environment Config  : ${ENV_FILE}"
-echo "CLI Executable      : ${SNDBX_BIN} (alias: ${SB_BIN})"
+echo "CLI Executable      : ${FLEET_BIN} (alias: ${FT_BIN})"
 echo "IDE SSH Public Key  : ${SSH_KEY}.pub"
 echo
 

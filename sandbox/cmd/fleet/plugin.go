@@ -57,17 +57,19 @@ func handlePlugin(ctx context.Context, paths config.Paths, args []string, stdout
 		return handlePluginRemove(ctx, paths, strings.ToLower(args[1]), stdout, stderr)
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown command %q (see 'sndbx plugin help')\n", action)
+		bin := binaryName()
+		fmt.Fprintf(stderr, "%s plugin: unknown command %q (see '%s plugin help')\n", bin, action, bin)
 		return 1
 	}
 }
 
 func handlePluginAdd(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	switch target {
 	case "gateway":
 		res, err := plugin.InstallGatewayPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error installing gateway plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error installing gateway plugin: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway Plugin")
@@ -92,7 +94,7 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 	case "toolbox":
 		res, err := plugin.InstallToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error installing toolbox plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error installing toolbox plugin: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Toolbox Plugin")
@@ -116,7 +118,7 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 	case "vscode":
 		res, err := plugin.InstallVSCodePlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error configuring VS Code integration: %v\n", err)
+			fmt.Fprintf(stderr, "%s error configuring VS Code integration: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Agent Sandbox VS Code Integration")
@@ -128,21 +130,22 @@ func handlePluginAdd(ctx context.Context, paths config.Paths, target string, std
 			fmt.Fprintln(stdout, "SSH Config: Already linked in ~/.ssh/config")
 		}
 		fmt.Fprintln(stdout, "\nNext Steps:")
-		fmt.Fprintln(stdout, "  Run 'sndbx agent open <name>' to launch an agent in VS Code.")
+		fmt.Fprintf(stdout, "  Run '%s agent open <name>' to launch an agent in VS Code.\n", bin)
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin %q (see 'sndbx plugin help')\n", target)
+		fmt.Fprintf(stderr, "%s plugin: unknown plugin %q (see '%s plugin help')\n", bin, target, bin)
 		return 1
 	}
 }
 
 func handlePluginRemove(ctx context.Context, paths config.Paths, target string, stdout, stderr io.Writer) int {
+	bin := binaryName()
 	switch target {
 	case "gateway":
 		res, err := plugin.RemoveGatewayPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error removing gateway plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error removing gateway plugin: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Gateway Plugin")
@@ -163,7 +166,7 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 	case "toolbox":
 		res, err := plugin.RemoveToolboxPlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error removing toolbox plugin: %v\n", err)
+			fmt.Fprintf(stderr, "%s error removing toolbox plugin: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Agent Sandbox JetBrains Toolbox Plugin")
@@ -184,7 +187,7 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 	case "vscode":
 		res, err := plugin.RemoveVSCodePlugin(ctx, paths, stdout)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx error removing VS Code integration: %v\n", err)
+			fmt.Fprintf(stderr, "%s error removing VS Code integration: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Agent Sandbox VS Code Integration")
@@ -196,7 +199,7 @@ func handlePluginRemove(ctx context.Context, paths config.Paths, target string, 
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "sndbx plugin: unknown plugin %q (see 'sndbx plugin help')\n", target)
+		fmt.Fprintf(stderr, "%s plugin: unknown plugin %q (see '%s plugin help')\n", bin, target, bin)
 		return 1
 	}
 }

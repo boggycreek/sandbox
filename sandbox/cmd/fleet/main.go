@@ -23,14 +23,14 @@ func main() {
 	os.Exit(Run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// Run executes the sndbx command.
+// Run executes the fleet command.
 func Run(args []string, stdout, stderr io.Writer) int {
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return RunWithContext(sigCtx, args, stdout, stderr)
 }
 
-// RunWithContext executes the sndbx command using the provided context.
+// RunWithContext executes the fleet command using the provided context.
 func RunWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printUsage(stdout)
@@ -71,7 +71,11 @@ func RunWithContext(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	case "update":
 		updateTimeout := 30 * time.Minute
-		if envTimeout := os.Getenv("SNDBX_UPDATE_TIMEOUT"); envTimeout != "" {
+		envTimeout := os.Getenv("FLEET_UPDATE_TIMEOUT")
+		if envTimeout == "" {
+			envTimeout = os.Getenv("SNDBX_UPDATE_TIMEOUT")
+		}
+		if envTimeout != "" {
 			if d, err := time.ParseDuration(envTimeout); err == nil && d > 0 {
 				updateTimeout = d
 			}
@@ -90,20 +94,20 @@ func RunWithContext(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 }
 
-// binaryName returns the invocation name of the CLI binary ("sb" or "sndbx").
+// binaryName returns the invocation name of the CLI binary ("ft" or "fleet").
 func binaryName() string {
 	if len(os.Args) > 0 {
 		base := filepath.Base(os.Args[0])
-		if base == "sb" {
-			return "sb"
+		if base == "ft" {
+			return "ft"
 		}
 	}
-	return "sndbx"
+	return "fleet"
 }
 
 func printUsage(out io.Writer) {
 	bin := binaryName()
-	fmt.Fprintf(out, `Agent Sandbox CLI (%s)
+	fmt.Fprintf(out, `Fleet CLI (%s)
 
 Usage:
   %s <domain|command> [args...]

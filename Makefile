@@ -138,12 +138,12 @@ check: lint test-coverage sca ## Complete quality gate: lint + coverage (>90%) +
 
 build: build-cli build-libbp ## Build all CLI binaries and libraries
 
-build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
+build-cli: ## Build native Go CLI binaries (fleet, bp, bpd, mcps)
 	@echo "==> Building CLI binaries..."
 	@mkdir -p $(BIN_DIR)
 	@if [ -f go.work ] || [ -f go.mod ]; then \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sndbx ./sandbox/cmd/sndbx; \
-		ln -sf sndbx $(BIN_DIR)/sb; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/fleet ./sandbox/cmd/fleet; \
+		ln -sf fleet $(BIN_DIR)/ft; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/fleet-agent ./agent/cmd/fleet-agent; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
@@ -152,7 +152,7 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 		ln -sf forgejo-mcp $(BIN_DIR)/gitea-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/beads-mcp ./mcp/cmd/beads-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./mcp/cmd/sonar-mcp; \
-		echo "Binaries built in $(BIN_DIR)/ (alias: $(BIN_DIR)/sb)"; \
+		echo "Binaries built in $(BIN_DIR)/ (alias: $(BIN_DIR)/ft)"; \
 	else \
 		echo "Notice: go.work not yet initialized. Skipping build."; \
 	fi
@@ -160,22 +160,22 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 install: build-cli ## Install CLI binaries and aliases into $(INSTALL_BIN_DIR)
 	@echo "==> Installing CLI binaries into $(INSTALL_BIN_DIR)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
-	@cp -f $(BIN_DIR)/sndbx $(INSTALL_BIN_DIR)/sndbx
-	@existing_sb=$$(command -v sb 2>/dev/null || true); \
-	if [ -n "$$existing_sb" ] && [ "$$existing_sb" != "$(INSTALL_BIN_DIR)/sb" ]; then \
-		echo "Notice: Skipping 'sb' alias in $(INSTALL_BIN_DIR): another 'sb' was found on PATH ($$existing_sb)"; \
-	elif [ ! -e $(INSTALL_BIN_DIR)/sb ] && [ ! -L $(INSTALL_BIN_DIR)/sb ]; then \
-		(cd $(INSTALL_BIN_DIR) && ln -s sndbx sb); \
-	elif [ -L $(INSTALL_BIN_DIR)/sb ]; then \
-		link_target=$$(readlink $(INSTALL_BIN_DIR)/sb 2>/dev/null || true); \
-		if [ "$$link_target" = "sndbx" ] || [ "$$(basename "$$link_target")" = "sndbx" ]; then \
-			(cd $(INSTALL_BIN_DIR) && ln -sf sndbx sb); \
+	@cp -f $(BIN_DIR)/fleet $(INSTALL_BIN_DIR)/fleet
+	@existing_ft=$$(command -v ft 2>/dev/null || true); \
+	if [ -n "$$existing_ft" ] && [ "$$existing_ft" != "$(INSTALL_BIN_DIR)/ft" ]; then \
+		echo "Notice: Skipping 'ft' alias in $(INSTALL_BIN_DIR): another 'ft' was found on PATH ($$existing_ft)"; \
+	elif [ ! -e $(INSTALL_BIN_DIR)/ft ] && [ ! -L $(INSTALL_BIN_DIR)/ft ]; then \
+		(cd $(INSTALL_BIN_DIR) && ln -s fleet ft); \
+	elif [ -L $(INSTALL_BIN_DIR)/ft ]; then \
+		link_target=$$(readlink $(INSTALL_BIN_DIR)/ft 2>/dev/null || true); \
+		if [ "$$link_target" = "fleet" ] || [ "$$(basename "$$link_target")" = "fleet" ]; then \
+			(cd $(INSTALL_BIN_DIR) && ln -sf fleet ft); \
 		fi; \
 	fi
 	@for bin in fleet-agent bp bpd bp-mcp forgejo-mcp gitea-mcp beads-mcp sonar-mcp; do \
 		if [ -f $(BIN_DIR)/$$bin ]; then cp -f $(BIN_DIR)/$$bin $(INSTALL_BIN_DIR)/$$bin; fi; \
 	done
-	@echo "Installed binaries (sndbx (alias: sb), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"
+	@echo "Installed binaries (fleet (alias: ft), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"
 
 build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 	@echo "==> Building C-shared libbp library..."

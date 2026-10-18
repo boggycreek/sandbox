@@ -99,11 +99,11 @@ func StartEphemeralInfraHarness(t *testing.T) *EphemeralInfraHarness {
 		h.Teardown()
 	})
 
-	// Build isolated sndbx binary in temp dir
-	h.BinPath = filepath.Join(dataHome, "sndbx")
-	buildCmd := exec.Command("go", "build", "-o", h.BinPath, "github.com/boggycreek/sandbox/cmd/sndbx")
+	// Build isolated fleet binary in temp dir
+	h.BinPath = filepath.Join(dataHome, "fleet")
+	buildCmd := exec.Command("go", "build", "-o", h.BinPath, "github.com/boggycreek/sandbox/cmd/fleet")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
-		t.Fatalf("failed building test sndbx binary: %v (%s)", err, string(out))
+		t.Fatalf("failed building test fleet binary: %v (%s)", err, string(out))
 	}
 
 	// Initialize ephemeral infrastructure
@@ -286,12 +286,17 @@ func (h *EphemeralInfraHarness) Env() []string {
 	}
 }
 
-// ExecSndbx runs the test sndbx binary with the harness environment.
-func (h *EphemeralInfraHarness) ExecSndbx(ctx context.Context, args ...string) (string, error) {
+// ExecFleet runs the test fleet binary with the harness environment.
+func (h *EphemeralInfraHarness) ExecFleet(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, h.BinPath, args...)
 	cmd.Env = append(os.Environ(), h.Env()...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// ExecSndbx runs the test fleet binary (backward compatibility alias).
+func (h *EphemeralInfraHarness) ExecSndbx(ctx context.Context, args ...string) (string, error) {
+	return h.ExecFleet(ctx, args...)
 }
 
 // Teardown stops and forcefully removes all ephemeral containers, volumes, networks, and directories.

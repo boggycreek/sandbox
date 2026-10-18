@@ -20,7 +20,7 @@ func SetExecCommandContextForTesting(fn func(ctx context.Context, name string, a
 	return runtime.SetDefaultExecutor(runtime.CommandExecutorFunc(fn))
 }
 
-// SetCommandExecutor sets the CommandExecutor for sndbx commands and returns a restore function.
+// SetCommandExecutor sets the CommandExecutor for fleet commands and returns a restore function.
 func SetCommandExecutor(executor runtime.CommandExecutor) func() {
 	return runtime.SetDefaultExecutor(executor)
 }

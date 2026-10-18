@@ -46,7 +46,7 @@ Commands:
 		humanPass := os.Getenv("HUMAN_BACKPLANE_PASSWORD")
 		humanName := os.Getenv("HUMAN_NAME")
 		if err := runtime.StartInfraStack(ctx, paths, adminPass, humanPass, humanName); err != nil {
-			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
+			fmt.Fprintf(stderr, "%s infra error: %v\n", bin, err)
 			return 1
 		}
 		_, _ = lifecycle.EnsureOperatorKeys(ctx, paths, humanName)
@@ -56,7 +56,7 @@ Commands:
 	case "down":
 		fmt.Fprintln(stdout, "Stopping shared infrastructure...")
 		if err := runtime.StopInfraStack(ctx); err != nil {
-			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
+			fmt.Fprintf(stderr, "%s infra error: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "Shared infrastructure stopped.")
@@ -65,7 +65,7 @@ Commands:
 	case "doctor":
 		report, err := doctor.DiagnoseAndHealInfra(ctx, paths)
 		if err != nil && report == nil {
-			fmt.Fprintf(stderr, "sndbx infra doctor error: %v\n", err)
+			fmt.Fprintf(stderr, "%s infra doctor error: %v\n", bin, err)
 			return 1
 		}
 		fmt.Fprint(stdout, doctor.FormatDoctorReport(report))
@@ -78,7 +78,7 @@ Commands:
 		fmt.Fprintln(stdout, "Shared infrastructure status:")
 		list, err := runtime.InspectInfraStack(ctx)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx infra error: %v\n", err)
+			fmt.Fprintf(stderr, "%s infra error: %v\n", bin, err)
 			return 1
 		}
 		fmtFmt := "%-28s %s\n"
@@ -102,14 +102,14 @@ Commands:
 			case "--json":
 				jsonOutput = true
 			default:
-				fmt.Fprintf(stderr, "sndbx infra info: unknown flag %q\n", arg)
+				fmt.Fprintf(stderr, "%s infra info: unknown flag %q\n", bin, arg)
 				return 1
 			}
 		}
 
 		info, err := runtime.GetInfraInfo(ctx, paths, showSecrets)
 		if err != nil {
-			fmt.Fprintf(stderr, "sndbx infra info error: %v\n", err)
+			fmt.Fprintf(stderr, "%s infra info error: %v\n", bin, err)
 			return 1
 		}
 
@@ -117,7 +117,7 @@ Commands:
 			enc := json.NewEncoder(stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(info); err != nil {
-				fmt.Fprintf(stderr, "sndbx infra info error: %v\n", err)
+				fmt.Fprintf(stderr, "%s infra info error: %v\n", bin, err)
 				return 1
 			}
 			return 0
@@ -127,7 +127,7 @@ Commands:
 		return 0
 
 	default:
-		fmt.Fprintf(stderr, "sndbx infra: unknown command %q\n", sub)
+		fmt.Fprintf(stderr, "%s infra: unknown command %q\n", bin, sub)
 		return 1
 	}
 }

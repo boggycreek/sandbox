@@ -15,7 +15,7 @@ import (
 	"github.com/boggycreek/sandbox/pkg/runtime"
 )
 
-func TestCommandExecutorInSndbx(t *testing.T) {
+func TestCommandExecutorInFleet(t *testing.T) {
 	// 1. Test SetCommandExecutor
 	var executed []string
 	mock := runtime.CommandExecutorFunc(func(ctx context.Context, name string, args ...string) *exec.Cmd {
@@ -44,7 +44,7 @@ func TestCommandExecutorInSndbx(t *testing.T) {
 	if code != 0 {
 		t.Errorf("expected RunWithContext(help) to succeed, got %d", code)
 	}
-	if !strings.Contains(stdout.String(), "Agent Sandbox CLI") {
+	if !strings.Contains(stdout.String(), "Fleet CLI") {
 		t.Errorf("expected usage output, got: %s", stdout.String())
 	}
 }

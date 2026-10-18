@@ -26,13 +26,13 @@ func TestAgentProvisionCommand(t *testing.T) {
 	_ = paths.EnsureDirectories()
 
 	// 1. Usage error on missing arguments
-	code, _, errOut := runSndbx([]string{"agent", "provision"})
-	if code != 1 || !strings.Contains(errOut, "Usage: sndbx agent provision") {
+	code, _, errOut := runFleet([]string{"agent", "provision"})
+	if code != 1 || !strings.Contains(errOut, "Usage: fleet agent provision") {
 		t.Errorf("expected usage error on agent provision without args, got: %s", errOut)
 	}
 
 	// 2. Nonexistent agent error
-	code, _, errOut = runSndbx([]string{"agent", "provision", "nonexistent"})
+	code, _, errOut = runFleet([]string{"agent", "provision", "nonexistent"})
 	if code != 1 || !strings.Contains(errOut, "not found") {
 		t.Errorf("expected not found error on provision nonexistent, got: %s", errOut)
 	}
@@ -41,7 +41,7 @@ func TestAgentProvisionCommand(t *testing.T) {
 	cfg, _ := config.NewAgentConfig("prov-bot", "base", "developer")
 	_ = config.SaveAgentConfig(cfg, paths)
 
-	code, out, _ := runSndbx([]string{"agent", "provision", "prov-bot"})
+	code, out, _ := runFleet([]string{"agent", "provision", "prov-bot"})
 	if code != 0 {
 		t.Errorf("expected provision prov-bot to succeed, got code %d, out: %s", code, out)
 	}
@@ -62,7 +62,7 @@ func TestAgentKeysCommand(t *testing.T) {
 	_ = config.SaveAgentConfig(cfg, paths)
 
 	// 1. Inspect specific agent keys
-	code, out, _ := runSndbx([]string{"agent", "keys", "keys-bot"})
+	code, out, _ := runFleet([]string{"agent", "keys", "keys-bot"})
 	if code != 0 {
 		t.Errorf("expected agent keys keys-bot to succeed, got %d", code)
 	}
@@ -71,13 +71,13 @@ func TestAgentKeysCommand(t *testing.T) {
 	}
 
 	// 2. Inspect nonexistent agent keys
-	code, _, errOut := runSndbx([]string{"agent", "keys", "nonexistent"})
+	code, _, errOut := runFleet([]string{"agent", "keys", "nonexistent"})
 	if code != 1 || !strings.Contains(errOut, "not found") {
 		t.Errorf("expected not found for nonexistent keys query, got: %s", errOut)
 	}
 
 	// 3. Inspect all agent keys
-	code, out, _ = runSndbx([]string{"agent", "keys"})
+	code, out, _ = runFleet([]string{"agent", "keys"})
 	if code != 0 || !strings.Contains(out, "keys-bot") {
 		t.Errorf("expected all keys list to include keys-bot, got: %s", out)
 	}
@@ -100,7 +100,7 @@ func TestAgentDeprovisionCommand(t *testing.T) {
 	_ = config.SaveAgentConfig(cfg, paths)
 
 	// Deprovision agent
-	code, out, _ := runSndbx([]string{"agent", "deprovision", "deprov-bot"})
+	code, out, _ := runFleet([]string{"agent", "deprovision", "deprov-bot"})
 	if code != 0 {
 		t.Errorf("expected deprovision to succeed, got %d, out: %s", code, out)
 	}

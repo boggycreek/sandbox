@@ -33,9 +33,9 @@ func handleUpdate(ctx context.Context, paths config.Paths, args []string, stdout
 		if sub == "help" || sub == "-h" || sub == "--help" {
 			fmt.Fprintf(stdout, `Usage: %s update
 
-Comprehensive update of the Agent Sandbox local environment:
+Comprehensive update of the Fleet local environment:
   1. Synchronizes local git repository checkout with remote (git pull)
-  2. Updates native CLI binaries (sndbx, bp, bpd, sonar-mcp) from GitHub Releases or source
+  2. Updates native CLI binaries (fleet, bp, bpd, sonar-mcp) from GitHub Releases or source
   3. Rebuilds all native OCI container images (base, native, opencode, claude, agy, pig)
 `, binaryName())
 			return 0
@@ -54,7 +54,7 @@ Comprehensive update of the Agent Sandbox local environment:
 		cloneCmd.Stdout = stdout
 		cloneCmd.Stderr = stderr
 		if err := cloneCmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx update: warning: git clone failed (%v), continuing with local fallback\n", err)
+			fmt.Fprintf(stderr, "%s update: warning: git clone failed (%v), continuing with local fallback\n", binaryName(), err)
 		}
 	} else {
 		fmt.Fprintf(stdout, "==> Synchronizing repository (%s)...\n", repoDir)
@@ -69,7 +69,7 @@ Comprehensive update of the Agent Sandbox local environment:
 		gitCmd.Stdout = stdout
 		gitCmd.Stderr = stderr
 		if err := gitCmd.Run(); err != nil {
-			fmt.Fprintf(stderr, "sndbx update: warning: git pull failed (%v), continuing with local checkout\n", err)
+			fmt.Fprintf(stderr, "%s update: warning: git pull failed (%v), continuing with local checkout\n", binaryName(), err)
 		}
 	}
 
@@ -80,7 +80,7 @@ Comprehensive update of the Agent Sandbox local environment:
 	_ = os.MkdirAll(binDir, 0755)
 
 	if err := installOrBuildBinaries(ctx, repoDir, binDir, stdout, stderr); err != nil {
-		fmt.Fprintf(stderr, "sndbx update: failed installing binaries: %v\n", err)
+		fmt.Fprintf(stderr, "%s update: failed installing binaries: %v\n", binaryName(), err)
 		return 1
 	}
 
@@ -90,7 +90,7 @@ Comprehensive update of the Agent Sandbox local environment:
 	imgCmd.Stdout = stdout
 	imgCmd.Stderr = stderr
 	if err := imgCmd.Run(); err != nil {
-		fmt.Fprintf(stderr, "sndbx update: failed building OCI container images: %v\n", err)
+		fmt.Fprintf(stderr, "%s update: failed building OCI container images: %v\n", binaryName(), err)
 		return 1
 	}
 
@@ -99,7 +99,7 @@ Comprehensive update of the Agent Sandbox local environment:
 }
 
 func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout, stderr io.Writer) error {
-	binaries := []string{"sndbx", "bp", "bpd", "sonar-mcp"}
+	binaries := []string{"fleet", "bp", "bpd", "sonar-mcp"}
 	goos := stdRuntime.GOOS
 	goarch := stdRuntime.GOARCH
 	releaseURLBase := "https://github.com/boggycreek/sandbox/releases/latest/download"
@@ -142,7 +142,7 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 	}
 
 	if downloadedAll {
-		ensureSbSymlink(binDir)
+		ensureFtSymlink(binDir)
 		fmt.Fprintf(stdout, "==> Installed prebuilt native CLI binaries from GitHub Releases to %s\n", binDir)
 		return nil
 	}
@@ -151,7 +151,7 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 	cleanEnv := sanitizeGoEnv(os.Environ())
 
 	binarySrcMap := map[string]string{
-		"sndbx":     "./sandbox/cmd/sndbx",
+		"fleet":     "./sandbox/cmd/fleet",
 		"bp":        "./backplane/cmd/bp",
 		"bpd":       "./backplane/cmd/bpd",
 		"sonar-mcp": "./mcp/cmd/sonar-mcp",
@@ -180,37 +180,37 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 		}
 		_ = os.Chmod(targetFile, 0755)
 	}
-	ensureSbSymlink(binDir)
+	ensureFtSymlink(binDir)
 	fmt.Fprintf(stdout, "==> Compiled native CLI binaries to %s\n", binDir)
 	return nil
 }
 
-func ensureSbSymlink(binDir string) {
-	sndbxTarget := filepath.Join(binDir, "sndbx")
-	if _, err := os.Stat(sndbxTarget); err != nil {
+func ensureFtSymlink(binDir string) {
+	fleetTarget := filepath.Join(binDir, "fleet")
+	if _, err := os.Stat(fleetTarget); err != nil {
 		return
 	}
-	sbTarget := filepath.Join(binDir, "sb")
+	ftTarget := filepath.Join(binDir, "ft")
 
-	// Skip creating the 'sb' alias if another 'sb' command exists on the operator's system
-	if existingPath, err := exec.LookPath("sb"); err == nil {
+	// Skip creating the 'ft' alias if another 'ft' command exists on the operator's system
+	if existingPath, err := exec.LookPath("ft"); err == nil {
 		cleanExisting := filepath.Clean(existingPath)
-		cleanSbTarget := filepath.Clean(sbTarget)
-		cleanSndbxTarget := filepath.Clean(sndbxTarget)
-		if cleanExisting != cleanSbTarget && cleanExisting != cleanSndbxTarget {
-			// Another unrelated 'sb' binary exists on PATH
+		cleanFtTarget := filepath.Clean(ftTarget)
+		cleanFleetTarget := filepath.Clean(fleetTarget)
+		if cleanExisting != cleanFtTarget && cleanExisting != cleanFleetTarget {
+			// Another unrelated 'ft' binary exists on PATH
 			return
 		}
 	}
 
-	fi, err := os.Lstat(sbTarget)
+	fi, err := os.Lstat(ftTarget)
 	if err == nil {
-		// Existing file: only replace if it is a symlink pointing to sndbx
+		// Existing file: only replace if it is a symlink pointing to fleet
 		if fi.Mode()&os.ModeSymlink != 0 {
-			target, readErr := os.Readlink(sbTarget)
-			if readErr == nil && (target == "sndbx" || filepath.Base(target) == "sndbx") {
-				_ = os.Remove(sbTarget)
-				_ = os.Symlink("sndbx", sbTarget)
+			target, readErr := os.Readlink(ftTarget)
+			if readErr == nil && (target == "fleet" || filepath.Base(target) == "fleet") {
+				_ = os.Remove(ftTarget)
+				_ = os.Symlink("fleet", ftTarget)
 			}
 		}
 		// If it's a regular file or links elsewhere, do not clobber it
@@ -219,7 +219,7 @@ func ensureSbSymlink(binDir string) {
 		return
 	}
 	// Use relative symlink target so it remains valid if directory is relocated
-	_ = os.Symlink("sndbx", sbTarget)
+	_ = os.Symlink("fleet", ftTarget)
 }
 
 func sanitizeGoEnv(env []string) []string {
