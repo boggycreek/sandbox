@@ -1,6 +1,6 @@
 # Derivative OCI Image: Antigravity (agy) Agent Sandbox
-# Extends neutral agent-sandbox-daemon-base with Antigravity CLI runner
-FROM agent-sandbox-daemon-base:latest
+# Extends neutral fleet-daemon-base with Antigravity CLI runner
+FROM fleet-daemon-base:latest
 
 USER root
 

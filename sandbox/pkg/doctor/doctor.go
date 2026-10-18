@@ -132,15 +132,15 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 	healed := false
 	if !cfg.IsNoContainer() {
 		if cfg.ContainerName == "" {
-			cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", name)
+			cfg.ContainerName = fmt.Sprintf("fleet-agent-%s", name)
 			healed = true
 		}
 		if cfg.VolumeName == "" {
-			cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", name)
+			cfg.VolumeName = fmt.Sprintf("fleet-agent-%s-home", name)
 			healed = true
 		}
 		if cfg.Image == "" {
-			cfg.Image = "agent-sandbox-base:latest"
+			cfg.Image = "fleet-base:latest"
 			healed = true
 		}
 	}
@@ -371,7 +371,7 @@ func checkAndHealPodmanStorage(ctx context.Context, cfg *config.AgentConfig, rep
 		return
 	}
 	healed := false
-	netName := "agent-sandbox-infra"
+	netName := "fleet-infra"
 	if err := runtime.EnsureNetwork(ctx, netName); err != nil {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:         "Podman Network & Storage",

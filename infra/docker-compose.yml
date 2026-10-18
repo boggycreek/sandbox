@@ -8,7 +8,7 @@ version: '3.8'
 services:
   valkey:
     image: valkey/valkey:8.0-alpine
-    container_name: agent-sandbox-valkey
+    container_name: fleet-valkey
     restart: unless-stopped
     command: ["valkey-server", "--aclfile", "/etc/valkey/valkey-users.acl", "--appendonly", "yes", "--port", "6379"]
     ports:
@@ -17,11 +17,11 @@ services:
       - valkey-data:/data
       - valkey-config:/etc/valkey
     networks:
-      - agent-sandbox-infra
+      - fleet-infra
 
   forgejo:
     image: codeberg.org/forgejo/forgejo:9-rootless
-    container_name: agent-sandbox-forgejo
+    container_name: fleet-forgejo
     restart: unless-stopped
     environment:
       - FORGEJO__server__DOMAIN=forgejo
@@ -39,14 +39,14 @@ services:
     volumes:
       - forgejo-data:/var/lib/gitea
     networks:
-      agent-sandbox-infra:
+      fleet-infra:
         aliases:
           - forgejo
           - gitea
 
   postgres:
     image: postgres:16-alpine
-    container_name: agent-sandbox-postgres
+    container_name: fleet-postgres
     restart: unless-stopped
     environment:
       - POSTGRES_USER=sonar
@@ -57,11 +57,11 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - agent-sandbox-infra
+      - fleet-infra
 
   sonarqube:
-    image: agent-sandbox-sonarqube:latest
-    container_name: agent-sandbox-sonarqube
+    image: fleet-sonarqube:latest
+    container_name: fleet-sonarqube
     restart: unless-stopped
     depends_on:
       - postgres
@@ -76,24 +76,24 @@ services:
       - sonarqube-extensions:/opt/sonarqube/extensions
       - sonarqube-logs:/opt/sonarqube/logs
     networks:
-      - agent-sandbox-infra
+      - fleet-infra
 
 networks:
-  agent-sandbox-infra:
-    name: agent-sandbox-infra
+  fleet-infra:
+    name: fleet-infra
 
 volumes:
   valkey-data:
-    name: agent-sandbox-valkey-data
+    name: fleet-valkey-data
   valkey-config:
-    name: agent-sandbox-valkey-config
+    name: fleet-valkey-config
   forgejo-data:
-    name: agent-sandbox-forgejo-data
+    name: fleet-forgejo-data
   postgres-data:
-    name: agent-sandbox-postgres-data
+    name: fleet-postgres-data
   sonarqube-data:
-    name: agent-sandbox-sonarqube-data
+    name: fleet-sonarqube-data
   sonarqube-extensions:
-    name: agent-sandbox-sonarqube-extensions
+    name: fleet-sonarqube-extensions
   sonarqube-logs:
-    name: agent-sandbox-sonarqube-logs
+    name: fleet-sonarqube-logs

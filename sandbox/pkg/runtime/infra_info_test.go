@@ -182,7 +182,7 @@ func TestFormatInfraInfo_Alignment(t *testing.T) {
 	info := &InfraStackInfo{
 		Valkey: &ValkeyInfraInfo{
 			Status:           "running",
-			Container:        "agent-sandbox-valkey",
+			Container:        "fleet-valkey",
 			InternalEndpoint: "valkey:6379",
 			HostPort:         "127.0.0.1:6379",
 			ConnectionURL:    "valkey://human:********@127.0.0.1:6379",
@@ -192,7 +192,7 @@ func TestFormatInfraInfo_Alignment(t *testing.T) {
 		},
 		Forgejo: &ForgejoInfraInfo{
 			Status:        "running",
-			Container:     "agent-sandbox-forgejo",
+			Container:     "fleet-forgejo",
 			WebURL:        "http://127.0.0.1:3000",
 			InternalURL:   "http://forgejo:3000",
 			SSHPort:       "127.0.0.1:2223",
@@ -203,7 +203,7 @@ func TestFormatInfraInfo_Alignment(t *testing.T) {
 		},
 		PostgreSQL: &PostgresInfraInfo{
 			Status:           "running",
-			Container:        "agent-sandbox-postgres",
+			Container:        "fleet-postgres",
 			InternalEndpoint: "postgres:5432",
 			HostPort:         "127.0.0.1:5432",
 			Database:         "sonar",
@@ -214,7 +214,7 @@ func TestFormatInfraInfo_Alignment(t *testing.T) {
 		},
 		SonarQube: &SonarQubeInfraInfo{
 			Status:        "running",
-			Container:     "agent-sandbox-sonarqube",
+			Container:     "fleet-sonarqube",
 			WebURL:        "http://127.0.0.1:9000",
 			InternalURL:   "http://sonarqube:9000",
 			AdminUser:     "admin",
@@ -274,7 +274,7 @@ func TestFormatInfraInfo_NilAndPartial(t *testing.T) {
 	partial := &InfraStackInfo{
 		Valkey: &ValkeyInfraInfo{
 			Status:    "running",
-			Container: "agent-sandbox-valkey",
+			Container: "fleet-valkey",
 		},
 	}
 	out := FormatInfraInfo(partial)
@@ -289,7 +289,7 @@ func TestFormatInfraInfo_NilAndPartial(t *testing.T) {
 	giteaOnly := &InfraStackInfo{
 		Gitea: &ForgejoInfraInfo{
 			Status:    "running",
-			Container: "agent-sandbox-forgejo",
+			Container: "fleet-forgejo",
 		},
 	}
 	outGitea := FormatInfraInfo(giteaOnly)

@@ -1,6 +1,6 @@
 # Derivative OCI Image: Claude Code Agent Sandbox
-# Extends neutral agent-sandbox-daemon-base with Claude Code CLI
-FROM agent-sandbox-daemon-base:latest
+# Extends neutral fleet-daemon-base with Claude Code CLI
+FROM fleet-daemon-base:latest
 
 USER root
 

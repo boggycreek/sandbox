@@ -42,8 +42,8 @@ func TestPodmanHelpers(t *testing.T) {
 	status := AgentStatus{
 		Name:           "agent-test",
 		Role:           "coder",
-		Image:          "agent-sandbox-base:latest",
-		ContainerName:  "sndbx-agent-test",
+		Image:          "fleet-base:latest",
+		ContainerName:  "fleet-agent-test",
 		ContainerState: "stopped",
 		SSHPort:        0,
 		IDEConnect:     "-",
@@ -64,8 +64,8 @@ func TestPodmanHelpers(t *testing.T) {
 	// Start container error check with nonexistent image
 	cfg := &config.AgentConfig{
 		Name:          "test-agent-run",
-		ContainerName: "sndbx-agent-nonexistent-test",
-		VolumeName:    "sndbx-agent-nonexistent-vol",
+		ContainerName: "fleet-agent-nonexistent-test",
+		VolumeName:    "fleet-agent-nonexistent-vol",
 		Image:         "nonexistent-image-404:notfound",
 	}
 	paths := config.GetPaths()
@@ -117,31 +117,31 @@ func TestResolveAgentImage(t *testing.T) {
 
 	// 1. Presets
 	img, _ := ResolveAgentImage(ctx, "base")
-	if img != "agent-sandbox-base:latest" {
-		t.Errorf("expected agent-sandbox-base:latest, got %s", img)
+	if img != "fleet-base:latest" {
+		t.Errorf("expected fleet-base:latest, got %s", img)
 	}
 	img, _ = ResolveAgentImage(ctx, "")
-	if img != "agent-sandbox-base:latest" {
-		t.Errorf("expected empty to resolve to agent-sandbox-base:latest, got %s", img)
+	if img != "fleet-base:latest" {
+		t.Errorf("expected empty to resolve to fleet-base:latest, got %s", img)
 	}
 	img, _ = ResolveAgentImage(ctx, "opencode")
-	if img != "agent-sandbox-opencode:latest" {
+	if img != "fleet-opencode:latest" {
 		t.Errorf("expected opencode preset, got %s", img)
 	}
 	img, _ = ResolveAgentImage(ctx, "claude")
-	if img != "agent-sandbox-claude:latest" {
+	if img != "fleet-claude:latest" {
 		t.Errorf("expected claude preset, got %s", img)
 	}
 	img, _ = ResolveAgentImage(ctx, "agy")
-	if img != "agent-sandbox-agy:latest" {
+	if img != "fleet-agy:latest" {
 		t.Errorf("expected agy preset, got %s", img)
 	}
 	img, _ = ResolveAgentImage(ctx, "pig")
-	if img != "agent-sandbox-pig:latest" {
+	if img != "fleet-pig:latest" {
 		t.Errorf("expected pig preset, got %s", img)
 	}
 	img, _ = ResolveAgentImage(ctx, "egress")
-	if img != "agent-sandbox-egress:latest" {
+	if img != "fleet-egress:latest" {
 		t.Errorf("expected egress preset, got %s", img)
 	}
 
@@ -163,17 +163,20 @@ func TestEgressFilterHelpers(t *testing.T) {
 	defer cancel()
 
 	// 1. EgressContainerName testing
-	if name := EgressContainerName("alice"); name != "sndbx-agent-alice-egress" {
-		t.Errorf("expected sndbx-agent-alice-egress, got %s", name)
+	if name := EgressContainerName("alice"); name != "fleet-agent-alice-egress" {
+		t.Errorf("expected fleet-agent-alice-egress, got %s", name)
+	}
+	if name := EgressContainerName("fleet-agent-bob"); name != "fleet-agent-bob-egress" {
+		t.Errorf("expected fleet-agent-bob-egress, got %s", name)
+	}
+	if name := EgressContainerName("fleet-charlie"); name != "fleet-charlie-egress" {
+		t.Errorf("expected fleet-charlie-egress, got %s", name)
+	}
+	if name := EgressContainerName("fleet-agent-david-egress"); name != "fleet-agent-david-egress" {
+		t.Errorf("expected fleet-agent-david-egress, got %s", name)
 	}
 	if name := EgressContainerName("sndbx-agent-bob"); name != "sndbx-agent-bob-egress" {
 		t.Errorf("expected sndbx-agent-bob-egress, got %s", name)
-	}
-	if name := EgressContainerName("sndbx-charlie"); name != "sndbx-charlie-egress" {
-		t.Errorf("expected sndbx-charlie-egress, got %s", name)
-	}
-	if name := EgressContainerName("sndbx-agent-david-egress"); name != "sndbx-agent-david-egress" {
-		t.Errorf("expected sndbx-agent-david-egress, got %s", name)
 	}
 
 	// 2. StopEgressFilterContainer on nonexistent container
@@ -408,10 +411,10 @@ func TestStartHostAgentContainer(t *testing.T) {
 	cfgHost := &config.AgentConfig{
 		Name:          "host-worker",
 		Runtime:       "host-container",
-		ContainerName: "sndbx-agent-host-worker",
-		VolumeName:    "sndbx-agent-host-worker-home",
+		ContainerName: "fleet-agent-host-worker",
+		VolumeName:    "fleet-agent-host-worker-home",
 		WorkspacePath: wsDir,
-		Image:         "agent-sandbox-tool-base:latest",
+		Image:         "fleet-tool-base:latest",
 		ModelURL:      "http://localhost:8080/v1",
 		ModelName:     "qwen2.5",
 	}
@@ -420,7 +423,7 @@ func TestStartHostAgentContainer(t *testing.T) {
 	if err != nil {
 		t.Errorf("StartAgentContainer failed on existing host container: %v", err)
 	}
-	if len(recordedCmds) == 0 || !strings.Contains(recordedCmds[len(recordedCmds)-1], "podman start sndbx-agent-host-worker") {
+	if len(recordedCmds) == 0 || !strings.Contains(recordedCmds[len(recordedCmds)-1], "podman start fleet-agent-host-worker") {
 		t.Errorf("expected podman start command, got: %v", recordedCmds)
 	}
 
@@ -449,8 +452,8 @@ func TestStartHostAgentContainer(t *testing.T) {
 	if runCmd == "" {
 		t.Fatalf("expected podman run command in: %v", recordedCmds)
 	}
-	if !strings.Contains(runCmd, "--network agent-sandbox-infra") {
-		t.Errorf("expected --network agent-sandbox-infra in run command, got: %s", runCmd)
+	if !strings.Contains(runCmd, "--network fleet-infra") {
+		t.Errorf("expected --network fleet-infra in run command, got: %s", runCmd)
 	}
 	if !strings.Contains(runCmd, "--add-host llm-gateway:host-gateway") {
 		t.Errorf("expected --add-host in run command, got: %s", runCmd)

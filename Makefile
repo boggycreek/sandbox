@@ -190,46 +190,46 @@ build-libbp: ## Build C-shared library (libbp.dylib / libbp.so)
 
 build-images: build-image-core build-image-daemon-base build-image-tool-base build-image-base build-image-native build-image-opencode build-image-claude build-image-agy build-image-pig build-image-egress ## Build all OCI images (base + derivatives + egress filter)
 
-build-image-core: ## Build foundational agent-sandbox-core OCI image with Podman (ADR 00043)
-	@echo "==> Building agent-sandbox-core OCI image..."
-	podman build -t agent-sandbox-core:latest -f images/agent-core/Dockerfile .
+build-image-core: ## Build foundational fleet-core OCI image with Podman (ADR 00043)
+	@echo "==> Building fleet-core OCI image..."
+	podman build -t fleet-core:latest -f images/agent-core/Dockerfile .
 
-build-image-daemon-base: build-image-core ## Build autonomous fleet agent-sandbox-daemon-base OCI image with Podman (ADR 00043)
-	@echo "==> Building agent-sandbox-daemon-base OCI image..."
-	podman build -t agent-sandbox-daemon-base:latest -t agent-sandbox-base:latest -f images/agent-daemon-base/Dockerfile .
+build-image-daemon-base: build-image-core ## Build autonomous fleet fleet-daemon-base OCI image with Podman (ADR 00043)
+	@echo "==> Building fleet-daemon-base OCI image..."
+	podman build -t fleet-daemon-base:latest -t fleet-base:latest -f images/agent-daemon-base/Dockerfile .
 
-build-image-tool-base: build-image-core ## Build interactive agent-sandbox-tool-base OCI image with Podman (ADR 00043)
-	@echo "==> Building agent-sandbox-tool-base OCI image..."
-	podman build -t agent-sandbox-tool-base:latest -f images/agent-tool-base/Dockerfile .
+build-image-tool-base: build-image-core ## Build interactive fleet-tool-base OCI image with Podman (ADR 00043)
+	@echo "==> Building fleet-tool-base OCI image..."
+	podman build -t fleet-tool-base:latest -f images/agent-tool-base/Dockerfile .
 
-build-image-base: build-image-daemon-base ## Build legacy agent-sandbox-base alias (maps to daemon-base)
+build-image-base: build-image-daemon-base ## Build fleet-base alias (maps to daemon-base)
 
 build-image-native: build-image-base ## Build Native Agent derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-native OCI image..."
-	podman build -t agent-sandbox-native:latest -f images/agents/native/Dockerfile .
+	@echo "==> Building fleet-native OCI image..."
+	podman build -t fleet-native:latest -f images/agents/native/Dockerfile .
 
 build-image-opencode: build-image-base ## Build OpenCode derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-opencode OCI image..."
-	podman build -t agent-sandbox-opencode:latest -f images/agents/opencode/Dockerfile .
+	@echo "==> Building fleet-opencode OCI image..."
+	podman build -t fleet-opencode:latest -f images/agents/opencode/Dockerfile .
 
 build-image-claude: build-image-base ## Build Claude Code derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-claude OCI image..."
-	podman build -t agent-sandbox-claude:latest -f images/agents/claude/Dockerfile .
+	@echo "==> Building fleet-claude OCI image..."
+	podman build -t fleet-claude:latest -f images/agents/claude/Dockerfile .
 
 build-image-agy: build-image-base ## Build Antigravity (agy) derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-agy OCI image..."
-	podman build -t agent-sandbox-agy:latest -f images/agents/agy/Dockerfile .
+	@echo "==> Building fleet-agy OCI image..."
+	podman build -t fleet-agy:latest -f images/agents/agy/Dockerfile .
 
 build-image-pig: build-image-base ## Build PiG (Pi in Go) derivative agent OCI image with Podman
-	@echo "==> Building agent-sandbox-pig OCI image..."
-	podman build -t agent-sandbox-pig:latest -f images/agents/pig/Dockerfile .
+	@echo "==> Building fleet-pig OCI image..."
+	podman build -t fleet-pig:latest -f images/agents/pig/Dockerfile .
 
-build-image-egress: ## Build agent-sandbox-egress OCI image with Podman
-	@echo "==> Building agent-sandbox-egress OCI image..."
-	podman build -t agent-sandbox-egress:latest -f images/egress-filter/Dockerfile .
+build-image-egress: ## Build fleet-egress OCI image with Podman
+	@echo "==> Building fleet-egress OCI image..."
+	podman build -t fleet-egress:latest -f images/egress-filter/Dockerfile .
 
 build-image-sonarqube: ## Build SonarQube Server Community Edition OCI image with Podman
-	@echo "==> Building agent-sandbox-sonarqube OCI image..."
+	@echo "==> Building fleet-sonarqube OCI image..."
 	@./scripts/build-sonarqube-image.sh
 
 clean: ## Clean build and test coverage artifacts

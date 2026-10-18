@@ -21,17 +21,19 @@ import (
 
 // Well-known image presets
 var WellKnownImages = map[string]string{
-	"base":     "agent-sandbox-base:latest",
-	"core":     "agent-sandbox-core:latest",
-	"daemon":   "agent-sandbox-daemon-base:latest",
-	"tool":     "agent-sandbox-tool-base:latest",
-	"native":   "agent-sandbox-native:latest",
-	"sndbx":    "agent-sandbox-native:latest",
-	"opencode": "agent-sandbox-opencode:latest",
-	"claude":   "agent-sandbox-claude:latest",
-	"agy":      "agent-sandbox-agy:latest",
-	"pig":      "agent-sandbox-pig:latest",
-	"egress":   "agent-sandbox-egress:latest",
+	"base":      "fleet-base:latest",
+	"core":      "fleet-core:latest",
+	"daemon":    "fleet-daemon-base:latest",
+	"tool":      "fleet-tool-base:latest",
+	"native":    "fleet-native:latest",
+	"fleet":     "fleet-native:latest",
+	"sndbx":     "fleet-native:latest",
+	"opencode":  "fleet-opencode:latest",
+	"claude":    "fleet-claude:latest",
+	"agy":       "fleet-agy:latest",
+	"pig":       "fleet-pig:latest",
+	"egress":    "fleet-egress:latest",
+	"sonarqube": "fleet-sonarqube:latest",
 }
 
 // AgentConfig holds persistent configuration for a single named agent
@@ -143,8 +145,8 @@ func NewAgentConfig(name, imageInput, role string, modelOpts ...string) (*AgentC
 		Name:          name,
 		Role:          role,
 		Image:         ResolveImage(imageInput),
-		ContainerName: fmt.Sprintf("sndbx-agent-%s", name),
-		VolumeName:    fmt.Sprintf("sndbx-agent-%s-home", name),
+		ContainerName: fmt.Sprintf("fleet-agent-%s", name),
+		VolumeName:    fmt.Sprintf("fleet-agent-%s-home", name),
 		Password:      password,
 		SigningKeyPEM: pemStr,
 		PublicKeyB64:  pubB64,

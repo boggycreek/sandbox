@@ -741,8 +741,8 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if cfg.WorkspacePath != wsDir {
 		t.Errorf("expected WorkspacePath=%q, got %q", wsDir, cfg.WorkspacePath)
 	}
-	if cfg.ContainerName != "sndbx-agent-host-coder" {
-		t.Errorf("expected ContainerName 'sndbx-agent-host-coder', got %q", cfg.ContainerName)
+	if cfg.ContainerName != "fleet-agent-host-coder" {
+		t.Errorf("expected ContainerName 'fleet-agent-host-coder', got %q", cfg.ContainerName)
 	}
 
 	// 4. Create no-container agent with --no-container
@@ -805,8 +805,8 @@ func TestHostContainerLifecycleAndWorkspaceProjection(t *testing.T) {
 	if runCmd == "" {
 		t.Fatalf("expected podman run command to be executed, executed: %v", executedCmds)
 	}
-	if !strings.Contains(runCmd, "--network agent-sandbox-infra") {
-		t.Errorf("expected --network agent-sandbox-infra in run command, got: %s", runCmd)
+	if !strings.Contains(runCmd, "--network fleet-infra") {
+		t.Errorf("expected --network fleet-infra in run command, got: %s", runCmd)
 	}
 	if !strings.Contains(runCmd, "--add-host llm-gateway:host-gateway") {
 		t.Errorf("expected --add-host in run command, got: %s", runCmd)

@@ -27,11 +27,11 @@ import (
 // infraValkeyContainer, infraForgejoContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
 // These are package-level vars so integration tests can override them with ephemeral container names.
 var (
-	infraValkeyContainer   = "agent-sandbox-valkey"
-	infraForgejoContainer  = "agent-sandbox-forgejo"
+	infraValkeyContainer   = "fleet-valkey"
+	infraForgejoContainer  = "fleet-forgejo"
 	infraGiteaContainer    = infraForgejoContainer
-	infraPostgresContainer = "agent-sandbox-postgres"
-	infraSonarContainer    = "agent-sandbox-sonarqube"
+	infraPostgresContainer = "fleet-postgres"
+	infraSonarContainer    = "fleet-sonarqube"
 )
 
 // DiagnoseAndHealInfra performs a comprehensive health check and auto-healing on shared infrastructure
@@ -119,7 +119,7 @@ func checkAndHealInfraEnv(paths config.Paths, report *DoctorReport) {
 
 func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 	healed := false
-	netName := "agent-sandbox-infra"
+	netName := "fleet-infra"
 	if err := runtime.EnsureNetwork(ctx, netName); err != nil {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:         "Bridge Network",
@@ -134,12 +134,12 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 	_ = runtime.EnsureRootlessNetNS(ctx)
 
 	for _, vol := range []string{
-		"agent-sandbox-valkey-data",
-		"agent-sandbox-forgejo-data",
-		"agent-sandbox-postgres-data",
-		"agent-sandbox-sonarqube-data",
-		"agent-sandbox-sonarqube-extensions",
-		"agent-sandbox-sonarqube-logs",
+		"fleet-valkey-data",
+		"fleet-forgejo-data",
+		"fleet-postgres-data",
+		"fleet-sonarqube-data",
+		"fleet-sonarqube-extensions",
+		"fleet-sonarqube-logs",
 	} {
 		volCmd := runtime.CommandContext(ctx, "podman", "volume", "exists", vol)
 		if err := volCmd.Run(); err != nil {

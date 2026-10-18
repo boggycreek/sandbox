@@ -87,25 +87,25 @@ func TestFleetAgentDomain(t *testing.T) {
 
 	// Create with 'as opencode'
 	code, out, _ := runFleet([]string{"agent", "create", "coder-1", "as", "opencode", "--role", "developer"})
-	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "agent-sandbox-opencode:latest") {
+	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "fleet-opencode:latest") {
 		t.Errorf("agent create as opencode failed: %s", out)
 	}
 
 	// Create with '--image claude'
 	code, out, _ = runFleet([]string{"agent", "create", "coder-2", "--image", "claude"})
-	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "agent-sandbox-claude:latest") {
+	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "fleet-claude:latest") {
 		t.Errorf("agent create --image claude failed: %s", out)
 	}
 
 	// Create with 'as pig'
 	code, out, _ = runFleet([]string{"agent", "create", "coder-pig", "as", "pig", "--role", "fuzzer"})
-	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "agent-sandbox-pig:latest") {
+	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "fleet-pig:latest") {
 		t.Errorf("agent create as pig failed: %s", out)
 	}
 
 	// Create with 'as native'
 	code, out, _ = runFleet([]string{"agent", "create", "coder-native", "as", "native", "--role", "engine"})
-	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "agent-sandbox-native:latest") {
+	if code != 0 || !strings.Contains(out, "created successfully") || !strings.Contains(out, "fleet-native:latest") {
 		t.Errorf("agent create as native failed: %s", out)
 	}
 

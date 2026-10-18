@@ -238,7 +238,7 @@ func TestStartAgentContainerWithModelAndMounts(t *testing.T) {
 		Name:          "model-agent",
 		ContainerName: "sndbx-model-agent",
 		VolumeName:    "sndbx-model-vol",
-		Image:         "agent-sandbox-base:latest",
+		Image:         "fleet-base:latest",
 		ModelURL:      "http://localhost:11434/v1",
 		ModelName:     "qwen2.5-coder:32b",
 		ModelAPIKey:   "secret-ollama-key",
@@ -292,7 +292,7 @@ func TestResolveAgentImageTiers(t *testing.T) {
 	restore1 := SetExecCommandContextForTesting(mockBase)
 	img, isLocal := ResolveAgentImage(ctx, "base")
 	restore1()
-	if img != "agent-sandbox-base:latest" || !isLocal {
+	if img != "fleet-base:latest" || !isLocal {
 		t.Errorf("expected base image local, got %s, %v", img, isLocal)
 	}
 
@@ -300,7 +300,7 @@ func TestResolveAgentImageTiers(t *testing.T) {
 	restore2 := SetExecCommandContextForTesting(mockBase)
 	img, isLocal = ResolveAgentImage(ctx, "")
 	restore2()
-	if img != "agent-sandbox-base:latest" || !isLocal {
+	if img != "fleet-base:latest" || !isLocal {
 		t.Errorf("expected empty string to resolve to base, got %s", img)
 	}
 

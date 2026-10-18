@@ -319,8 +319,8 @@ func handleAgentCreate(ctx context.Context, paths config.Paths, args []string, s
 	if isHostContainer {
 		cfg.Runtime = "host-container"
 		cfg.WorkspacePath = absPwd
-		cfg.ContainerName = fmt.Sprintf("sndbx-agent-%s", cfg.Name)
-		cfg.VolumeName = fmt.Sprintf("sndbx-agent-%s-home", cfg.Name)
+		cfg.ContainerName = fmt.Sprintf("fleet-agent-%s", cfg.Name)
+		cfg.VolumeName = fmt.Sprintf("fleet-agent-%s-home", cfg.Name)
 	} else if isNoContainer {
 		cfg.Runtime = "no-container"
 		cfg.HostOnly = true

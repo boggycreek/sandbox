@@ -23,17 +23,27 @@ import (
 )
 
 // EgressImage is the default OCI image for the network egress filter sidecar.
-const EgressImage = "agent-sandbox-egress:latest"
+const EgressImage = "fleet-egress:latest"
 
 // infraValkeyContainer, infraForgejoContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
 // These are package-level vars so tests can override them with ephemeral container names.
 var (
-	infraValkeyContainer   = "agent-sandbox-valkey"
-	infraForgejoContainer  = "agent-sandbox-forgejo"
+	infraValkeyContainer   = "fleet-valkey"
+	infraForgejoContainer  = "fleet-forgejo"
 	infraGiteaContainer    = infraForgejoContainer
-	infraPostgresContainer = "agent-sandbox-postgres"
-	infraSonarContainer    = "agent-sandbox-sonarqube"
+	infraPostgresContainer = "fleet-postgres"
+	infraSonarContainer    = "fleet-sonarqube"
+	infraNetwork           = "fleet-infra"
 )
+
+// SetInfraNetworkForTest overrides infraNetwork for unit testing.
+func SetInfraNetworkForTest(name string) func() {
+	orig := infraNetwork
+	infraNetwork = name
+	return func() {
+		infraNetwork = orig
+	}
+}
 
 // SetInfraValkeyContainerForTest overrides infraValkeyContainer for unit testing.
 func SetInfraValkeyContainerForTest(name string) func() {
@@ -107,10 +117,11 @@ func EgressContainerName(name string) string {
 	if strings.HasSuffix(clean, "-egress") {
 		return clean
 	}
-	if strings.HasPrefix(clean, "sndbx-agent-") || strings.HasPrefix(clean, "sndbx-") {
+	if strings.HasPrefix(clean, "fleet-agent-") || strings.HasPrefix(clean, "fleet-") ||
+		strings.HasPrefix(clean, "sndbx-agent-") || strings.HasPrefix(clean, "sndbx-") {
 		return clean + "-egress"
 	}
-	return fmt.Sprintf("sndbx-agent-%s-egress", clean)
+	return fmt.Sprintf("fleet-agent-%s-egress", clean)
 }
 
 // ResolveAgentImage resolves an image input according to ADR 00029:
@@ -200,7 +211,7 @@ func ClearAgentKnownHosts(name string, paths config.Paths) {
 // StartEgressFilterContainer starts or creates the companion egress filter sidecar container for an agent.
 func StartEgressFilterContainer(ctx context.Context, agentOrContainerName string) error {
 	egressName := EgressContainerName(agentOrContainerName)
-	netName := "agent-sandbox-infra"
+	netName := infraNetwork
 	_ = EnsureNetwork(ctx, netName)
 
 	// Check if container already exists
@@ -291,7 +302,7 @@ func StartAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths con
 	if cfg.IsHostContainer() {
 		return startHostAgentContainer(ctx, cfg, paths, bpHost, bpPort)
 	}
-	netName := "agent-sandbox-infra"
+	netName := infraNetwork
 	_ = EnsureNetwork(ctx, netName)
 	_ = EnsureVolume(ctx, cfg.VolumeName)
 
@@ -439,7 +450,7 @@ func startHostAgentContainer(ctx context.Context, cfg *config.AgentConfig, paths
 		return nil
 	}
 
-	netName := "agent-sandbox-infra"
+	netName := infraNetwork
 	_ = EnsureNetwork(ctx, netName)
 
 	// Build run arguments for host-connected container
@@ -554,7 +565,9 @@ func CleanAgentContainer(ctx context.Context, containerName string) error {
 	_ = StopAgentContainer(ctx, egressName)
 	_ = CommandContext(ctx, "podman", "rm", "-f", egressName).Run()
 
-	agentName := strings.TrimPrefix(containerName, "sndbx-agent-")
+	agentName := strings.TrimPrefix(containerName, "fleet-agent-")
+	agentName = strings.TrimPrefix(agentName, "fleet-")
+	agentName = strings.TrimPrefix(agentName, "sndbx-agent-")
 	agentName = strings.TrimPrefix(agentName, "sndbx-")
 	ClearAgentKnownHosts(agentName, config.GetPaths())
 	return err
@@ -641,30 +654,37 @@ func InspectAgentContainer(ctx context.Context, containerName string) (*Containe
 
 // StartInfraStack launches the shared Valkey and Gitea containers using Podman directly
 func StartInfraStack(ctx context.Context, paths config.Paths, adminPass, humanPass, humanName string) error {
-	netName := "agent-sandbox-infra"
+	netName := infraNetwork
 	if err := EnsureNetwork(ctx, netName); err != nil {
 		return fmt.Errorf("failed ensuring network %s: %w", netName, err)
 	}
 
 	// Ensure volumes
-	_ = EnsureVolume(ctx, "agent-sandbox-valkey-data")
-	_ = EnsureVolume(ctx, "agent-sandbox-valkey-config")
+	_ = EnsureVolume(ctx, "fleet-valkey-data")
+	_ = EnsureVolume(ctx, "fleet-valkey-config")
 	// Migrate legacy gitea volume if forgejo volume doesn't exist yet
-	if CommandContext(ctx, "podman", "volume", "exists", "agent-sandbox-forgejo-data").Run() != nil {
-		if CommandContext(ctx, "podman", "volume", "exists", "agent-sandbox-gitea-data").Run() == nil {
-			_ = CommandContext(ctx, "podman", "volume", "create", "agent-sandbox-forgejo-data").Run()
+	if CommandContext(ctx, "podman", "volume", "exists", "fleet-forgejo-data").Run() != nil {
+		if CommandContext(ctx, "podman", "volume", "exists", "agent-sandbox-forgejo-data").Run() == nil {
+			_ = CommandContext(ctx, "podman", "volume", "create", "fleet-forgejo-data").Run()
+			_ = CommandContext(ctx, "podman", "run", "--rm",
+				"-v", "agent-sandbox-forgejo-data:/src:z",
+				"-v", "fleet-forgejo-data:/dst:z",
+				"codeberg.org/forgejo/forgejo:9-rootless",
+				"cp", "-a", "/src/.", "/dst/").Run()
+		} else if CommandContext(ctx, "podman", "volume", "exists", "agent-sandbox-gitea-data").Run() == nil {
+			_ = CommandContext(ctx, "podman", "volume", "create", "fleet-forgejo-data").Run()
 			_ = CommandContext(ctx, "podman", "run", "--rm",
 				"-v", "agent-sandbox-gitea-data:/src:z",
-				"-v", "agent-sandbox-forgejo-data:/dst:z",
+				"-v", "fleet-forgejo-data:/dst:z",
 				"codeberg.org/forgejo/forgejo:9-rootless",
 				"cp", "-a", "/src/.", "/dst/").Run()
 		}
 	}
-	_ = EnsureVolume(ctx, "agent-sandbox-forgejo-data")
-	_ = EnsureVolume(ctx, "agent-sandbox-postgres-data")
-	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-data")
-	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-extensions")
-	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-logs")
+	_ = EnsureVolume(ctx, "fleet-forgejo-data")
+	_ = EnsureVolume(ctx, "fleet-postgres-data")
+	_ = EnsureVolume(ctx, "fleet-sonarqube-data")
+	_ = EnsureVolume(ctx, "fleet-sonarqube-extensions")
+	_ = EnsureVolume(ctx, "fleet-sonarqube-logs")
 
 	// Render Valkey ACL in config directory
 	valkeyConfigDir := filepath.Join(paths.DataHome, "valkey")
@@ -691,8 +711,8 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 
 	// 1. Start Valkey container if not already running
 	valkeyContainer := infraValkeyContainer
-	valkeyVol := "agent-sandbox-valkey-data"
-	if valkeyContainer != "agent-sandbox-valkey" {
+	valkeyVol := "fleet-valkey-data"
+	if valkeyContainer != "fleet-valkey" {
 		valkeyVol = valkeyContainer + "-data"
 	}
 	_ = EnsureVolume(ctx, valkeyVol)
@@ -761,8 +781,8 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 
 	// 2. Start Forgejo container if not already running
 	forgejoContainer := infraForgejoContainer
-	forgejoVol := "agent-sandbox-forgejo-data"
-	if forgejoContainer != "agent-sandbox-forgejo" {
+	forgejoVol := "fleet-forgejo-data"
+	if forgejoContainer != "fleet-forgejo" {
 		forgejoVol = forgejoContainer + "-data"
 		_ = EnsureVolume(ctx, forgejoVol)
 	}
@@ -831,7 +851,7 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"-e", "POSTGRES_USER=sonar",
 		"-e", "POSTGRES_PASSWORD=sonar",
 		"-e", "POSTGRES_DB=sonar",
-		"-v", "agent-sandbox-postgres-data:/var/lib/postgresql/data:z",
+		"-v", "fleet-postgres-data:/var/lib/postgresql/data:z",
 		"docker.io/library/postgres:16-alpine",
 	}
 
@@ -874,13 +894,13 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		"-e", "SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonar",
 		"-e", "SONAR_JDBC_USERNAME=sonar",
 		"-e", "SONAR_JDBC_PASSWORD=sonar",
-		"-v", "agent-sandbox-sonarqube-data:/opt/sonarqube/data:z",
-		"-v", "agent-sandbox-sonarqube-extensions:/opt/sonarqube/extensions:z",
-		"-v", "agent-sandbox-sonarqube-logs:/opt/sonarqube/logs:z",
-		"agent-sandbox-sonarqube:latest",
+		"-v", "fleet-sonarqube-data:/opt/sonarqube/data:z",
+		"-v", "fleet-sonarqube-extensions:/opt/sonarqube/extensions:z",
+		"-v", "fleet-sonarqube-logs:/opt/sonarqube/logs:z",
+		"fleet-sonarqube:latest",
 	}
 
-	checkSonarImg := CommandContext(ctx, "podman", "image", "exists", "agent-sandbox-sonarqube:latest")
+	checkSonarImg := CommandContext(ctx, "podman", "image", "exists", "fleet-sonarqube:latest")
 	if checkSonarImg.Run() == nil {
 		checkSonar := CommandContext(ctx, "podman", "container", "exists", sonarContainer)
 		if err := checkSonar.Run(); err != nil {
@@ -1183,14 +1203,14 @@ func SyncSSHConfigFile(ctx context.Context, paths config.Paths) error {
 
 // RecreateValkeyContainer stops, removes, and recreates the shared Valkey container with updated ACL and volume mounts.
 func RecreateValkeyContainer(ctx context.Context, paths config.Paths, adminPass, humanPass, humanName string) error {
-	netName := "agent-sandbox-infra"
+	netName := infraNetwork
 	if err := EnsureNetwork(ctx, netName); err != nil {
 		return fmt.Errorf("failed ensuring network %s: %w", netName, err)
 	}
 
 	valkeyContainer := infraValkeyContainer
-	valkeyVol := "agent-sandbox-valkey-data"
-	if valkeyContainer != "agent-sandbox-valkey" {
+	valkeyVol := "fleet-valkey-data"
+	if valkeyContainer != "fleet-valkey" {
 		valkeyVol = valkeyContainer + "-data"
 	}
 	_ = EnsureVolume(ctx, valkeyVol)

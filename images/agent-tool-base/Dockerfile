@@ -1,6 +1,6 @@
 # Interactive Tool Base OCI Image (ADR 00043)
-# Extends agent-sandbox-core with foreground interactive tool execution
-FROM agent-sandbox-core:latest
+# Extends fleet-core with foreground interactive tool execution
+FROM fleet-core:latest
 
 USER root
 

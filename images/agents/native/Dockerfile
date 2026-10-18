@@ -16,8 +16,8 @@ COPY mcp/ ./mcp/
 COPY sandbox/ ./sandbox/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/fleet-agent ./agent/cmd/fleet-agent
 
-# Stage 2: Native Agent OCI Image based on agent-sandbox-daemon-base
-FROM agent-sandbox-daemon-base:latest
+# Stage 2: Native Agent OCI Image based on fleet-daemon-base
+FROM fleet-daemon-base:latest
 
 USER root
 

@@ -132,7 +132,7 @@ func TestStructuredRootlessNetnsErrorDetection(t *testing.T) {
 		{
 			name: "network not found",
 			err:  errors.New("exit status 125"),
-			out:  "Error: network not found: agent-sandbox-infra",
+			out:  "Error: network not found: fleet-infra",
 		},
 		{
 			name: "generic io error",

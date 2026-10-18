@@ -28,31 +28,37 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	}
 
 	// 1. Resolve image
-	if img := ResolveImage("native"); img != "agent-sandbox-native:latest" {
+	if img := ResolveImage("native"); img != "fleet-native:latest" {
 		t.Errorf("expected native preset image, got %s", img)
 	}
-	if img := ResolveImage("sndbx"); img != "agent-sandbox-native:latest" {
+	if img := ResolveImage("fleet"); img != "fleet-native:latest" {
+		t.Errorf("expected fleet preset image, got %s", img)
+	}
+	if img := ResolveImage("sndbx"); img != "fleet-native:latest" {
 		t.Errorf("expected sndbx preset image, got %s", img)
 	}
-	if img := ResolveImage("opencode"); img != "agent-sandbox-opencode:latest" {
+	if img := ResolveImage("opencode"); img != "fleet-opencode:latest" {
 		t.Errorf("expected opencode preset image, got %s", img)
 	}
-	if img := ResolveImage("claude"); img != "agent-sandbox-claude:latest" {
+	if img := ResolveImage("claude"); img != "fleet-claude:latest" {
 		t.Errorf("expected claude preset image, got %s", img)
 	}
-	if img := ResolveImage("agy"); img != "agent-sandbox-agy:latest" {
+	if img := ResolveImage("agy"); img != "fleet-agy:latest" {
 		t.Errorf("expected agy preset image, got %s", img)
 	}
-	if img := ResolveImage("pig"); img != "agent-sandbox-pig:latest" {
+	if img := ResolveImage("pig"); img != "fleet-pig:latest" {
 		t.Errorf("expected pig preset image, got %s", img)
 	}
-	if img := ResolveImage("egress"); img != "agent-sandbox-egress:latest" {
+	if img := ResolveImage("egress"); img != "fleet-egress:latest" {
 		t.Errorf("expected egress preset image, got %s", img)
+	}
+	if img := ResolveImage("sonarqube"); img != "fleet-sonarqube:latest" {
+		t.Errorf("expected sonarqube preset image, got %s", img)
 	}
 	if img := ResolveImage("custom/image:tag"); img != "custom/image:tag" {
 		t.Errorf("expected custom image passthrough, got %s", img)
 	}
-	if img := ResolveImage(""); img != "agent-sandbox-base:latest" {
+	if img := ResolveImage(""); img != "fleet-base:latest" {
 		t.Errorf("expected default base image, got %s", img)
 	}
 
@@ -128,14 +134,14 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	}
 
 	// New image presets
-	if img := ResolveImage("core"); img != "agent-sandbox-core:latest" {
-		t.Errorf("expected core preset to resolve to agent-sandbox-core:latest, got %q", img)
+	if img := ResolveImage("core"); img != "fleet-core:latest" {
+		t.Errorf("expected core preset to resolve to fleet-core:latest, got %q", img)
 	}
-	if img := ResolveImage("daemon"); img != "agent-sandbox-daemon-base:latest" {
-		t.Errorf("expected daemon preset to resolve to agent-sandbox-daemon-base:latest, got %q", img)
+	if img := ResolveImage("daemon"); img != "fleet-daemon-base:latest" {
+		t.Errorf("expected daemon preset to resolve to fleet-daemon-base:latest, got %q", img)
 	}
-	if img := ResolveImage("tool"); img != "agent-sandbox-tool-base:latest" {
-		t.Errorf("expected tool preset to resolve to agent-sandbox-tool-base:latest, got %q", img)
+	if img := ResolveImage("tool"); img != "fleet-tool-base:latest" {
+		t.Errorf("expected tool preset to resolve to fleet-tool-base:latest, got %q", img)
 	}
 
 	// 5. Delete agent
@@ -154,7 +160,7 @@ func TestPathsAndAgentConfig(t *testing.T) {
 	}
 
 	// 7. Whitespace in ResolveImage defaults to base
-	if img := ResolveImage("   \t\n"); img != "agent-sandbox-base:latest" {
+	if img := ResolveImage("   \t\n"); img != "fleet-base:latest" {
 		t.Errorf("expected whitespace to resolve to base image, got %q", img)
 	}
 

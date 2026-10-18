@@ -1,5 +1,5 @@
 # Autonomous Fleet Base OCI Image (ADR 00043)
-# Extends agent-sandbox-core with bpd supervisor, unprivileged OpenSSH, and tmux
+# Extends fleet-core with bpd supervisor, unprivileged OpenSSH, and tmux
 FROM docker.io/library/golang:1.27-bookworm AS builder
 WORKDIR /src
 COPY go.work ./
@@ -9,7 +9,7 @@ COPY mcp/ ./mcp/
 COPY sandbox/ ./sandbox/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bpd ./backplane/cmd/bpd
 
-FROM agent-sandbox-core:latest
+FROM fleet-core:latest
 
 USER root
 
