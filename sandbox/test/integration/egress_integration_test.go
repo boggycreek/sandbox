@@ -90,7 +90,7 @@ func TestEgressFilterInternalDNSAndTraffic(t *testing.T) {
 
 	// 4. Verify internal DNS resolution for internal infrastructure hostnames
 	t.Log("Verifying internal DNS resolution through egress filter...")
-	internalHostnames := []string{"valkey", "gitea", "forgejo", "sonarqube"}
+	internalHostnames := []string{"valkey", "forgejo", "sonarqube"}
 	for _, host := range internalHostnames {
 		out, err := runInNetns("nslookup", host, "127.0.0.1")
 		if err != nil {
@@ -108,12 +108,9 @@ func TestEgressFilterInternalDNSAndTraffic(t *testing.T) {
 	if out, err := runInNetns("nc", "-z", "-w", "3", "valkey", "6379"); err != nil {
 		t.Errorf("failed connecting to valkey:6379 from egress netns: %v (%s)", err, out)
 	}
-	// Forgejo/Gitea port 3000
+	// Forgejo port 3000
 	if out, err := runInNetns("nc", "-z", "-w", "3", "forgejo", "3000"); err != nil {
 		t.Errorf("failed connecting to forgejo:3000 from egress netns: %v (%s)", err, out)
-	}
-	if out, err := runInNetns("nc", "-z", "-w", "3", "gitea", "3000"); err != nil {
-		t.Errorf("failed connecting to gitea:3000 from egress netns: %v (%s)", err, out)
 	}
 	// SonarQube port 9000
 	if out, err := runInNetns("nc", "-z", "-w", "3", "sonarqube", "9000"); err != nil {
