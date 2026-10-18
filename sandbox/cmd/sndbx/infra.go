@@ -32,7 +32,7 @@ func handleInfra(ctx context.Context, paths config.Paths, args []string, stdout,
 		fmt.Fprintf(stdout, `Usage: %s infra <command>
 
 Commands:
-  up      Start shared Valkey, Gitea, and PostgreSQL services via Podman Compose
+  up      Start shared Valkey, Forgejo, and PostgreSQL services via Podman Compose
   down    Stop shared infrastructure services
   list    Show status of running infrastructure containers
   info    Display connection strings and web URLs for all shared infrastructure
@@ -41,7 +41,7 @@ Commands:
 		return 0
 
 	case "up":
-		fmt.Fprintln(stdout, "Starting shared infrastructure (Valkey, Gitea & PostgreSQL)...")
+		fmt.Fprintln(stdout, "Starting shared infrastructure (Valkey, Forgejo & PostgreSQL)...")
 		adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 		humanPass := os.Getenv("HUMAN_BACKPLANE_PASSWORD")
 		humanName := os.Getenv("HUMAN_NAME")

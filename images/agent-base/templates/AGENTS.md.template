@@ -20,6 +20,6 @@ For details on platform tools, services, and communication, refer to `/home/agen
 - **Environment & Storage**: `/home/agent/doc/ENVIRONMENT.md` (Workspace: `/home/agent/workspace`)
 - **Fleet Messaging**: `/home/agent/doc/BACKPLANE.md` (`bp say`, `bp tell`, `bp recv`, `bp peers`)
 - **Fleet Task Tracking**: `/home/agent/doc/BEADS.md` (`~/tasks`, `bd ready`)
-- **Local Git Forge**: `/home/agent/doc/GITEA.md` (`http://gitea:3000`)
+- **Local Git Forge**: `/home/agent/doc/FORGEJO.md` (`http://forgejo:3000`)
 - **Local Model Gateway**: `/home/agent/doc/LLM_GATEWAY.md` (`http://llm-gateway:<port>/v1`)
 - **Code Quality**: `/home/agent/doc/SONARQUBE.md` (`http://sonarqube:9000`)

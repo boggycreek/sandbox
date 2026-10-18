@@ -20,7 +20,7 @@ agent-sandbox/
 │   └── libbp-c/            # C-shared library wrapper (libbp.so / libbp.dylib)
 ├── pkg/
 │   ├── config/             # Agent configuration, XDG paths, and .env loader
-│   ├── gitea/              # Gitea REST API client (user, key, org, repo management)
+│   ├── forgejo/            # Forgejo REST API client (user, key, org, repo management)
 │   ├── libbp/              # Core backplane client, Valkey protocol, Ed25519 signing
 │   │   └── resp/           # Custom high-performance Valkey/Redis RESP protocol parser
 │   └── runtime/            # Podman container runtime, networks, infra orchestration
@@ -80,11 +80,11 @@ Installed to `~/.local/bin/sndbx`, provides host-side management:
   - `sndbx agent list [--json]`: Lists all agents, container status (or HOST), and dynamic SSH ports.
   - `sndbx agent stop [name] [--all]`: Stops agent containers.
   - `sndbx agent clean <name>`: Removes container while preserving home volume.
-  - `sndbx agent retire <name> [--force]`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Gitea account.
+  - `sndbx agent retire <name> [--force]`: Fully deprovisions agent across container, volumes, secrets, Valkey ACLs/streams, and Forgejo account.
 - **Shared Infrastructure**:
-  - `sndbx infra up`: Starts shared Valkey 8 (`agent-sandbox-valkey`) and Gitea 1.22 (`agent-sandbox-gitea`) containers on the `agent-sandbox-infra` bridge network.
+  - `sndbx infra up`: Starts shared Valkey 8 (`agent-sandbox-valkey`) and Forgejo 9 (`agent-sandbox-forgejo`) containers on the `agent-sandbox-infra` bridge network.
   - `sndbx infra list`: Inspects runtime status and ports.
-  - `sndbx infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Gitea repos, and auto-heals defects.
+  - `sndbx infra doctor`: Diagnoses shared infrastructure networks, volumes, Valkey ACLs, Forgejo repos, and auto-heals defects.
   - `sndbx infra down`: Halts infrastructure containers.
 - **IDE Plugins & Integration**:
   - `sndbx plugin add <gateway|toolbox|vscode>`: Installs and configures IDE plugin / SSH integration.
@@ -114,7 +114,7 @@ Cross-agent communication bus built on Valkey/Redis Streams:
   - Valkey ACLs isolate agent access (`~<name>:*` read/write, `~*:inbox` write-only).
   - Profiles are stateless and thread-safe via `--profile <name>` flag or `BP_PROFILE=<name>` env.
 
-### 3. Local Gitea Forge (`pkg/gitea`)
+### 3. Local Forgejo Forge (`pkg/forgejo`)
 - Automated user creation, public SSH key registration, and `fleet` organization membership on `sndbx agent create`.
 - Pre-seeded repositories: `fleet/tools.git` (shared tools) and `fleet/tasks.git` (task tracking via `bd`).
 

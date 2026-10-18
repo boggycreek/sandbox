@@ -19,16 +19,17 @@ import (
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
-// infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
+// infraValkeyContainer, infraForgejoContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
 // These are package-level vars so integration tests can override them with ephemeral container names.
 var (
 	infraValkeyContainer   = "agent-sandbox-valkey"
-	infraGiteaContainer    = "agent-sandbox-gitea"
+	infraForgejoContainer  = "agent-sandbox-forgejo"
+	infraGiteaContainer    = infraForgejoContainer
 	infraPostgresContainer = "agent-sandbox-postgres"
 	infraSonarContainer    = "agent-sandbox-sonarqube"
 )
@@ -51,8 +52,8 @@ func DiagnoseAndHealInfra(ctx context.Context, paths config.Paths) (*DoctorRepor
 	// 4. Valkey Backplane Container & Service
 	checkAndHealValkeyContainer(ctx, paths, report)
 
-	// 5. Gitea Git Forge Container & Service
-	checkAndHealGiteaContainer(ctx, paths, report)
+	// 5. Forgejo Git Forge Container & Service
+	checkAndHealForgejoContainer(ctx, paths, report)
 
 	// 6. PostgreSQL Relational Database Container & Service
 	checkAndHealPostgresContainer(ctx, report)
@@ -134,7 +135,7 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 
 	for _, vol := range []string{
 		"agent-sandbox-valkey-data",
-		"agent-sandbox-gitea-data",
+		"agent-sandbox-forgejo-data",
 		"agent-sandbox-postgres-data",
 		"agent-sandbox-sonarqube-data",
 		"agent-sandbox-sonarqube-extensions",
@@ -160,7 +161,7 @@ func checkAndHealInfraStorage(ctx context.Context, report *DoctorReport) {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Infrastructure Storage",
 			Status:  StatusOK,
-			Message: "Bridge network and data volumes (valkey-data, gitea-data, postgres-data, sonarqube-data) present",
+			Message: "Bridge network and data volumes (valkey-data, forgejo-data, postgres-data, sonarqube-data) present",
 		})
 	}
 }
@@ -324,44 +325,61 @@ func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report
 	})
 }
 
-func checkAndHealGiteaContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {
-	containerName := "agent-sandbox-gitea"
+func checkAndHealForgejoContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {
+	containerName := infraForgejoContainer
 	info, err := runtime.InspectAgentContainer(ctx, containerName)
 	state := "stopped"
 	if err == nil && info != nil {
 		state = info.State
 	}
 
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
 	}
 
-	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	adminPass := os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = os.Getenv("GITEA_ADMIN_PASSWORD")
+	}
+	if adminPass == "" {
+		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	}
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
 	}
 
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
+	}
+
 	httpClient := &http.Client{Timeout: 1 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx, "GET", giteaURL+"/api/v1/version", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", forgejoURL+"/api/v1/version", nil)
 	resp, err := httpClient.Do(req)
 	if err != nil || (resp != nil && resp.StatusCode >= 500) {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
 		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Gitea Service",
+			Name:    "Forgejo Service",
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("Gitea container is %s (start via `sndbx infra up`)", state),
+			Message: fmt.Sprintf("Forgejo container is %s (start via `sndbx infra up`)", state),
 		})
 		report.WarningCount++
 		return
 	}
 	_ = resp.Body.Close()
 
-	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	client := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: adminUser,
 		AdminPass: adminPass,
 		Timeout:   2 * time.Second,
 	})
@@ -371,10 +389,14 @@ func checkAndHealGiteaContainer(ctx context.Context, paths config.Paths, report 
 	_ = client.EnsureRepo(ctx, "fleet", "tasks", "Fleet shared task tracking backlog", true)
 
 	report.Checks = append(report.Checks, CheckItem{
-		Name:    "Gitea Service",
+		Name:    "Forgejo Service",
 		Status:  StatusOK,
-		Message: fmt.Sprintf("Container %s, HTTP %s responsive, admin account & fleet repositories verified", state, giteaURL),
+		Message: fmt.Sprintf("Container %s, HTTP %s responsive, admin account & fleet repositories verified", state, forgejoURL),
 	})
+}
+
+func checkAndHealGiteaContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {
+	checkAndHealForgejoContainer(ctx, paths, report)
 }
 
 func checkAndHealSonarContainer(ctx context.Context, paths config.Paths, report *DoctorReport) {

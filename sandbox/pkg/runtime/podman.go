@@ -18,18 +18,19 @@ import (
 	"time"
 
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
 
 // EgressImage is the default OCI image for the network egress filter sidecar.
 const EgressImage = "agent-sandbox-egress:latest"
 
-// infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
+// infraValkeyContainer, infraForgejoContainer, infraPostgresContainer, and infraSonarContainer are the expected shared infra container names.
 // These are package-level vars so tests can override them with ephemeral container names.
 var (
 	infraValkeyContainer   = "agent-sandbox-valkey"
-	infraGiteaContainer    = "agent-sandbox-gitea"
+	infraForgejoContainer  = "agent-sandbox-forgejo"
+	infraGiteaContainer    = infraForgejoContainer
 	infraPostgresContainer = "agent-sandbox-postgres"
 	infraSonarContainer    = "agent-sandbox-sonarqube"
 )
@@ -49,6 +50,18 @@ func SetInfraSonarContainerForTest(name string) func() {
 	infraSonarContainer = name
 	return func() {
 		infraSonarContainer = orig
+	}
+}
+
+// SetInfraForgejoContainerForTest overrides infraForgejoContainer for unit testing.
+func SetInfraForgejoContainerForTest(name string) func() {
+	orig := infraForgejoContainer
+	origGitea := infraGiteaContainer
+	infraForgejoContainer = name
+	infraGiteaContainer = name
+	return func() {
+		infraForgejoContainer = orig
+		infraGiteaContainer = origGitea
 	}
 }
 
@@ -636,7 +649,18 @@ func StartInfraStack(ctx context.Context, paths config.Paths, adminPass, humanPa
 	// Ensure volumes
 	_ = EnsureVolume(ctx, "agent-sandbox-valkey-data")
 	_ = EnsureVolume(ctx, "agent-sandbox-valkey-config")
-	_ = EnsureVolume(ctx, "agent-sandbox-gitea-data")
+	// Migrate legacy gitea volume if forgejo volume doesn't exist yet
+	if CommandContext(ctx, "podman", "volume", "exists", "agent-sandbox-forgejo-data").Run() != nil {
+		if CommandContext(ctx, "podman", "volume", "exists", "agent-sandbox-gitea-data").Run() == nil {
+			_ = CommandContext(ctx, "podman", "volume", "create", "agent-sandbox-forgejo-data").Run()
+			_ = CommandContext(ctx, "podman", "run", "--rm",
+				"-v", "agent-sandbox-gitea-data:/src:z",
+				"-v", "agent-sandbox-forgejo-data:/dst:z",
+				"codeberg.org/forgejo/forgejo:9-rootless",
+				"cp", "-a", "/src/.", "/dst/").Run()
+		}
+	}
+	_ = EnsureVolume(ctx, "agent-sandbox-forgejo-data")
 	_ = EnsureVolume(ctx, "agent-sandbox-postgres-data")
 	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-data")
 	_ = EnsureVolume(ctx, "agent-sandbox-sonarqube-extensions")
@@ -735,59 +759,66 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 		}
 	}
 
-	// 2. Start Gitea container if not already running
-	giteaContainer := infraGiteaContainer
-	giteaArgs := []string{
+	// 2. Start Forgejo container if not already running
+	forgejoContainer := infraForgejoContainer
+	forgejoVol := "agent-sandbox-forgejo-data"
+	if forgejoContainer != "agent-sandbox-forgejo" {
+		forgejoVol = forgejoContainer + "-data"
+		_ = EnsureVolume(ctx, forgejoVol)
+	}
+	forgejoArgs := []string{
 		"run", "-d",
-		"--name", giteaContainer,
-		"--hostname", "gitea",
+		"--name", forgejoContainer,
+		"--hostname", "forgejo",
 		"--network", netName,
+		"--network-alias", "forgejo",
+		"--network-alias", "gitea",
 		"-p", "127.0.0.1:3000:3000",
 		"-p", "127.0.0.1:2223:2222",
-		"-e", "GITEA__server__DOMAIN=gitea",
-		"-e", "GITEA__server__HTTP_PORT=3000",
-		"-e", "GITEA__server__ROOT_URL=http://gitea:3000/",
-		"-e", "GITEA__server__SSH_PORT=2222",
-		"-e", "GITEA__server__SSH_LISTEN_PORT=2222",
-		"-e", "GITEA__database__DB_TYPE=sqlite3",
-		"-e", "GITEA__database__PATH=/var/lib/gitea/data/gitea.db",
-		"-e", "GITEA__service__DISABLE_REGISTRATION=false",
-		"-e", "GITEA__service__REQUIRE_SIGNIN_VIEW=false",
-		"-e", "GITEA__security__INSTALL_LOCK=true",
-		"-v", "agent-sandbox-gitea-data:/var/lib/gitea:z",
-		"docker.io/gitea/gitea:1.22-rootless",
+		"-e", "FORGEJO__server__DOMAIN=forgejo",
+		"-e", "FORGEJO__server__HTTP_PORT=3000",
+		"-e", "FORGEJO__server__ROOT_URL=http://forgejo:3000/",
+		"-e", "FORGEJO__server__SSH_PORT=2222",
+		"-e", "FORGEJO__server__SSH_LISTEN_PORT=2222",
+		"-e", "FORGEJO__database__DB_TYPE=sqlite3",
+		"-e", "FORGEJO__database__PATH=/var/lib/gitea/data/gitea.db",
+		"-e", "FORGEJO__service__DISABLE_REGISTRATION=false",
+		"-e", "FORGEJO__service__REQUIRE_SIGNIN_VIEW=false",
+		"-e", "FORGEJO__security__INSTALL_LOCK=true",
+		"-v", fmt.Sprintf("%s:/var/lib/gitea:z", forgejoVol),
+		"codeberg.org/forgejo/forgejo:9-rootless",
 	}
 
-	checkGitea := CommandContext(ctx, "podman", "container", "exists", giteaContainer)
-	if err := checkGitea.Run(); err != nil {
-		cmd := CommandContext(ctx, "podman", giteaArgs...)
+	checkForgejo := CommandContext(ctx, "podman", "container", "exists", forgejoContainer)
+	if err := checkForgejo.Run(); err != nil {
+		cmd := CommandContext(ctx, "podman", forgejoArgs...)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			if IsRootlessNetnsError(err, out) {
 				_ = EnsureRootlessNetNS(ctx)
-				retryCmd := CommandContext(ctx, "podman", giteaArgs...)
+				retryCmd := CommandContext(ctx, "podman", forgejoArgs...)
 				if retryOut, retryErr := retryCmd.CombinedOutput(); retryErr != nil {
-					return fmt.Errorf("failed starting gitea container: %v (%s)", retryErr, string(retryOut))
+					return fmt.Errorf("failed starting forgejo container: %v (%s)", retryErr, string(retryOut))
 				}
 			} else {
-				return fmt.Errorf("failed starting gitea container: %v (%s)", err, string(out))
+				return fmt.Errorf("failed starting forgejo container: %v (%s)", err, string(out))
 			}
 		}
 	} else {
-		startCmd := CommandContext(ctx, "podman", "start", giteaContainer)
+		startCmd := CommandContext(ctx, "podman", "start", forgejoContainer)
 		if startOut, err := startCmd.CombinedOutput(); err != nil {
-			_ = CommandContext(ctx, "podman", "rm", "-f", giteaContainer).Run()
+			_ = CommandContext(ctx, "podman", "rm", "-f", forgejoContainer).Run()
 			if IsRootlessNetnsError(err, startOut) {
 				_ = EnsureRootlessNetNS(ctx)
 			}
-			cmd := CommandContext(ctx, "podman", giteaArgs...)
+			cmd := CommandContext(ctx, "podman", forgejoArgs...)
 			if out, err := cmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("failed restarting gitea container: %v (%s)", err, string(out))
+				return fmt.Errorf("failed restarting forgejo container: %v (%s)", err, string(out))
 			}
 		}
 	}
 
-	// 3. Bootstrap Gitea admin user and default fleet organization
-	_ = BootstrapGitea(ctx, adminPass)
+	// 3. Bootstrap Forgejo admin user and default fleet organization
+	_ = BootstrapForgejo(ctx, adminPass)
 
 	// 4. Start PostgreSQL container if not already running
 	postgresContainer := infraPostgresContainer
@@ -884,23 +915,40 @@ user %s on >%s ~%s:* ~human:name ~liaison:current ~poll-interval ~identity:* %%R
 	return nil
 }
 
-// BootstrapGitea initializes the admin user, default organization, and standard repositories in Gitea
-func BootstrapGitea(ctx context.Context, adminPass string) error {
+// BootstrapForgejo initializes the admin user, default organization, and standard repositories in Forgejo
+func BootstrapForgejo(ctx context.Context, adminPass string) error {
+	if adminPass == "" {
+		adminPass = os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	}
+	if adminPass == "" {
+		adminPass = os.Getenv("GITEA_ADMIN_PASSWORD")
+	}
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
 	}
 
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
 	}
 
-	// Wait up to 10 seconds for Gitea HTTP service to become responsive
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
+	}
+
+	// Wait up to 10 seconds for Forgejo HTTP service to become responsive
 	httpClient := &http.Client{Timeout: 1 * time.Second}
 	deadline := time.Now().Add(10 * time.Second)
 	ready := false
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaURL+"/api/v1/version", nil)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, forgejoURL+"/api/v1/version", nil)
 		resp, err := httpClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
@@ -917,33 +965,51 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 		}
 	}
 	if !ready {
-		return fmt.Errorf("timed out waiting for gitea service")
+		return fmt.Errorf("timed out waiting for forgejo service")
 	}
 
-	// Ensure admin user via container CLI
-	createAdminCmd := CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
-		"gitea", "admin", "user", "create",
+	// Ensure admin user via container CLI (using forgejo CLI, fallback to gitea CLI if needed)
+	createAdminCmd := CommandContext(ctx, "podman", "exec", infraForgejoContainer,
+		"forgejo", "admin", "user", "create",
 		"--admin",
-		"--username", "giteaadmin",
+		"--username", adminUser,
 		"--password", adminPass,
-		"--email", "giteaadmin@local.sndbx",
+		"--email", fmt.Sprintf("%s@local.sndbx", adminUser),
 		"--must-change-password=false",
 	)
 	_ = createAdminCmd.Run()
 
 	// Ensure password is sync'd in case user already existed with different password
-	changePassCmd := CommandContext(ctx, "podman", "exec", "agent-sandbox-gitea",
-		"gitea", "admin", "user", "change-password",
-		"--username", "giteaadmin",
+	changePassCmd := CommandContext(ctx, "podman", "exec", infraForgejoContainer,
+		"forgejo", "admin", "user", "change-password",
+		"--username", adminUser,
 		"--password", adminPass,
 		"--must-change-password=false",
 	)
 	_ = changePassCmd.Run()
 
+	// Also ensure legacy admin 'giteaadmin' has access if migrating
+	if adminUser != "giteaadmin" {
+		_ = CommandContext(ctx, "podman", "exec", infraForgejoContainer,
+			"forgejo", "admin", "user", "create",
+			"--admin",
+			"--username", "giteaadmin",
+			"--password", adminPass,
+			"--email", "giteaadmin@local.sndbx",
+			"--must-change-password=false",
+		).Run()
+		_ = CommandContext(ctx, "podman", "exec", infraForgejoContainer,
+			"forgejo", "admin", "user", "change-password",
+			"--username", "giteaadmin",
+			"--password", adminPass,
+			"--must-change-password=false",
+		).Run()
+	}
+
 	// Ensure fleet organization and repos via API
-	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	client := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: adminUser,
 		AdminPass: adminPass,
 		Timeout:   3 * time.Second,
 	})
@@ -953,6 +1019,11 @@ func BootstrapGitea(ctx context.Context, adminPass string) error {
 	_ = client.EnsureRepo(ctx, "fleet", "tasks", "Fleet task tracking backlog", true)
 
 	return nil
+}
+
+// BootstrapGitea aliases BootstrapForgejo for backward compatibility.
+func BootstrapGitea(ctx context.Context, adminPass string) error {
+	return BootstrapForgejo(ctx, adminPass)
 }
 
 // BootstrapSonar transitions SonarQube default credentials and ensures the admin user is configured.
@@ -1030,15 +1101,16 @@ func BootstrapSonar(ctx context.Context, adminPass string) error {
 // StopInfraStack halts shared infrastructure containers
 func StopInfraStack(ctx context.Context) error {
 	_ = CommandContext(ctx, "podman", "stop", infraValkeyContainer).Run()
-	_ = CommandContext(ctx, "podman", "stop", infraGiteaContainer).Run()
+	_ = CommandContext(ctx, "podman", "stop", infraForgejoContainer).Run()
+	_ = CommandContext(ctx, "podman", "stop", "agent-sandbox-gitea").Run()
 	_ = CommandContext(ctx, "podman", "stop", infraPostgresContainer).Run()
 	_ = CommandContext(ctx, "podman", "stop", infraSonarContainer).Run()
 	return nil
 }
 
-// InspectInfraStack returns the runtime state of Valkey, Gitea, PostgreSQL, and SonarQube containers
+// InspectInfraStack returns the runtime state of Valkey, Forgejo, PostgreSQL, and SonarQube containers
 func InspectInfraStack(ctx context.Context) ([]ContainerInfo, error) {
-	containers := []string{infraValkeyContainer, infraGiteaContainer, infraPostgresContainer, infraSonarContainer}
+	containers := []string{infraValkeyContainer, infraForgejoContainer, infraPostgresContainer, infraSonarContainer}
 	var results []ContainerInfo
 	for _, c := range containers {
 		info, err := InspectAgentContainer(ctx, c)

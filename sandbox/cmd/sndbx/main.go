@@ -110,8 +110,8 @@ Usage:
 
 Domains:
   agent       Manage agent instance provisioning and container lifecycles
-  project     Manage and link Gitea repositories and SonarQube projects
-  infra       Manage shared Valkey, Gitea, and PostgreSQL infrastructure
+  project     Manage and link Forgejo repositories and SonarQube projects
+  infra       Manage shared Valkey, Forgejo, and PostgreSQL infrastructure
   plugin      Install and manage IDE plugins (JetBrains Gateway/Toolbox, VS Code)
   gui         Launch native desktop Backplane GUI client
 
@@ -135,7 +135,7 @@ Project Commands:
   %s project create <name> [--org <org>] [--key <key>] [--description <desc>]
   %s project list [--json]
   %s project doctor [name] [--org <org>]
-  %s project link <gitea-repo> [sonar-project]
+  %s project link <forgejo-repo> [sonar-project]
   %s project delete <name> [--org <org>] [--force]
 
 Infra Commands:

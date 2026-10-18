@@ -19,27 +19,30 @@ services:
     networks:
       - agent-sandbox-infra
 
-  gitea:
-    image: gitea/gitea:1.22-rootless
-    container_name: agent-sandbox-gitea
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:9-rootless
+    container_name: agent-sandbox-forgejo
     restart: unless-stopped
     environment:
-      - GITEA__server__DOMAIN=gitea
-      - GITEA__server__HTTP_PORT=3000
-      - GITEA__server__ROOT_URL=http://gitea:3000/
-      - GITEA__server__SSH_PORT=2222
-      - GITEA__server__SSH_LISTEN_PORT=2222
-      - GITEA__database__DB_TYPE=sqlite3
-      - GITEA__database__PATH=/var/lib/gitea/data/gitea.db
-      - GITEA__service__DISABLE_REGISTRATION=false
-      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      - FORGEJO__server__DOMAIN=forgejo
+      - FORGEJO__server__HTTP_PORT=3000
+      - FORGEJO__server__ROOT_URL=http://forgejo:3000/
+      - FORGEJO__server__SSH_PORT=2222
+      - FORGEJO__server__SSH_LISTEN_PORT=2222
+      - FORGEJO__database__DB_TYPE=sqlite3
+      - FORGEJO__database__PATH=/var/lib/gitea/data/gitea.db
+      - FORGEJO__service__DISABLE_REGISTRATION=false
+      - FORGEJO__service__REQUIRE_SIGNIN_VIEW=false
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:2223:2222"
     volumes:
-      - gitea-data:/var/lib/gitea
+      - forgejo-data:/var/lib/gitea
     networks:
-      - agent-sandbox-infra
+      agent-sandbox-infra:
+        aliases:
+          - forgejo
+          - gitea
 
   postgres:
     image: postgres:16-alpine
@@ -84,8 +87,8 @@ volumes:
     name: agent-sandbox-valkey-data
   valkey-config:
     name: agent-sandbox-valkey-config
-  gitea-data:
-    name: agent-sandbox-gitea-data
+  forgejo-data:
+    name: agent-sandbox-forgejo-data
   postgres-data:
     name: agent-sandbox-postgres-data
   sonarqube-data:

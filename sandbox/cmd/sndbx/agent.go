@@ -95,7 +95,7 @@ Commands:
     Provision a new named agent (container sandbox, host-connected container with --host, or no-container with --no-container).
 
   provision <name>
-    Provision or re-provision agent infrastructure, keys, Valkey ACLs, Gitea accounts, and SonarQube credentials.
+    Provision or re-provision agent infrastructure, keys, Valkey ACLs, Forgejo accounts, and SonarQube credentials.
 
   start <name>
     Start the agent container with Podman.
@@ -131,10 +131,10 @@ Commands:
     Remove the agent container while preserving its home directory volume.
 
   retire <name> [--force]
-    Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Gitea account).
+    Fully decommission agent across the system (container, volume, local secrets, Valkey ACLs, and Forgejo account).
 
   deprovision <name> [--force]
-    Alias to retire: fully deprovision agent across container, volume, local secrets, Valkey ACLs, and Gitea account.
+    Alias to retire: fully deprovision agent across container, volume, local secrets, Valkey ACLs, and Forgejo account.
 
   clone <name> <repo-url> [dir]
     Clone a git repository directly into the agent container's workspace.

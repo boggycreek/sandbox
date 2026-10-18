@@ -23,7 +23,7 @@ import (
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/plugin"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 	"github.com/boggycreek/sandbox/pkg/sonar"
@@ -89,8 +89,8 @@ func DiagnoseAndHealAgent(ctx context.Context, agentName string, paths config.Pa
 	// 6. Valkey Backplane Registration Check & Heal
 	checkAndHealValkey(ctx, cfg, paths, report)
 
-	// 7. Gitea Git Forge Registration Check & Heal
-	checkAndHealGitea(ctx, cfg, paths, report)
+	// 7. Forgejo Git Forge Registration Check & Heal
+	checkAndHealForgejo(ctx, cfg, paths, report)
 
 	// 8. SonarQube Mechanical Analysis Registration Check & Heal
 	checkAndHealSonar(ctx, cfg, paths, report)
@@ -501,46 +501,63 @@ func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths conf
 	})
 }
 
-func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+func checkAndHealForgejo(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
 	if cfg.IsNoContainer() {
 		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Gitea Git Forge",
+			Name:    "Forgejo Git Forge",
 			Status:  StatusOK,
-			Message: "No-container agent (no Gitea account required)",
+			Message: "No-container agent (no Forgejo account required)",
 		})
 		return
 	}
 
-	adminPass := os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	adminPass := os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = os.Getenv("GITEA_ADMIN_PASSWORD")
+	}
+	if adminPass == "" {
+		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
+	}
 	if adminPass == "" {
 		adminPass = "admin_backplane_pass"
 	}
 
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
+	}
+
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
 	}
 
 	httpClient := &http.Client{Timeout: 1 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx, "GET", giteaURL+"/api/v1/version", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", forgejoURL+"/api/v1/version", nil)
 	resp, err := httpClient.Do(req)
 	if err != nil || (resp != nil && resp.StatusCode >= 500) {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
 		report.Checks = append(report.Checks, CheckItem{
-			Name:    "Gitea Git Forge",
+			Name:    "Forgejo Git Forge",
 			Status:  StatusWarning,
-			Message: "Gitea infrastructure is offline (skipped user sync; start via `sndbx infra up`)",
+			Message: "Forgejo infrastructure is offline (skipped user sync; start via `sndbx infra up`)",
 		})
 		report.WarningCount++
 		return
 	}
 	_ = resp.Body.Close()
 
-	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	client := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: adminUser,
 		AdminPass: adminPass,
 		Timeout:   2 * time.Second,
 	})
@@ -553,10 +570,14 @@ func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths confi
 	_ = client.AddOrgMember(ctx, "fleet", cfg.Name)
 
 	report.Checks = append(report.Checks, CheckItem{
-		Name:    "Gitea Git Forge",
+		Name:    "Forgejo Git Forge",
 		Status:  StatusOK,
 		Message: "User account, SSH key, and fleet organization membership verified",
 	})
+}
+
+func checkAndHealGitea(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {
+	checkAndHealForgejo(ctx, cfg, paths, report)
 }
 
 func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths config.Paths, report *DoctorReport) {

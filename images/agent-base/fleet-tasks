@@ -8,13 +8,13 @@
 #
 # Provides a turnkey interface for autonomous agents inside the sandbox
 # to manage, query, claim, and synchronize tasks via Beads (bd)
-# backed by the air-gapped local Gitea forge (http://gitea:3000/fleet/tasks.git).
+# backed by the air-gapped local Forgejo forge (http://forgejo:3000/fleet/tasks.git).
 
 set -euo pipefail
 
 TASKS_DIR="${FLEET_TASKS_DIR:-${HOME}/tasks}"
-GITEA_URL="${GITEA_URL:-http://gitea:3000}"
-REPO_URL="${GITEA_URL}/fleet/tasks.git"
+FORGEJO_URL="${FORGEJO_URL:-${GITEA_URL:-http://forgejo:3000}}"
+REPO_URL="${FORGEJO_URL}/fleet/tasks.git"
 
 ensure_initialized() {
   if [ ! -d "${TASKS_DIR}" ]; then
@@ -22,11 +22,11 @@ ensure_initialized() {
   fi
 
   if [ ! -d "${TASKS_DIR}/.git" ]; then
-    # Try cloning from Gitea if reachable
+    # Try cloning from Forgejo if reachable
     if git clone "${REPO_URL}" "${TASKS_DIR}" >/dev/null 2>&1; then
       :
     else
-      # Initialize local git repository pointing to Gitea remote
+      # Initialize local git repository pointing to Forgejo remote
       (
         cd "${TASKS_DIR}"
         git init -b main >/dev/null 2>&1 || git init >/dev/null 2>&1
@@ -41,7 +41,7 @@ ensure_initialized() {
     (
       cd "${TASKS_DIR}"
       bd init --prefix task --skip-agents --non-interactive >/dev/null 2>&1 || true
-      # Attempt initial push to Gitea
+      # Attempt initial push to Forgejo
       bd dolt push >/dev/null 2>&1 || true
     )
   fi
@@ -77,7 +77,7 @@ case "${1:-}" in
     TASK_ID="$1"
     bd -C "${TASKS_DIR}" update "${TASK_ID}" --claim
     bd -C "${TASKS_DIR}" sync >/dev/null 2>&1 || true
-    echo "Claimed ${TASK_ID} and synchronized with fleet Gitea."
+    echo "Claimed ${TASK_ID} and synchronized with fleet Forgejo."
     ;;
   close)
     ensure_initialized
@@ -88,7 +88,7 @@ case "${1:-}" in
     fi
     bd -C "${TASKS_DIR}" close "$@"
     bd -C "${TASKS_DIR}" sync >/dev/null 2>&1 || true
-    echo "Closed task and synchronized with fleet Gitea."
+    echo "Closed task and synchronized with fleet Forgejo."
     ;;
   create)
     ensure_initialized

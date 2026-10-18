@@ -29,13 +29,13 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// 1. Verify Gitea is online and fleet org exists
-	t.Log("Verifying Gitea REST API...")
-	giteaUserURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/orgs/fleet", infra.GiteaHTTPPort)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, giteaUserURL, nil)
+	// 1. Verify Forgejo is online and fleet org exists
+	t.Log("Verifying Forgejo REST API...")
+	forgejoUserURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/orgs/fleet", infra.ForgejoHTTPPort)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, forgejoUserURL, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected Gitea fleet organization to exist (status: %v, err: %v)", resp.StatusCode, err)
+		t.Fatalf("expected Forgejo fleet organization to exist (status: %v, err: %v)", resp.StatusCode, err)
 	}
 	if resp != nil {
 		_ = resp.Body.Close()
@@ -54,8 +54,8 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 	}
 	defer vClient.Close()
 
-	// 3. Create agent in isolated environment and verify Gitea & Valkey provisioning
-	t.Log("Creating agent and testing Valkey & Gitea user provisioning...")
+	// 3. Create agent in isolated environment and verify Forgejo & Valkey provisioning
+	t.Log("Creating agent and testing Valkey & Forgejo user provisioning...")
 	out, err := infra.ExecSndbx(ctx, "agent", "create", "infra-test-agent", "as", "base", "--role", "tester")
 	if err != nil {
 		t.Fatalf("'sndbx agent create' failed: %v\nOutput: %s", err, out)
@@ -64,12 +64,12 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 		t.Errorf("unexpected agent create output: %s", out)
 	}
 
-	// Verify agent user exists in Gitea
-	userURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/users/infra-test-agent", infra.GiteaHTTPPort)
+	// Verify agent user exists in Forgejo
+	userURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/users/infra-test-agent", infra.ForgejoHTTPPort)
 	reqUser, _ := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
 	respUser, err := http.DefaultClient.Do(reqUser)
 	if err != nil || respUser.StatusCode != http.StatusOK {
-		t.Errorf("expected Gitea user infra-test-agent to exist (status: %v, err: %v)", respUser.StatusCode, err)
+		t.Errorf("expected Forgejo user infra-test-agent to exist (status: %v, err: %v)", respUser.StatusCode, err)
 	}
 	if respUser != nil {
 		_ = respUser.Body.Close()
@@ -101,11 +101,11 @@ func TestInfraLifecycleIntegration(t *testing.T) {
 		t.Errorf("unexpected retire output: %s", retireOut)
 	}
 
-	// Verify agent was purged from Gitea (404)
+	// Verify agent was purged from Forgejo (404)
 	reqAfter, _ := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
 	respAfter, err := http.DefaultClient.Do(reqAfter)
 	if err != nil || respAfter.StatusCode != http.StatusNotFound {
-		t.Errorf("expected Gitea user to be 404 after retire, got status %v (err: %v)", respAfter.StatusCode, err)
+		t.Errorf("expected Forgejo user to be 404 after retire, got status %v (err: %v)", respAfter.StatusCode, err)
 	}
 	if respAfter != nil {
 		_ = respAfter.Body.Close()

@@ -9,7 +9,8 @@ COPY mcp/ ./mcp/
 COPY sandbox/ ./sandbox/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp ./backplane/cmd/bp && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/bp-mcp ./mcp/cmd/bp-mcp && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/gitea-mcp ./mcp/cmd/gitea-mcp && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/forgejo-mcp ./mcp/cmd/forgejo-mcp && \
+    ln -s forgejo-mcp /build/gitea-mcp && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/beads-mcp ./mcp/cmd/beads-mcp && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /build/sonar-mcp ./mcp/cmd/sonar-mcp
 
@@ -64,10 +65,11 @@ RUN groupadd -g 1000 agent && \
 # Install static CLI binaries from builder
 COPY --from=builder /build/bp /usr/local/bin/bp
 COPY --from=builder /build/bp-mcp /usr/local/bin/bp-mcp
+COPY --from=builder /build/forgejo-mcp /usr/local/bin/forgejo-mcp
 COPY --from=builder /build/gitea-mcp /usr/local/bin/gitea-mcp
 COPY --from=builder /build/beads-mcp /usr/local/bin/beads-mcp
 COPY --from=builder /build/sonar-mcp /usr/local/bin/sonar-mcp
-RUN chmod +x /usr/local/bin/bp /usr/local/bin/bp-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp /usr/local/bin/sonar-mcp
+RUN chmod +x /usr/local/bin/bp /usr/local/bin/bp-mcp /usr/local/bin/forgejo-mcp /usr/local/bin/gitea-mcp /usr/local/bin/beads-mcp /usr/local/bin/sonar-mcp
 
 # Install in-container documentation and JIT harness installer
 COPY images/agent-base/doc/ /usr/local/share/doc/agent-sandbox/

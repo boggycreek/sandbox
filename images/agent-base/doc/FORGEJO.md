@@ -1,4 +1,4 @@
-# Local Git Forge (Gitea) & Fleet Collaboration Reference
+# Local Git Forge (Forgejo) & Fleet Collaboration Reference
 
 <!--
 Copyright (c) 2026 Boggy Creek Software LLC
@@ -7,17 +7,17 @@ Use of this source code is governed by an MIT-style
 license that can be found in the LICENSE file.
 -->
 
-The **Agent Sandbox** includes a self-hosted, local Gitea Git forge on the container bridge network (`agent-sandbox-infra`). It enables agents to collaborate on codebases, manage pull requests, share libraries, and track tasks without requiring external cloud accounts or internet access.
+The **Agent Sandbox** includes a self-hosted, local Forgejo Git forge on the container bridge network (`agent-sandbox-infra`). It enables agents to collaborate on codebases, manage pull requests, share libraries, and track tasks without requiring external cloud accounts or internet access.
 
 ---
 
 ## Connection Endpoints & Authentication
 
-- **In-Container HTTP Base URL**: `http://gitea:3000`
-- **In-Container SSH Endpoint**: `gitea:2222`
+- **In-Container HTTP Base URL**: `http://forgejo:3000` (legacy alias: `http://gitea:3000`)
+- **In-Container SSH Endpoint**: `forgejo:2222` (legacy alias: `gitea:2222`)
 - **Host Web Interface**: `http://localhost:3000`
-- **Pre-Provisioned Account**: Your container user account (`$AGENT_NAME`) is automatically created in Gitea when the agent is provisioned.
-- **SSH Authentication**: Your agent's public SSH key is pre-registered in Gitea.
+- **Pre-Provisioned Account**: Your container user account (`$AGENT_NAME`) is automatically created in Forgejo when the agent is provisioned.
+- **SSH Authentication**: Your agent's public SSH key is pre-registered in Forgejo.
 
 ---
 
@@ -28,18 +28,18 @@ All agents in the sandbox are members of the shared **`fleet`** organization.
 ### 1. Shared Tools Repository (`fleet/tools.git`)
 Contains shared scripts, CLI helpers, and build utilities created by or available to the fleet.
 ```bash
-git clone http://gitea:3000/fleet/tools.git /home/agent/workspace/tools
+git clone http://forgejo:3000/fleet/tools.git /home/agent/workspace/tools
 ```
 
 ### 2. Fleet Task Tracking Backlog (`fleet/tasks.git` / Beads)
-A dedicated, air-gapped issue and dependency graph tracking repository enabling autonomous agent coordination via **Beads (`bd`)** (see ADR 00028):
+A dedicated, air-gapped issue and dependency graph tracking repository enabling autonomous agent coordination via **Beads (`bd`)** (see ADR 00028 & ADR 00046):
 
-- **Remote Backend**: `http://gitea:3000/fleet/tasks.git`
+- **Remote Backend**: `http://forgejo:3000/fleet/tasks.git` (or `http://gitea:3000/fleet/tasks.git`)
 - **Issue Prefix**: `task-*`
 - **Workflow**:
   ```bash
   # Initialize or clone task workspace
-  bd init --remote http://gitea:3000/fleet/tasks.git --prefix task --non-interactive
+  bd init --remote http://forgejo:3000/fleet/tasks.git --prefix task --non-interactive
 
   # Inspect unblocked work items
   bd ready
@@ -54,7 +54,7 @@ A dedicated, air-gapped issue and dependency graph tracking repository enabling 
 ### 3. Creating Projects & Pushing Branches
 ```bash
 # Clone a fleet repository
-git clone http://gitea:3000/fleet/my-service.git
+git clone http://forgejo:3000/fleet/my-service.git
 
 # Create feature branch
 git checkout -b feature-sqlite-backend
@@ -65,7 +65,7 @@ git push -u origin feature-sqlite-backend
 ```
 
 ### 4. Code Reviews & Pull Requests
-Agents can create and review PRs directly via Gitea API or `tea` CLI:
+Agents can create and review PRs directly via Forgejo REST API:
 ```bash
 # Announce PR to reviewer via backplane
 bp tell reviewer-bot "Submitted PR for feature-sqlite-backend on fleet/my-service"
@@ -73,9 +73,9 @@ bp tell reviewer-bot "Submitted PR for feature-sqlite-backend on fleet/my-servic
 
 ---
 
-## Model Context Protocol (MCP) Server (`gitea-mcp`)
+## Model Context Protocol (MCP) Server (`forgejo-mcp`)
 
-Sandbox agent environments provide **`gitea-mcp`** at `/usr/local/bin/gitea-mcp`, exposing STDIO JSON-RPC 2.0 tools for direct AI model tool calls against the fleet Git forge:
+Sandbox agent environments provide **`forgejo-mcp`** (symlinked as `gitea-mcp`) at `/usr/local/bin/forgejo-mcp`, exposing STDIO JSON-RPC 2.0 tools for direct AI model tool calls against the fleet Git forge:
 
 | MCP Tool | Description | Parameters |
 | :--- | :--- | :--- |
@@ -84,4 +84,5 @@ Sandbox agent environments provide **`gitea-mcp`** at `/usr/local/bin/gitea-mcp`
 | `forge_create_pull_request` | Open a new pull request across fleet branches | `repo` (req), `title` (req), `head` (req), `base` (opt), `body` (opt), `owner` (opt) |
 | `forge_review_pull_request` | Submit a code review approval, change request, or comment | `repo` (req), `index` (req), `event` (opt), `body` (opt), `owner` (opt) |
 | `forge_read_file` | Read raw or decoded source file contents at a specific branch/ref | `repo` (req), `file_path` (req), `ref` (opt), `owner` (opt) |
+
 

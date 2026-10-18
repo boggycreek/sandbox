@@ -26,21 +26,23 @@ func TestStopInfraStack(t *testing.T) {
 
 	pid := os.Getpid()
 	testValkeyName := fmt.Sprintf("unit-test-valkey-stop-%d", pid)
-	testGiteaName := fmt.Sprintf("unit-test-gitea-stop-%d", pid)
+	testForgejoName := fmt.Sprintf("unit-test-forgejo-stop-%d", pid)
 	testPostgresName := fmt.Sprintf("unit-test-postgres-stop-%d", pid)
 	testSonarName := fmt.Sprintf("unit-test-sonar-stop-%d", pid)
 
 	origValkey := infraValkeyContainer
-	origGitea := infraGiteaContainer
+	origForgejo := infraForgejoContainer
 	origPostgres := infraPostgresContainer
 	origSonar := infraSonarContainer
 	infraValkeyContainer = testValkeyName
-	infraGiteaContainer = testGiteaName
+	infraForgejoContainer = testForgejoName
+	infraGiteaContainer = testForgejoName
 	infraPostgresContainer = testPostgresName
 	infraSonarContainer = testSonarName
 	defer func() {
 		infraValkeyContainer = origValkey
-		infraGiteaContainer = origGitea
+		infraForgejoContainer = origForgejo
+		infraGiteaContainer = origForgejo
 		infraPostgresContainer = origPostgres
 		infraSonarContainer = origSonar
 	}()
@@ -53,7 +55,7 @@ func TestStopInfraStack(t *testing.T) {
 	}
 	defer func() {
 		_ = exec.Command("podman", "rm", "-f", testValkeyName).Run()
-		_ = exec.Command("podman", "rm", "-f", testGiteaName).Run()
+		_ = exec.Command("podman", "rm", "-f", testForgejoName).Run()
 		_ = exec.Command("podman", "rm", "-f", testPostgresName).Run()
 		_ = exec.Command("podman", "rm", "-f", testSonarName).Run()
 	}()
@@ -128,44 +130,44 @@ func TestInfraStackOrchestrationScenarios(t *testing.T) {
 		t.Errorf("expected error when valkey restart fails")
 	}
 
-	// 4. Gitea doesn't exist, run fails
-	mockGiteaRunFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	// 4. Forgejo doesn't exist, run fails
+	mockForgejoRunFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
-			if strings.Contains(args[2], "gitea") {
+			if strings.Contains(args[2], "forgejo") || strings.Contains(args[2], "gitea") {
 				return exec.Command("false")
 			}
 			return exec.Command("true")
 		}
-		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "gitea") {
+		if name == "podman" && len(args) > 0 && args[0] == "run" && (strings.Contains(args[3], "forgejo") || strings.Contains(args[3], "gitea")) {
 			return exec.Command("false")
 		}
 		return exec.Command("true")
 	}
-	restore4 := SetExecCommandContextForTesting(mockGiteaRunFail)
+	restore4 := SetExecCommandContextForTesting(mockForgejoRunFail)
 	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
 	restore4()
 	if err == nil {
-		t.Errorf("expected error when gitea run fails")
+		t.Errorf("expected error when forgejo run fails")
 	}
 
-	// 5. Gitea exists, start fails, restart fails
-	mockGiteaRestartFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	// 5. Forgejo exists, start fails, restart fails
+	mockForgejoRestartFail := func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "podman" && len(args) > 1 && args[0] == "container" && args[1] == "exists" {
 			return exec.Command("true")
 		}
-		if name == "podman" && len(args) > 1 && args[0] == "start" && strings.Contains(args[1], "gitea") {
+		if name == "podman" && len(args) > 1 && args[0] == "start" && (strings.Contains(args[1], "forgejo") || strings.Contains(args[1], "gitea")) {
 			return exec.Command("false")
 		}
-		if name == "podman" && len(args) > 0 && args[0] == "run" && strings.Contains(args[3], "gitea") {
+		if name == "podman" && len(args) > 0 && args[0] == "run" && (strings.Contains(args[3], "forgejo") || strings.Contains(args[3], "gitea")) {
 			return exec.Command("false")
 		}
 		return exec.Command("true")
 	}
-	restore5 := SetExecCommandContextForTesting(mockGiteaRestartFail)
+	restore5 := SetExecCommandContextForTesting(mockForgejoRestartFail)
 	err = StartInfraStack(ctx, paths, "p1", "p2", "u1")
 	restore5()
 	if err == nil {
-		t.Errorf("expected error when gitea restart fails")
+		t.Errorf("expected error when forgejo restart fails")
 	}
 
 	// 6. Postgres doesn't exist, run fails
@@ -260,13 +262,16 @@ func TestInfraStackOrchestrationScenarios(t *testing.T) {
 	restore10()
 }
 
-func TestBootstrapGiteaEdgeCases(t *testing.T) {
+func TestBootstrapForgejoEdgeCases(t *testing.T) {
 	// 1. Canceled context returns context error
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := BootstrapGitea(canceledCtx, "pass")
+	err := BootstrapForgejo(canceledCtx, "pass")
 	if err == nil {
-		t.Errorf("expected canceled context error from BootstrapGitea")
+		t.Errorf("expected canceled context error from BootstrapForgejo")
+	}
+	if errLegacy := BootstrapGitea(canceledCtx, "pass"); errLegacy == nil {
+		t.Errorf("expected canceled context error from BootstrapGitea alias")
 	}
 
 	// 2. StartInfraStack with empty credentials (exercises defaults fallback)

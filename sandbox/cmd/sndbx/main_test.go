@@ -56,6 +56,7 @@ func TestSndbxAgentDomain(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 	t.Setenv("XDG_DATA_HOME", tmpDir)
 	t.Setenv("BP_PORT", "65530")
+	t.Setenv("FORGEJO_URL", "http://127.0.0.1:65531")
 	t.Setenv("GITEA_URL", "http://127.0.0.1:65531")
 	t.Setenv("SONAR_HOST_URL", "http://127.0.0.1:65532")
 

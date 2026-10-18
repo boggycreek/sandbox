@@ -28,8 +28,8 @@ type ValkeyInfraInfo struct {
 	OperatorPassword string `json:"operator_password"`
 }
 
-// GiteaInfraInfo holds connection and credential details for Gitea.
-type GiteaInfraInfo struct {
+// ForgejoInfraInfo holds connection and credential details for Forgejo.
+type ForgejoInfraInfo struct {
 	Status        string `json:"status"`
 	Container     string `json:"container"`
 	WebURL        string `json:"web_url"`
@@ -40,6 +40,9 @@ type GiteaInfraInfo struct {
 	AdminUser     string `json:"admin_user"`
 	AdminPassword string `json:"admin_password"`
 }
+
+// GiteaInfraInfo is a backward-compatible alias for ForgejoInfraInfo.
+type GiteaInfraInfo = ForgejoInfraInfo
 
 // PostgresInfraInfo holds connection and credential details for PostgreSQL.
 type PostgresInfraInfo struct {
@@ -67,7 +70,8 @@ type SonarQubeInfraInfo struct {
 // InfraStackInfo holds the complete information for all shared infrastructure services.
 type InfraStackInfo struct {
 	Valkey     *ValkeyInfraInfo    `json:"valkey"`
-	Gitea      *GiteaInfraInfo     `json:"gitea"`
+	Forgejo    *ForgejoInfraInfo   `json:"forgejo"`
+	Gitea      *ForgejoInfraInfo   `json:"gitea,omitempty"`
 	PostgreSQL *PostgresInfraInfo  `json:"postgresql"`
 	SonarQube  *SonarQubeInfraInfo `json:"sonarqube"`
 }
@@ -139,27 +143,47 @@ func GetInfraInfo(ctx context.Context, paths config.Paths, showSecrets bool) (*I
 		OperatorPassword: valkeyDisplayPass,
 	}
 
-	// 2. Gitea
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	// 2. Forgejo
+	forgejoPass := os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	if forgejoPass == "" {
+		forgejoPass = os.Getenv("GITEA_ADMIN_PASSWORD")
 	}
-	cleanGiteaURL := strings.TrimRight(giteaURL, "/")
-	giteaDisplayPass := secretMask
-	if showSecrets {
-		giteaDisplayPass = adminPass
+	if forgejoPass == "" {
+		forgejoPass = adminPass
 	}
 
-	giteaInfo := &GiteaInfraInfo{
-		Status:        getState(infraGiteaContainer),
-		Container:     infraGiteaContainer,
-		WebURL:        cleanGiteaURL,
-		InternalURL:   "http://gitea:3000",
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
+	}
+	cleanForgejoURL := strings.TrimRight(forgejoURL, "/")
+
+	forgejoUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if forgejoUser == "" {
+		forgejoUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if forgejoUser == "" {
+		forgejoUser = "forgejoadmin"
+	}
+
+	forgejoDisplayPass := secretMask
+	if showSecrets {
+		forgejoDisplayPass = forgejoPass
+	}
+
+	forgejoInfo := &ForgejoInfraInfo{
+		Status:        getState(infraForgejoContainer),
+		Container:     infraForgejoContainer,
+		WebURL:        cleanForgejoURL,
+		InternalURL:   "http://forgejo:3000",
 		SSHPort:       "127.0.0.1:2223",
-		GitHTTPClone:  fmt.Sprintf("%s/fleet/tasks.git", cleanGiteaURL),
+		GitHTTPClone:  fmt.Sprintf("%s/fleet/tasks.git", cleanForgejoURL),
 		GitSSHClone:   "ssh://git@127.0.0.1:2223/fleet/tasks.git",
-		AdminUser:     "giteaadmin",
-		AdminPassword: giteaDisplayPass,
+		AdminUser:     forgejoUser,
+		AdminPassword: forgejoDisplayPass,
 	}
 
 	// 3. PostgreSQL
@@ -223,7 +247,8 @@ func GetInfraInfo(ctx context.Context, paths config.Paths, showSecrets bool) (*I
 
 	return &InfraStackInfo{
 		Valkey:     valkeyInfo,
-		Gitea:      giteaInfo,
+		Forgejo:    forgejoInfo,
+		Gitea:      forgejoInfo,
 		PostgreSQL: postgresInfo,
 		SonarQube:  sonarInfo,
 	}, nil
@@ -253,19 +278,23 @@ func FormatInfraInfo(info *InfraStackInfo) string {
 		})
 	}
 
-	if info.Gitea != nil {
+	forgejoSec := info.Forgejo
+	if forgejoSec == nil {
+		forgejoSec = info.Gitea
+	}
+	if forgejoSec != nil {
 		sections = append(sections, infoSection{
-			header: "[gitea]",
+			header: "[forgejo]",
 			pairs: []infoPair{
-				{"status", info.Gitea.Status},
-				{"container", info.Gitea.Container},
-				{"web_url", info.Gitea.WebURL},
-				{"internal_url", info.Gitea.InternalURL},
-				{"ssh_port", info.Gitea.SSHPort},
-				{"git_http_clone", info.Gitea.GitHTTPClone},
-				{"git_ssh_clone", info.Gitea.GitSSHClone},
-				{"admin_user", info.Gitea.AdminUser},
-				{"admin_password", info.Gitea.AdminPassword},
+				{"status", forgejoSec.Status},
+				{"container", forgejoSec.Container},
+				{"web_url", forgejoSec.WebURL},
+				{"internal_url", forgejoSec.InternalURL},
+				{"ssh_port", forgejoSec.SSHPort},
+				{"git_http_clone", forgejoSec.GitHTTPClone},
+				{"git_ssh_clone", forgejoSec.GitSSHClone},
+				{"admin_user", forgejoSec.AdminUser},
+				{"admin_password", forgejoSec.AdminPassword},
 			},
 		})
 	}

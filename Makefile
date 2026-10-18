@@ -148,7 +148,8 @@ build-cli: ## Build native Go CLI binaries (sndbx, bp, bpd, mcps)
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp ./backplane/cmd/bp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bpd ./backplane/cmd/bpd; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/bp-mcp ./mcp/cmd/bp-mcp; \
-		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/gitea-mcp ./mcp/cmd/gitea-mcp; \
+		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/forgejo-mcp ./mcp/cmd/forgejo-mcp; \
+		ln -sf forgejo-mcp $(BIN_DIR)/gitea-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/beads-mcp ./mcp/cmd/beads-mcp; \
 		$(GO) build $(GOFLAGS) -o $(BIN_DIR)/sonar-mcp ./mcp/cmd/sonar-mcp; \
 		echo "Binaries built in $(BIN_DIR)/ (alias: $(BIN_DIR)/sb)"; \
@@ -171,7 +172,7 @@ install: build-cli ## Install CLI binaries and aliases into $(INSTALL_BIN_DIR)
 			(cd $(INSTALL_BIN_DIR) && ln -sf sndbx sb); \
 		fi; \
 	fi
-	@for bin in sndbx-agent bp bpd bp-mcp gitea-mcp beads-mcp sonar-mcp; do \
+	@for bin in sndbx-agent bp bpd bp-mcp forgejo-mcp gitea-mcp beads-mcp sonar-mcp; do \
 		if [ -f $(BIN_DIR)/$$bin ]; then cp -f $(BIN_DIR)/$$bin $(INSTALL_BIN_DIR)/$$bin; fi; \
 	done
 	@echo "Installed binaries (sndbx (alias: sb), bp, bpd, mcps) in $(INSTALL_BIN_DIR)/"

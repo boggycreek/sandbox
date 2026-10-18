@@ -3,9 +3,10 @@ adr: "00021"
 title: "Local Gitea Fleet Collaboration and Memory Backup"
 topic: "Shared Fleet Services"
 theme: "THEME-FLEET"
-status: "accepted"
+status: "superseded"
 version: "v0.1.0-alpha"
-as_built: true
+as_built: false
+superseded_by: "00046"
 tags:
   - gitea
   - git
@@ -13,7 +14,7 @@ tags:
   - backup
   - memory
   - self-hosted
-executive_summary: "An internal rootless Gitea service provides local git hosting, inter-agent code review, task tracking backplane, and persistent remote dotfiles and memory repositories."
+executive_summary: "Deprecated. Originally introduced an internal rootless Gitea service for local git hosting and memory backup. Superseded by ADR 00046, which migrates the local git forge to community-governed Forgejo."
 ---
 
 # 00021. Local Gitea Fleet Collaboration and Memory Backup
@@ -29,7 +30,7 @@ Agent Sandbox manages an internal, rootless Gitea service container (`agent-sand
 3. **Durable Memory & Dotfile Repositories**: Agents can maintain private remote Git repositories (`fleet/agent-<name>-memory.git`, `fleet/agent-<name>-dotfiles.git`) on the local forge for durable, versioned dotfiles and reflection notes.
 
 ## Status
-Accepted (Alpha as-built).
+Superseded by [ADR 00046](00046-MigrateLocalForgeFromGiteaToForgejo.md).
 
 ## Consequences
 ### Positive

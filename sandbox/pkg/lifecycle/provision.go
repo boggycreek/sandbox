@@ -18,7 +18,7 @@ import (
 
 	"github.com/boggycreek/sandbox/backplane/pkg/libbp"
 	"github.com/boggycreek/sandbox/pkg/config"
-	"github.com/boggycreek/sandbox/pkg/gitea"
+	"github.com/boggycreek/sandbox/pkg/forgejo"
 	"github.com/boggycreek/sandbox/pkg/runtime"
 	"github.com/boggycreek/sandbox/pkg/sonar"
 )
@@ -63,15 +63,18 @@ func RegisterValkeyACL(ctx context.Context, cfg *config.AgentConfig, paths confi
 	})
 }
 
-// RegisterGiteaUser provisions an agent account, registers IDE public SSH keys, and adds the agent to the fleet org.
+// RegisterForgejoUser provisions an agent account, registers IDE public SSH keys, and adds the agent to the fleet org.
 //
 //nolint:gocritic // paths passed by value for consistency with config package
-func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
+func RegisterForgejoUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
 	if cfg.IsNoContainer() {
 		return nil
 	}
 
-	adminPass := os.Getenv("GITEA_ADMIN_PASSWORD")
+	adminPass := os.Getenv("FORGEJO_ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = os.Getenv("GITEA_ADMIN_PASSWORD")
+	}
 	if adminPass == "" {
 		adminPass = os.Getenv("ADMIN_BACKPLANE_PASSWORD")
 	}
@@ -79,19 +82,30 @@ func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 		adminPass = "admin_backplane_pass"
 	}
 
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		giteaURL = "http://127.0.0.1:3000"
+	forgejoURL := os.Getenv("FORGEJO_URL")
+	if forgejoURL == "" {
+		forgejoURL = os.Getenv("GITEA_URL")
+	}
+	if forgejoURL == "" {
+		forgejoURL = "http://127.0.0.1:3000"
 	}
 
-	client := gitea.NewClient(gitea.ClientConfig{
-		BaseURL:   giteaURL,
-		AdminUser: "giteaadmin",
+	adminUser := os.Getenv("FORGEJO_ADMIN_USER")
+	if adminUser == "" {
+		adminUser = os.Getenv("GITEA_ADMIN_USER")
+	}
+	if adminUser == "" {
+		adminUser = "forgejoadmin"
+	}
+
+	client := forgejo.NewClient(forgejo.ClientConfig{
+		BaseURL:   forgejoURL,
+		AdminUser: adminUser,
 		AdminPass: adminPass,
 		Timeout:   2 * time.Second,
 	})
 
-	// 1. Provision user account in Gitea
+	// 1. Provision user account in Forgejo
 	if err := client.EnsureUser(ctx, cfg.Name, cfg.Password, fmt.Sprintf("%s@local.sndbx", cfg.Name)); err != nil {
 		return err
 	}
@@ -101,12 +115,17 @@ func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths confi
 	// #nosec G304 -- reading controlled IDE public key file
 	if keyData, err := os.ReadFile(sshKeyPub); err == nil && len(keyData) > 0 {
 		if keyErr := client.AddUserSSHKey(ctx, cfg.Name, fmt.Sprintf("%s-ide-key", cfg.Name), string(keyData)); keyErr != nil {
-			return fmt.Errorf("failed registering IDE public key with Gitea: %w", keyErr)
+			return fmt.Errorf("failed registering IDE public key with Forgejo: %w", keyErr)
 		}
 	}
 
 	// 3. Add user to default fleet organization
 	return client.AddOrgMember(ctx, "fleet", cfg.Name)
+}
+
+// RegisterGiteaUser aliases RegisterForgejoUser for backward compatibility.
+func RegisterGiteaUser(ctx context.Context, cfg *config.AgentConfig, paths config.Paths) error {
+	return RegisterForgejoUser(ctx, cfg, paths)
 }
 
 // RegisterSonarUser provisions an agent user in SonarQube and generates an analysis token.
@@ -335,17 +354,17 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 		report.AddStep("Valkey ACL & Identity", StatusError, fmt.Sprintf("Failed registering Valkey ACL: %v", err), err)
 	}
 
-	// 3. Gitea Account & Keys
+	// 3. Forgejo Account & Keys
 	if cfg.IsNoContainer() {
-		report.AddStep("Gitea User & Keys", StatusSkipped, "No-container agent has no container boundary (skipped)", nil)
-	} else if os.Getenv("GITEA_DISABLED") == "1" {
-		report.AddStep("Gitea User & Keys", StatusSkipped, "Gitea infrastructure is disabled via GITEA_DISABLED (skipped)", nil)
-	} else if err := RegisterGiteaUser(ctx, cfg, paths); err == nil {
-		report.AddStep("Gitea User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
+		report.AddStep("Forgejo User & Keys", StatusSkipped, "No-container agent has no container boundary (skipped)", nil)
+	} else if os.Getenv("FORGEJO_DISABLED") == "1" || os.Getenv("GITEA_DISABLED") == "1" {
+		report.AddStep("Forgejo User & Keys", StatusSkipped, "Forgejo infrastructure is disabled via FORGEJO_DISABLED (skipped)", nil)
+	} else if err := RegisterForgejoUser(ctx, cfg, paths); err == nil {
+		report.AddStep("Forgejo User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
 	} else if IsOfflineError(err) {
-		report.AddStep("Gitea User & Keys", StatusSkipped, fmt.Sprintf("Gitea infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+		report.AddStep("Forgejo User & Keys", StatusSkipped, fmt.Sprintf("Forgejo infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
 	} else {
-		report.AddStep("Gitea User & Keys", StatusError, fmt.Sprintf("Failed registering Gitea user: %v", err), err)
+		report.AddStep("Forgejo User & Keys", StatusError, fmt.Sprintf("Failed registering Forgejo user: %v", err), err)
 	}
 
 	// 4. SonarQube User & Analysis Token
