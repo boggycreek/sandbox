@@ -50,7 +50,7 @@ Comprehensive update of the Fleet local environment:
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
 		fmt.Fprintf(stdout, "==> Cloning repository into %s...\n", repoDir)
 		_ = os.MkdirAll(filepath.Dir(repoDir), 0755)
-		cloneCmd := sndbxRuntime.CommandContext(ctx, "git", "clone", "--branch", "main", "https://github.com/boggycreek/sandbox.git", repoDir)
+		cloneCmd := sndbxRuntime.CommandContext(ctx, "git", "clone", "--branch", "main", "https://github.com/boggycreek/fleet.git", repoDir)
 		cloneCmd.Stdout = stdout
 		cloneCmd.Stderr = stderr
 		if err := cloneCmd.Run(); err != nil {
@@ -102,7 +102,7 @@ func installOrBuildBinaries(ctx context.Context, repoDir, binDir string, stdout,
 	binaries := []string{"fleet", "bp", "bpd", "sonar-mcp"}
 	goos := stdRuntime.GOOS
 	goarch := stdRuntime.GOARCH
-	releaseURLBase := "https://github.com/boggycreek/sandbox/releases/latest/download"
+	releaseURLBase := "https://github.com/boggycreek/fleet/releases/latest/download"
 
 	downloadedAll := true
 

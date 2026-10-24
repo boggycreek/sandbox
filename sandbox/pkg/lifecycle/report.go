@@ -111,7 +111,7 @@ func FormatReport(report *ProvisioningReport) string {
 // WarnOnErr writes a warning message to w if err is non-nil. Returns true if a warning was emitted.
 func WarnOnErr(w io.Writer, err error, step string) bool {
 	if err != nil && w != nil {
-		_, _ = fmt.Fprintf(w, "sndbx warning: %s: %v\n", step, err)
+		_, _ = fmt.Fprintf(w, "fleet warning: %s: %v\n", step, err)
 		return true
 	}
 	return false

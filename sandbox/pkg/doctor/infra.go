@@ -189,7 +189,7 @@ func checkAndHealPostgresContainer(ctx context.Context, report *DoctorReport) {
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "PostgreSQL Database",
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("PostgreSQL container is %s (start via `sndbx infra up`)", state),
+			Message: fmt.Sprintf("PostgreSQL container is %s (start via `fleet infra up`)", state),
 		})
 		report.WarningCount++
 		return
@@ -303,7 +303,7 @@ func checkAndHealValkeyContainer(ctx context.Context, paths config.Paths, report
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Valkey Service",
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("Valkey container is %s (%v; start via `sndbx infra up`)", state, dialErr),
+			Message: fmt.Sprintf("Valkey container is %s (%v; start via `fleet infra up`)", state, dialErr),
 		})
 		report.WarningCount++
 		return
@@ -370,7 +370,7 @@ func checkAndHealForgejoContainer(ctx context.Context, paths config.Paths, repor
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Forgejo Service",
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("Forgejo container is %s (start via `sndbx infra up`)", state),
+			Message: fmt.Sprintf("Forgejo container is %s (start via `fleet infra up`)", state),
 		})
 		report.WarningCount++
 		return
@@ -425,7 +425,7 @@ func checkAndHealSonarContainer(ctx context.Context, paths config.Paths, report 
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "SonarQube Service",
 			Status:  StatusWarning,
-			Message: fmt.Sprintf("SonarQube container is %s (start via `sndbx infra up`)", state),
+			Message: fmt.Sprintf("SonarQube container is %s (start via `fleet infra up`)", state),
 		})
 		report.WarningCount++
 		return

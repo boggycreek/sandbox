@@ -588,7 +588,7 @@ func (m *Manager) resolveScanStatus(ctx context.Context, sonarKey string) string
 //     Scan Status: <status>
 func FormatList(projects []*Project) string {
 	if len(projects) == 0 {
-		return "No projects registered. Create one with 'sndbx project create <name>'."
+		return "No projects registered. Create one with 'fleet project create <name>'."
 	}
 
 	var sb strings.Builder

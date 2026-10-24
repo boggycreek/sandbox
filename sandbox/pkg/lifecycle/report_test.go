@@ -91,7 +91,7 @@ func TestWarnOnErr(t *testing.T) {
 	if !WarnOnErr(&b, errors.New("disk full"), "writing cache") {
 		t.Errorf("expected WarnOnErr to return true on non-nil error")
 	}
-	if !strings.Contains(b.String(), "sndbx warning: writing cache: disk full") {
+	if !strings.Contains(b.String(), "fleet warning: writing cache: disk full") {
 		t.Errorf("unexpected output from WarnOnErr: %s", b.String())
 	}
 }

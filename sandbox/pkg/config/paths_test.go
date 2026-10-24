@@ -145,8 +145,12 @@ func TestPathsResolveRepoDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(standardRepo, "Makefile"), []byte("# test"), 0644); err != nil {
 		t.Fatalf("write Makefile failed: %v", err)
 	}
-	if r := p.ResolveRepoDir(); r != standardRepo && !strings.Contains(r, "sandbox") {
-		t.Errorf("expected standard repo or workspace repo, got %q", r)
+	if r := p.ResolveRepoDir(); r != standardRepo {
+		if _, err := os.Stat(filepath.Join(r, "go.work")); err != nil {
+			if _, err2 := os.Stat(filepath.Join(r, "Makefile")); err2 != nil {
+				t.Errorf("expected standard repo or workspace root with go.work/Makefile, got %q", r)
+			}
+		}
 	}
 
 	// 4. Resolve from deep child subdirectory of current working directory
@@ -159,8 +163,11 @@ func TestPathsResolveRepoDir(t *testing.T) {
 		defer func() { _ = os.Chdir(cwd) }()
 
 		pEmpty := Paths{}
-		if resolved := pEmpty.ResolveRepoDir(); resolved != cwd && !strings.Contains(resolved, "sandbox") {
-			t.Errorf("expected repo root %q, got %q", cwd, resolved)
+		resolved := pEmpty.ResolveRepoDir()
+		if _, err := os.Stat(filepath.Join(resolved, "go.work")); err != nil {
+			if _, err2 := os.Stat(filepath.Join(resolved, "Makefile")); err2 != nil {
+				t.Errorf("expected workspace root with go.work/Makefile, got %q", resolved)
+			}
 		}
 	}
 }

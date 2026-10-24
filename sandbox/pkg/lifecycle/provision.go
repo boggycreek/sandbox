@@ -350,7 +350,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	if err := RegisterValkeyACL(ctx, cfg, paths); err == nil {
 		report.AddStep("Valkey ACL & Identity", StatusOK, "Registered ACL user and backplane identity", nil)
 	} else if IsOfflineError(err) {
-		report.AddStep("Valkey ACL & Identity", StatusSkipped, fmt.Sprintf("Valkey infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+		report.AddStep("Valkey ACL & Identity", StatusSkipped, fmt.Sprintf("Valkey infrastructure is offline (skipped; start via 'fleet infra up'): %v", err), err)
 	} else {
 		report.AddStep("Valkey ACL & Identity", StatusError, fmt.Sprintf("Failed registering Valkey ACL: %v", err), err)
 	}
@@ -363,7 +363,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	} else if err := RegisterForgejoUser(ctx, cfg, paths); err == nil {
 		report.AddStep("Forgejo User & Keys", StatusOK, "Registered user account, IDE key, and fleet organization", nil)
 	} else if IsOfflineError(err) {
-		report.AddStep("Forgejo User & Keys", StatusSkipped, fmt.Sprintf("Forgejo infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+		report.AddStep("Forgejo User & Keys", StatusSkipped, fmt.Sprintf("Forgejo infrastructure is offline (skipped; start via 'fleet infra up'): %v", err), err)
 	} else {
 		report.AddStep("Forgejo User & Keys", StatusError, fmt.Sprintf("Failed registering Forgejo user: %v", err), err)
 	}
@@ -376,7 +376,7 @@ func ProvisionAgent(ctx context.Context, cfg *config.AgentConfig, paths config.P
 	} else if err := RegisterSonarUser(ctx, cfg, paths); err == nil {
 		report.AddStep("SonarQube Account & Token", StatusOK, "Registered user account and generated analysis token", nil)
 	} else if IsOfflineError(err) {
-		report.AddStep("SonarQube Account & Token", StatusSkipped, fmt.Sprintf("SonarQube infrastructure is offline (skipped; start via 'sndbx infra up'): %v", err), err)
+		report.AddStep("SonarQube Account & Token", StatusSkipped, fmt.Sprintf("SonarQube infrastructure is offline (skipped; start via 'fleet infra up'): %v", err), err)
 	} else {
 		report.AddStep("SonarQube Account & Token", StatusError, fmt.Sprintf("Failed registering SonarQube user: %v", err), err)
 	}

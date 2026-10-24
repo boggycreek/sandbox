@@ -61,6 +61,11 @@ func TestAgentDoctorScenarios(t *testing.T) {
 	}
 
 	// 4. Doctor on healthy agent configuration
+	restorePodmanScenario4 := SetExecCommandContextForTesting(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	})
+	defer restorePodmanScenario4()
+
 	cfg, err := config.NewAgentConfig("doc-bot", "base", "qa-tester")
 	if err != nil {
 		t.Fatalf("failed creating agent config: %v", err)
