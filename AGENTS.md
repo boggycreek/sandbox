@@ -14,25 +14,33 @@ This repository is structured as a pure **Go monorepo**:
 
 ```
 fleet/
-├── cmd/
-│   ├── fleet/              # Unified host management CLI (alias ft)
-│   ├── bp/                 # Cross-agent backplane messaging CLI
-│   └── libbp-c/            # C-shared library wrapper (libbp.so / libbp.dylib)
-├── pkg/
-│   ├── config/             # Agent configuration, XDG paths, and .env loader
-│   ├── forgejo/            # Forgejo REST API client (user, key, org, repo management)
-│   ├── libbp/              # Core backplane client, Valkey protocol, Ed25519 signing
-│   │   └── resp/           # Custom high-performance Valkey/Redis RESP protocol parser
-│   └── runtime/            # Podman container runtime, networks, infra orchestration
-├── images/
-│   ├── agent-core/         # Minimal base OCI image (Debian Bookworm, non-root agent)
-│   ├── agent-daemon-base/  # Autonomous daemon OCI image (sshd, tmux, bpd)
-│   ├── agent-tool-base/    # Interactive tool container base OCI image
-│   └── agents/             # Derivative agent harnesses (opencode, claude, agy, pig, native)
-├── infra/                  # Shared local infrastructure definition (docker-compose.yml)
-├── test/
-│   ├── harness/            # Embedded Valkey test server harness
-│   └── integration/        # End-to-end integration tests (bp, fleet, infra lifecycle)
+├── go.work                 # Multi-module Go workspace declaration
+├── agent/                  # In-container agent harness module (go.mod)
+│   ├── cmd/fleet-agent/    # In-container autonomous agent daemon
+│   └── pkg/gateway/        # Valkey backplane gateway client
+├── backplane/              # Cross-agent backplane bus module (go.mod)
+│   ├── cmd/bp/             # CLI for cross-agent backplane messaging
+│   ├── cmd/bpd/            # Autonomous event-driven backplane daemon
+│   ├── pkg/libbp/          # Core backplane protocol, Ed25519 signing, RESP parser
+│   └── pkg/libbpd/         # Backplane daemon execution library
+├── mcp/                    # Model Context Protocol servers module (go.mod)
+│   ├── cmd/beads-mcp/      # Beads task tracking MCP server
+│   ├── cmd/gitea-mcp/      # Forgejo/Gitea REST API MCP server
+│   └── cmd/sonar-mcp/      # SonarQube Quality Gate MCP server
+├── sandbox/                # Host management CLI & runtime module (go.mod)
+│   ├── cmd/fleet/          # Host CLI entrypoint (fleet / ft)
+│   ├── pkg/
+│   │   ├── config/         # Path resolution, environment loading, agent config
+│   │   ├── doctor/         # Diagnostic checks and auto-healing
+│   │   ├── forgejo/        # Forgejo REST API client
+│   │   ├── ide/            # Desktop IDE remote development launcher
+│   │   ├── lifecycle/      # Provisioning and deprovisioning orchestration
+│   │   ├── plugin/         # IDE plugin & OpenSSH configuration management
+│   │   ├── project/        # Project management & Quality Gate linkages
+│   │   ├── runtime/        # Podman container runtime, networks, infra stack
+│   │   └── sonar/          # SonarQube API client
+│   └── test/               # Embedded Valkey harness and integration tests
+├── images/                 # OCI container image build contexts
 ├── doc/
 │   ├── adr/                # Architecture Decision Records (00001 - 00046)
 │   └── ai/                 # Progressive disclosure knowledge base optimized for AI agents

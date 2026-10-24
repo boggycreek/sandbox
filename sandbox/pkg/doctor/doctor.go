@@ -110,7 +110,7 @@ func checkAndHealConfig(paths config.Paths, name string, report *DoctorReport) (
 		report.Checks = append(report.Checks, CheckItem{
 			Name:         "Configuration File",
 			Status:       StatusError,
-			Message:      fmt.Sprintf("Missing config at %s (unrepairable: recreate agent via `sndbx agent create %s`)", cfgPath, name),
+			Message:      fmt.Sprintf("Missing config at %s (unrepairable: recreate agent via `fleet agent create %s`)", cfgPath, name),
 			Unrepairable: true,
 		})
 		report.UnrepairableCount++
@@ -481,7 +481,7 @@ func checkAndHealValkey(ctx context.Context, cfg *config.AgentConfig, paths conf
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Valkey Backplane",
 			Status:  StatusWarning,
-			Message: "Valkey infrastructure is offline (skipped ACL sync; start via `sndbx infra up`)",
+			Message: "Valkey infrastructure is offline (skipped ACL sync; start via `fleet infra up`)",
 		})
 		report.WarningCount++
 		return
@@ -561,7 +561,7 @@ func checkAndHealForgejo(ctx context.Context, cfg *config.AgentConfig, paths con
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "Forgejo Git Forge",
 			Status:  StatusWarning,
-			Message: "Forgejo infrastructure is offline (skipped user sync; start via `sndbx infra up`)",
+			Message: "Forgejo infrastructure is offline (skipped user sync; start via `fleet infra up`)",
 		})
 		report.WarningCount++
 		return
@@ -628,7 +628,7 @@ func checkAndHealSonar(ctx context.Context, cfg *config.AgentConfig, paths confi
 		report.Checks = append(report.Checks, CheckItem{
 			Name:    "SonarQube Analysis",
 			Status:  StatusWarning,
-			Message: "SonarQube infrastructure is offline (skipped user sync; start via `sndbx infra up`)",
+			Message: "SonarQube infrastructure is offline (skipped user sync; start via `fleet infra up`)",
 		})
 		report.WarningCount++
 		return

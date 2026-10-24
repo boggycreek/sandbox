@@ -5,7 +5,7 @@
 # license that can be found in the LICENSE file.
 
 # Containerized Installation & Configuration Smoke Test Harness
-# Validates install.sh, CLI bootstrap, and sndbx doctor inside an isolated rootless container.
+# Validates install.sh, CLI bootstrap, and fleet doctor inside an isolated rootless container.
 
 set -euo pipefail
 

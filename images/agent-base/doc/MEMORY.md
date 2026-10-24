@@ -13,8 +13,8 @@ The **Agent Sandbox** provides two levels of persistence to preserve state acros
 
 ## 1. Local Persistent Volume (`/home/agent`)
 
-Every agent has a named Podman volume (`sndbx-agent-<name>-home`) mounted directly at `/home/agent`.
-- **Preserved across**: `sndbx agent stop`, `sndbx agent clean`, and container image upgrades.
+Every agent has a named Podman volume (`fleet-agent-<name>-home`) mounted directly at `/home/agent`.
+- **Preserved across**: `fleet agent stop`, `fleet agent clean`, and container image upgrades.
 - **Includes**: Installed packages in `~/.local/`, shell history (`~/.bash_history`), SSH keys (`~/.ssh`), and local workspace checkouts (`~/workspace`).
 
 ---

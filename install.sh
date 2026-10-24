@@ -4,12 +4,12 @@
 # Use of this source code is governed by an MIT-style
 # license that can be found in the LICENSE file.
 
-# Agent Sandbox Installer
+# Fleet Installer
 #
 # Supports macOS (Darwin) and Linux (all standard distributions).
 #
 # Can be executed via curl from GitHub:
-#   curl -fsSL https://raw.githubusercontent.com/boggycreek/sandbox/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/boggycreek/fleet/main/install.sh | bash
 #
 # Or run directly from a cloned repository checkout:
 #   ./install.sh
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # Default configuration
-REPO_URL_DEFAULT="https://github.com/boggycreek/sandbox.git"
+REPO_URL_DEFAULT="https://github.com/boggycreek/fleet.git"
 DEFAULT_BRANCH="main"
 
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}/fleet"
@@ -68,7 +68,7 @@ while [ $# -gt 0 ]; do
 done
 
 echo "========================================"
-echo "       Agent Sandbox Installer         "
+echo "           Fleet Installer              "
 echo "========================================"
 echo
 
@@ -95,7 +95,7 @@ case "${OS_TYPE}" in
     ;;
   *)
     echo "Error: Unsupported operating system: ${OS_TYPE}." >&2
-    echo "Agent Sandbox currently supports macOS (Darwin) and Linux." >&2
+    echo "Fleet currently supports macOS (Darwin) and Linux." >&2
     exit 1
     ;;
 esac
@@ -318,7 +318,7 @@ BPD_BIN="${BIN_DIR}/bpd"
 SONAR_MCP_BIN="${BIN_DIR}/sonar-mcp"
 
 INSTALLED_PREBUILT=true
-RELEASE_URL_BASE="https://github.com/boggycreek/sandbox/releases/latest/download"
+RELEASE_URL_BASE="https://github.com/boggycreek/fleet/releases/latest/download"
 
 echo "  Checking for prebuilt native CLI binaries from GitHub Releases..."
 for bin_name in fleet bp bpd sonar-mcp; do
@@ -350,7 +350,7 @@ if command -v go >/dev/null 2>&1 && [ -d "${SANDBOX_ROOT}" ]; then
   exec "${FLEET_BIN}" "\$@"
 fi
 echo "Fleet CLI (fleet)"
-echo "Go compiler or prebuilt release required. Visit: https://github.com/boggycreek/sandbox/releases"
+echo "Go compiler or prebuilt release required. Visit: https://github.com/boggycreek/fleet/releases"
 exit 1
 EOF
   chmod +x "${FLEET_BIN}"

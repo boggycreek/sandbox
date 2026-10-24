@@ -43,6 +43,6 @@ For specific topics, see the **[`INDEX.md`](INDEX.md)** hub or the following spe
 ## 3. Background Services & Supervisor
 
 - **Process Supervisor**: Background `tmux` session named after `$AGENT_NAME` (or `sandbox`).
-  - Attach interactively from host: `sndbx agent tmux <name>`
+  - Attach interactively from host: `fleet agent tmux <name>`
 - **Unprivileged SSH Daemon**: Running on port `2222` inside the container.
-  - Connect via host SSH: `sndbx agent ssh <name>`
+  - Connect via host SSH: `fleet agent ssh <name>`
