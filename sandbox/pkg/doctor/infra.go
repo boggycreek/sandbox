@@ -490,4 +490,3 @@ func checkAndHealSonarContainer(ctx context.Context, paths config.Paths, report 
 	})
 	_ = client
 }
-

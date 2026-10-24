@@ -224,7 +224,7 @@ func (p Paths) ResolveRepoDir() string {
 		}
 	}
 
-	// 3. Relative to the executing binary (e.g. repo/bin/sndbx -> repo)
+	// 3. Relative to the executing binary (e.g. repo/bin/fleet -> repo)
 	if exe, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exe)
 		parent := filepath.Dir(exeDir)

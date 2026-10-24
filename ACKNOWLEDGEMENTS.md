@@ -6,7 +6,7 @@ The **Agent Sandbox** platform is developed by **Boggy Creek Software LLC**. We 
 
 ## Zero-Dependency Core Architecture
 
-The native binaries across the workspace (`sndbx`, `bp`, `bpd`, `bp-mcp`, `gitea-mcp`, `beads-mcp`, `sonar-mcp`) and internal Go libraries (`sandbox/pkg/...`, `backplane/pkg/...`, `mcp/pkg/...`) are engineered intentionally with **zero external Go module dependencies**. We build exclusively on the standard library of the **Go Programming Language**, maintained by the Go Authors and Google:
+The native binaries across the workspace (`fleet`, `bp`, `bpd`, `bp-mcp`, `gitea-mcp`, `beads-mcp`, `sonar-mcp`) and internal Go libraries (`sandbox/pkg/...`, `backplane/pkg/...`, `mcp/pkg/...`) are engineered intentionally with **zero external Go module dependencies**. We build exclusively on the standard library of the **Go Programming Language**, maintained by the Go Authors and Google:
 
 - **[The Go Programming Language](https://go.dev/)** — BSD-3-Clause License  
   *Provided the robust concurrency model, cryptographic primitives (`crypto/ed25519`), networking, and tooling enabling reliable, cross-platform static binaries.*

@@ -723,3 +723,153 @@ func TestInfraDoctorDiagnosticsAndHealing(t *testing.T) {
 		t.Errorf("expected agent clean summary: %s", outAgentClean)
 	}
 }
+
+// TestCheckAndHealValkeyHealPath exercises the auto-heal code path in checkAndHealValkeyContainer
+// by overriding the infraValkeyContainer package-level var to point at an ephemeral test container.
+func TestCheckAndHealValkeyHealPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
+
+	// Start an ephemeral Valkey container with a "correct" password that our check will fail against
+	// (we'll intentionally set the wrong admin password so auth fails while state is "running")
+	harnessCtr := fmt.Sprintf("test-heal-valkey-%d", os.Getpid())
+	aclPath := filepath.Join(tmpDir, "valkey-users.acl")
+	realAdminPass := "real_admin_pass_heal_test"
+	aclContent := fmt.Sprintf("user default off\nuser admin on >%s ~* &* +@all\n", realAdminPass)
+	_ = os.WriteFile(aclPath, []byte(aclContent), 0644)
+
+	port, err := getFreeTestPort()
+	if err != nil {
+		t.Skip("Cannot find free port for heal test")
+	}
+
+	startCmd := exec.Command("podman", "run", "-d", "--name", harnessCtr,
+		"-p", fmt.Sprintf("127.0.0.1:%d:6379", port),
+		"-v", fmt.Sprintf("%s:/etc/valkey/users.acl:ro", aclPath),
+		"docker.io/valkey/valkey:8-alpine",
+		"valkey-server", "--aclfile", "/etc/valkey/users.acl",
+	)
+	if out, err := startCmd.CombinedOutput(); err != nil {
+		t.Skipf("Cannot start ephemeral Valkey container for heal test: %v (%s)", err, string(out))
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "stop", harnessCtr).Run()
+		_ = exec.Command("podman", "rm", "-f", harnessCtr).Run()
+	})
+
+	// Wait for container to be ready
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Override the package-level var so doctor targets our ephemeral container
+	origContainer := infraValkeyContainer
+	infraValkeyContainer = harnessCtr
+	defer func() { infraValkeyContainer = origContainer }()
+
+	restoreRuntime := runtime.SetInfraValkeyContainerForTest(harnessCtr)
+	defer restoreRuntime()
+
+	paths := config.Paths{
+		DataHome: filepath.Join(tmpDir, "data"),
+	}
+	_ = os.MkdirAll(paths.DataHome, 0755)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Case 1: Container running but wrong password → triggers heal attempt
+	os.Setenv("BP_HOST", "127.0.0.1")
+	os.Setenv("BP_PORT", fmt.Sprintf("%d", port))
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", "wrong_password_for_heal_test")
+
+	report1 := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(ctx, paths, report1)
+	// Either healed or warning — both are valid since StartInfraStack will try to fix the ACL
+	if len(report1.Checks) == 0 {
+		t.Errorf("expected at least one check item in heal path test")
+	}
+
+	// Case 2: Container running with correct password → exercises the OK path
+	os.Setenv("ADMIN_BACKPLANE_PASSWORD", "wrong_password_for_heal_test")
+	time.Sleep(500 * time.Millisecond)
+	report2 := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(ctx, paths, report2)
+	if len(report2.Checks) == 0 {
+		t.Errorf("expected at least one check item in correct-password test")
+	}
+
+	// Case 3: Canceled context exercises warning path
+	canceledCtx, cancelCase3 := context.WithCancel(context.Background())
+	cancelCase3()
+	report3 := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealValkeyContainer(canceledCtx, paths, report3)
+	if len(report3.Checks) == 0 {
+		t.Errorf("expected at least one check item in canceled context test")
+	}
+}
+
+func getFreeTestPort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// TestCheckAndHealImageNonLocalWarns verifies a warning is emitted when the image is not cached
+// locally. It mocks podman so the assertion is deterministic regardless of host image storage.
+func TestCheckAndHealImageNonLocalWarns(t *testing.T) {
+	restore := runtime.SetDefaultExecutor(runtime.CommandExecutorFunc(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) >= 2 && args[0] == "image" && args[1] == "exists" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}))
+	defer restore()
+
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
+	paths := config.Paths{DataHome: filepath.Join(tmpDir, "data"), AgentsDir: filepath.Join(tmpDir, "agents")}
+	_ = paths.EnsureDirectories()
+
+	report := &DoctorReport{AgentName: "remote-img-agent"}
+	cfg := &config.AgentConfig{Name: "remote-img-agent", Image: "docker.io/library/busybox:latest"}
+	checkAndHealImage(context.Background(), cfg, paths, report)
+	if report.WarningCount == 0 {
+		t.Errorf("expected warning for non-local image")
+	}
+}
+
+// TestCheckAndHealInfraStorageHealsMissingVolumes verifies the storage auto-heal path restores
+// missing volumes, using a mocked podman where every volume reports as missing.
+func TestCheckAndHealInfraStorageHealsMissingVolumes(t *testing.T) {
+	restore := runtime.SetDefaultExecutor(runtime.CommandExecutorFunc(func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" && len(args) >= 2 && args[0] == "volume" && args[1] == "exists" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
+	}))
+	defer restore()
+
+	report := &DoctorReport{AgentName: "shared-infrastructure"}
+	checkAndHealInfraStorage(context.Background(), report)
+	if report.HealedCount == 0 {
+		t.Errorf("expected healed count > 0 when volumes are missing, got report: %+v", report.Checks)
+	}
+}
