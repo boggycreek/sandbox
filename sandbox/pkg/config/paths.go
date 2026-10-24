@@ -183,13 +183,42 @@ func (p Paths) SetEnvVar(key, value string) error {
 	}
 
 	_ = os.MkdirAll(filepath.Dir(p.EnvFile), 0700)
-	if err := os.WriteFile(p.EnvFile, []byte(content), 0600); err != nil {
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(p.EnvFile), ".env.*")
+	if err != nil {
 		return err
 	}
+	tmpName := tmpFile.Name()
+
+	// Clean up temporary file if it still exists (e.g. rename failed or error occurred)
+	defer os.Remove(tmpName)
+
+	if _, err := tmpFile.Write([]byte(content)); err != nil {
+		tmpFile.Close()
+		return err
+	}
+
+	if err := tmpFile.Chmod(0600); err != nil {
+		tmpFile.Close()
+		return err
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return err
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpName, p.EnvFile); err != nil {
+		return err
+	}
+
 	_ = os.Setenv(key, value)
 	return nil
 }
-
 
 // ResolveRepoDir returns the absolute path to the local repository checkout.
 // It checks FLEET_REPO, AGENT_SANDBOX_REPO, FLEET_ROOT, SANDBOX_ROOT, the parent of the binary,

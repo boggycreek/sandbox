@@ -297,7 +297,9 @@ func checkAndHealHostSSH(paths config.Paths, report *DoctorReport) {
 			healedKey = true
 		}
 	} else if _, err := os.Stat(sshPub); os.IsNotExist(err) {
-		if out, err := exec.Command("ssh-keygen", "-y", "-f", keyPath).Output(); err == nil && len(out) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if out, err := exec.CommandContext(ctx, "ssh-keygen", "-y", "-P", "", "-f", keyPath).Output(); err == nil && len(out) > 0 {
 			_ = os.WriteFile(sshPub, out, 0644)
 			healedKey = true
 		}

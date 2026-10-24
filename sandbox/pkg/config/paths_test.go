@@ -221,12 +221,23 @@ func TestPathsSetEnvVar(t *testing.T) {
 	envPath := filepath.Join(tmpDir, "test.env")
 	p := Paths{EnvFile: envPath}
 
+	checkPerms := func(expected os.FileMode) {
+		info, err := os.Stat(envPath)
+		if err != nil {
+			t.Fatalf("failed to stat env file: %v", err)
+		}
+		if info.Mode().Perm() != expected {
+			t.Errorf("expected file mode %v, got %v", expected, info.Mode().Perm())
+		}
+	}
+
 	if err := p.SetEnvVar("KEY1", "val1"); err != nil {
 		t.Fatalf("SetEnvVar failed: %v", err)
 	}
 	if os.Getenv("KEY1") != "val1" {
 		t.Errorf("expected env var set, got %s", os.Getenv("KEY1"))
 	}
+	checkPerms(0600)
 
 	// Update existing
 	if err := p.SetEnvVar("KEY1", "newval"); err != nil {
@@ -235,11 +246,14 @@ func TestPathsSetEnvVar(t *testing.T) {
 	if os.Getenv("KEY1") != "newval" {
 		t.Errorf("expected updated env var, got %s", os.Getenv("KEY1"))
 	}
+	checkPerms(0600)
 
 	// Append second
 	if err := p.SetEnvVar("KEY2", "val2"); err != nil {
 		t.Fatalf("SetEnvVar second append failed: %v", err)
 	}
+	checkPerms(0600)
+
 	content, _ := os.ReadFile(envPath)
 	contentStr := string(content)
 	if !strings.Contains(contentStr, "KEY1=newval") || !strings.Contains(contentStr, "KEY2=val2") {
@@ -265,4 +279,3 @@ func TestPathsProjectsDir(t *testing.T) {
 		t.Errorf("expected ProjectsDir to end with fleet/projects, got %s", p.ProjectsDir)
 	}
 }
-

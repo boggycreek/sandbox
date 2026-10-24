@@ -873,3 +873,48 @@ func TestCheckAndHealInfraStorageHealsMissingVolumes(t *testing.T) {
 		t.Errorf("expected healed count > 0 when volumes are missing, got report: %+v", report.Checks)
 	}
 }
+
+func TestCheckAndHealHostSSH_PassphraseProtected(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Cleanup(func() {
+		_ = exec.Command("podman", "unshare", "rm", "-rf", tmpDir).Run()
+	})
+	paths := config.Paths{
+		DataHome:      filepath.Join(tmpDir, "data"),
+		SSHDir:        filepath.Join(tmpDir, "ssh"),
+		IDEKeyFile:    filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHPrivateKey: filepath.Join(tmpDir, "ssh", "fleet"),
+		SSHConfigFile: filepath.Join(tmpDir, "data", "ssh_config"),
+	}
+	_ = paths.EnsureDirectories()
+
+	keyPath := paths.SSHPrivateKey
+	sshPub := keyPath + ".pub"
+
+	// Generate a passphrase-protected SSH key
+	err := exec.Command("ssh-keygen", "-t", "ed25519", "-N", "testpassphrase", "-f", keyPath).Run()
+	if err != nil {
+		t.Fatalf("failed to generate passphrase-protected key: %v", err)
+	}
+
+	// Remove the public key
+	err = os.Remove(sshPub)
+	if err != nil {
+		t.Fatalf("failed to remove public key: %v", err)
+	}
+
+	// Check that checkAndHealHostSSH does not hang
+	report := &DoctorReport{AgentName: "test-agent"}
+	done := make(chan struct{})
+	go func() {
+		checkAndHealHostSSH(paths, report)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// test passed if it finishes
+	case <-time.After(10 * time.Second): // 10 seconds allows some buffer over the 5-second context
+		t.Fatalf("checkAndHealHostSSH timed out / hung on passphrase-protected key")
+	}
+}
